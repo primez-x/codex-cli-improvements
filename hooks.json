@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.codex/hooks/plan_gap_goal_hook.py",
+            "commandWindows": "python \"%USERPROFILE%\\.codex\\hooks\\plan_gap_goal_hook.py\"",
+            "timeout": 15,
+            "statusMessage": "Checking plan goal trigger"
+          }
+        ]
+      }
+    ]
+  }
+}
