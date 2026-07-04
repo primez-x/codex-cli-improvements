@@ -15,7 +15,10 @@ import time
 from pathlib import Path
 
 
-TRIGGER_PROMPT = "Implement the plan."
+TRIGGER_PROMPTS = {
+    "Implement the plan.",
+    "Yes, implement this plan",
+}
 CLIENT_NAME = "plan_gap_goal_hook"
 LOG_NAME = "plan_gap_goal_hook.log"
 ACTIVE_GOAL_STATUSES = {"active", "paused", "blocked", "usageLimited", "budgetLimited"}
@@ -216,7 +219,7 @@ def main() -> int:
         return 0
 
     prompt = str(payload.get("prompt") or "")
-    if prompt.strip() != TRIGGER_PROMPT:
+    if prompt.strip() not in TRIGGER_PROMPTS:
         return 0
 
     thread_id = str(payload.get("session_id") or "")
