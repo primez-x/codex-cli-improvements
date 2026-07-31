@@ -1,0 +1,6 @@
+interface:
+  display_name: "Plan Review Ladder"
+  short_description: "Multi-model review for high-confidence plans"
+  default_prompt: "Use $plan-review-ladder to build and independently validate this implementation plan."
+policy:
+  allow_implicit_invocation: true
