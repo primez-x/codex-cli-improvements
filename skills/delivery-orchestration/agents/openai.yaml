@@ -1,0 +1,4 @@
+interface:
+  display_name: "Delivery Orchestration"
+  short_description: "Route material delivery through bounded agents"
+  default_prompt: "Use $delivery-orchestration to implement, verify, and complete this change end to end."
