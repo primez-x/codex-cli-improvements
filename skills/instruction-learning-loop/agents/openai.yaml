@@ -1,0 +1,4 @@
+interface:
+  display_name: "Instruction Learning Loop"
+  short_description: "Turn corrections into lean, validated instructions"
+  default_prompt: "Use $instruction-learning-loop to turn this correction or recurring failure into the smallest evidence-backed AGENTS.md or skill improvement."

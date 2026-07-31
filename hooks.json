@@ -5,10 +5,29 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.codex/hooks/plan_gap_goal_hook.py",
-            "commandWindows": "python \"%USERPROFILE%\\.codex\\hooks\\plan_gap_goal_hook.py\"",
+            "command": "python3 -c \"import os, runpy; runpy.run_path(os.path.join(os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), 'hooks', 'plan_gap_goal_hook.py'), run_name='__main__')\"",
+            "commandWindows": "python -c \"import os, runpy; runpy.run_path(os.path.join(os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), 'hooks', 'plan_gap_goal_hook.py'), run_name='__main__')\"",
             "timeout": 15,
             "statusMessage": "Checking plan goal trigger"
+          },
+          {
+            "type": "command",
+            "command": "python3 -c \"import os, runpy; runpy.run_path(os.path.join(os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), 'skills', 'instruction-learning-loop', 'scripts', 'instruction_learning_hook.py'), run_name='__main__')\"",
+            "commandWindows": "python -c \"import os, runpy; runpy.run_path(os.path.join(os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), 'skills', 'instruction-learning-loop', 'scripts', 'instruction_learning_hook.py'), run_name='__main__')\"",
+            "timeout": 10,
+            "additionalContextLimit": 500
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import os, runpy; runpy.run_path(os.path.join(os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), 'skills', 'instruction-learning-loop', 'scripts', 'instruction_learning_hook.py'), run_name='__main__')\"",
+            "commandWindows": "python -c \"import os, runpy; runpy.run_path(os.path.join(os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), 'skills', 'instruction-learning-loop', 'scripts', 'instruction_learning_hook.py'), run_name='__main__')\"",
+            "timeout": 10
           }
         ]
       }
