@@ -70,14 +70,16 @@ pressure appears, stop and escalate to Luna.
 
 Luna is the default delegated model:
 
-- use `luna_scanner`, high, for broad or context-heavy read-only discovery,
+- use `luna_scanner`, medium, for broad or context-heavy read-only discovery,
   inventories, comparisons, history, logs, and independent validation;
 - use `luna_worker`, max, for the default implementation path: substantial
   routine edits, debugging, tests, documentation, and multi-file integration.
 
-Luna's low cost and larger context make it the preferred step above Spark.
-Escalate the model directly from Luna to Sol when difficulty or consequential
-risk exceeds Luna; there is no intermediate custom model tier.
+The Medium scanner keeps Luna's larger context while prioritizing latency and
+cost for reversible evidence work. It returns exact anchors, uncertainty, and
+unexamined areas; the root owns conflicting evidence and consequential
+interpretation. Escalate the model directly from Luna to Sol when difficulty or
+consequential risk exceeds Luna; there is no intermediate custom model tier.
 
 ### Sol escalation
 

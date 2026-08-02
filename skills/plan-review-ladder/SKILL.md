@@ -16,7 +16,7 @@ finding disposition, residual-risk analysis, and the user-facing plan. Read
 ## Operating Contract
 
 - The configured six-profile matrix is `spark_scanner`, xhigh;
-  `spark_worker`, xhigh; `luna_scanner`, high; `luna_worker`, max;
+  `spark_worker`, xhigh; `luna_scanner`, medium; `luna_worker`, max;
   `sol_worker`, xhigh; and `sol_advisor`, max. Plan review dispatches only the
   read-only `spark_scanner`, `luna_scanner`, and `sol_advisor` profiles.
 - All descendants remain read-only, operate at depth 1, report directly to the
@@ -64,7 +64,7 @@ Assemble the smallest sufficient common evidence bundle:
   hashes for material non-Git artifacts, and a domain-authority map covering
   canonical definitions, consumers, persistence, outputs, and alternate paths.
 
-Use Spark only for a tiny exact anchor check. Use Luna High for broad or
+Use Spark only for a tiny exact anchor check. Use Luna Medium for broad or
 context-heavy discovery and independent evidence. Prefer authoritative source
 and executable tests over guides or model claims. Recheck the manifest before
 sign-off; changed material evidence invalidates affected findings.

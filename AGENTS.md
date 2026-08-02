@@ -74,9 +74,11 @@ These are personal defaults across Codex projects. Repository and nested
   checks and small mechanical edits from fresh self-contained packets dispatched
   with `fork_turns = "none"`. Do not send Spark broad discovery, synthesis, or
   inherited full-history context; escalate those tasks to Luna.
-- Luna High scanning handles broad and context-heavy evidence. Luna Max is the
-  default delegated implementation profile. Escalate directly to Sol XHigh only
-  for genuinely difficult implementation or diagnosis.
+- Luna Medium scanning handles broad and context-heavy read-only evidence with
+  exact anchors, uncertainty, and unexamined areas. The root owns consequential
+  synthesis; Luna Max remains the default delegated implementation profile.
+  Escalate directly to Sol XHigh only for genuinely difficult implementation or
+  diagnosis.
 - Every custom profile is a terminal depth-1 leaf. Leaves do not spawn, commit,
   push, deploy, publish, perform destructive actions, or mutate external systems.
   The root owns direct routing, integration, authorized external actions, and

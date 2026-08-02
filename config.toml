@@ -16,7 +16,7 @@ description = "Instant terminal writer for small mechanical edits with focused v
 config_file = "./agents/spark_worker.toml"
 
 [agents.luna_scanner]
-description = "High-effort read-only leaf for broad discovery and context-heavy evidence work."
+description = "Medium-effort read-only leaf for broad discovery and context-heavy evidence work."
 config_file = "./agents/luna_scanner.toml"
 
 [agents.luna_worker]
