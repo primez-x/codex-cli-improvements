@@ -10,7 +10,7 @@ behavioral boundary: leaves do not spawn.
 | --- | --- | --- | --- |
 | Spark scanner | xhigh | 1 | Tiny exact read-only evidence from a bounded packet |
 | Spark worker | xhigh | 1 | Small localized mechanical edits with focused checks |
-| Luna scanner | high | 1 | Broad discovery, large-context evidence, and validation |
+| Luna scanner | medium | 1 | Broad discovery, large-context evidence, and validation |
 | Luna worker | max | 1 | Default substantial implementation and verification |
 | Sol worker | xhigh | 1 | Rare genuinely difficult implementation or diagnosis |
 | Sol advisor | max | 1 | Rare consequential adversarial challenge and sign-off |
@@ -37,7 +37,8 @@ bounded packet containing:
 - stop conditions requiring Luna escalation when scope, ambiguity, or context
   grows.
 
-Use Luna High scanning for broad discovery and Luna Max for default delivery.
+Use Luna Medium scanning for broad read-only discovery and Luna Max for default
+delivery. The root retains conflicting-evidence and consequential synthesis.
 Use Sol XHigh work only after Luna is genuinely insufficient; use Sol Max advice
 only for a named consequential risk or checkpoint.
 

@@ -30,7 +30,7 @@ state, machine-specific paths, or project instructions.
 | Root | GPT-5.6 Sol | Medium | Routing, integration, final decisions, external actions |
 | Spark scanner | GPT-5.3 Codex Spark | XHigh | Tiny exact read-only checks |
 | Spark worker | GPT-5.3 Codex Spark | XHigh | Small mechanical edits |
-| Luna scanner | GPT-5.6 Luna | High | Broad and context-heavy discovery |
+| Luna scanner | GPT-5.6 Luna | Medium | Broad and context-heavy discovery |
 | Luna worker | GPT-5.6 Luna | Max | Default substantial implementation |
 | Sol worker | GPT-5.6 Sol | XHigh | Rare genuinely difficult implementation |
 | Sol advisor | GPT-5.6 Sol | Max | Rare consequential adversarial review |
@@ -74,10 +74,15 @@ Selection follows five steps:
 | --- | --- | --- |
 | Sol Medium root | Judgment, knowledge reliability, context, integration, then completion time | The root makes routing and final decisions but should not spend Max effort on routine turns |
 | Spark XHigh leaf | Boundedness, instruction following, consumption lane, and startup latency | Tiny exact work benefits from a short packet; broad discovery does not |
-| Luna High scanner | Context, throughput, evidence coverage, and cost | Broad read-only work needs the 5.6 context without paying for a maximum-effort writer |
+| Luna Medium scanner | Context, latency, evidence coverage, and cost | Broad read-only work needs the 5.6 context, while bounded evidence contracts and root-owned synthesis make Medium the better weighted default |
 | Luna Max worker | Coding reliability, agentic execution, context, and verification | Substantial writes benefit from Luna's highest capability while remaining the default economical tier |
 | Sol XHigh worker | Difficult-path reliability and consequence | Used only when Luna is genuinely insufficient |
 | Sol Max advisor | Counterexamples, risk detection, and sign-off confidence | Rare reviews can trade latency and cost for the strongest challenge |
+
+The Luna Medium scanner collects anchored facts rather than owning architecture,
+product decisions, or consequential interpretation. It reports conflicting
+authority, uncertainty, and unexamined areas to the root, which keeps the
+scanner's lower operational risk from hiding evidence-quality risk.
 
 ### Benchmark snapshot and evidence limits
 
@@ -137,14 +142,17 @@ quality and throughput observations come from the later benchmark snapshot.
 
 | Comparison | Worksheet cost inputs | Cost ratio | Observed tradeoff | Policy decision |
 | --- | ---: | ---: | --- | --- |
-| Luna High vs. Terra Medium | $0.0289 / $0.1598 | Terra 5.53x Luna | Overall score ties at 46. Terra has 0.2-minute lower decode time; Luna has 1.50x output speed. | Luna High owns broad scanning; the small decode advantage does not justify another tier. |
+| Luna Medium vs. Terra Medium | $0.0151 / $0.1598 | Terra 10.58x Luna | Terra is eight points higher overall; Luna is 0.3 minutes faster and has 1.46x output speed. | The bounded read-only scanner values context, latency, and cost; root-owned synthesis handles difficult interpretation, so Terra does not earn a separate route. |
+| Luna High vs. Terra Medium | $0.0289 / $0.1598 | Terra 5.53x Luna | Overall score ties at 46. Terra has 0.2-minute lower decode time; Luna has 1.50x output speed. | If Medium scanning is insufficient, the Sol Medium root owns interpretation; neither tied intermediate option needs a permanent profile. |
 | Luna XHigh vs. Terra High | $0.0431 / $0.3041 | Terra 7.06x Luna | Overall score and decode time tie at 49 and 1.3 minutes; Luna has 1.49x output speed. | No distinct Terra High region. Luna XHigh is itself consolidated away. |
 | Luna Max vs. Terra XHigh | $0.0658 / $0.4300 | Terra 6.53x Luna | Terra is one point higher and 0.1 minute faster; Luna has 1.58x output speed. | Luna Max remains the default writer because the quality difference is small and the route is simpler. |
 | Terra Max vs. Sol XHigh | $0.7328 / $1.1671 | Sol 1.59x Terra | Terra has 2.09x output speed and slightly lower decode time; Sol is three points higher overall and leads the supplied coding, agentic, accuracy, and difficult-task measures. | Sol XHigh owns rare high-risk implementation where reliability matters more than throughput. |
 
 Terra Low is also omitted: the current policy already has Spark for tiny bounded
-packets and Luna High for broad evidence, while the supplied material does not
-show a sufficiently distinct cost-and-quality region for another leaf.
+packets and Luna Medium for broad evidence. Terra Low ties Luna Medium's
+0.4-minute decode time and is two points higher overall, but Luna has 1.55x
+output speed and the supplied material does not establish a distinct cost or
+task region for another leaf.
 
 Terra Max deserves the strongest caveat. It is a plausible Pareto point when
 raw throughput or planning cost matters more than difficult-path reliability.
@@ -162,10 +170,16 @@ local workloads demonstrate a stable, distinct routing region.
   consumption, there is no evidence-based reason yet to trade quality for a
   lower effort. Lower efforts would add boundaries without a measured task
   shape of their own.
-- **Luna Low and Luna Medium:** tiny exact work routes to Spark; broad work uses
-  Luna High as the intelligence floor. Spark XHigh scored 44 overall versus 38
-  for Luna Medium, though Spark remains ineligible when its context is too small.
-- **Luna XHigh:** it sits between the High scanner and Max worker but owns no
+- **Luna Low:** the supplied benchmark and cost material did not cover it.
+  Medium is already the balanced 5.6 scanner floor, so a lower unmeasured effort
+  would add a boundary without evidence.
+- **Luna High:** it has the same 5.6 context as Medium. High raises the supplied
+  Intelligence Index from 38 to 46, but weighted decode time rises from 0.4 to
+  0.9 minutes, output speed is nearly unchanged at 153 versus 157 tokens per
+  second, and worksheet cost rises from $0.0151 to $0.0289. Difficult
+  interpretation routes to the Sol Medium root or a risk-triggered advisor, so
+  High does not own a separate scanner region.
+- **Luna XHigh:** it sits between the Medium scanner and Max worker but owns no
   separate read/write or risk boundary. It is a reasonable future budget-worker
   candidate if Luna Max cost becomes material.
 - **Sol Low:** it does not provide enough reliability margin for the root and,
@@ -192,8 +206,8 @@ The current local catalog advertises 128,000 tokens with 121,600 effective for
 Spark, versus 272,000 with 258,400 effective for the GPT-5.6 family. Every Spark
 assignment therefore uses `fork_turns = "none"` and a fresh self-contained
 packet with exact anchors, expected evidence, and explicit stop conditions.
-Broad discovery, synthesis, or inherited conversation history routes to Luna
-High instead.
+Broad discovery, inherited conversation history, or context-heavy evidence
+routes to Luna Medium instead; consequential synthesis remains root-owned.
 
 Luna Max is the default writer. Sol XHigh is a rare implementation escalation;
 Sol Max advice is risk-triggered for consequential architecture, compatibility,
@@ -233,7 +247,7 @@ decision record.
 
 ## Plan Review Routes
 
-- **Standard:** root candidate, independent Luna High validation, root
+- **Standard:** root candidate, independent Luna Medium validation, root
   residual-risk pass. No mandatory Sol for routine low-risk plans.
 - **Expanded:** Standard plus one early risk-triggered Sol Max challenge.
 - **Full:** Expanded plus a fresh final Sol Max challenge after synthesis and

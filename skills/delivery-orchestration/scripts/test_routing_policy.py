@@ -45,7 +45,7 @@ class RoutingPolicyTests(unittest.TestCase):
         expected = {
             "spark_scanner": ("gpt-5.3-codex-spark", "xhigh"),
             "spark_worker": ("gpt-5.3-codex-spark", "xhigh"),
-            "luna_scanner": ("gpt-5.6-luna", "high"),
+            "luna_scanner": ("gpt-5.6-luna", "medium"),
             "luna_worker": ("gpt-5.6-luna", "max"),
             "sol_worker": ("gpt-5.6-sol", "xhigh"),
             "sol_advisor": ("gpt-5.6-sol", "max"),
@@ -143,7 +143,7 @@ class RoutingPolicyTests(unittest.TestCase):
         for row in (
             "| spark scanner | xhigh |",
             "| spark worker | xhigh |",
-            "| luna scanner | high |",
+            "| luna scanner | medium |",
             "| luna worker | max |",
             "| sol worker | xhigh |",
             "| sol advisor | max |",

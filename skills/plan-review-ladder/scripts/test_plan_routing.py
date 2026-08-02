@@ -23,7 +23,7 @@ class PlanRoutingTests(unittest.TestCase):
             "sol medium root",
             "`spark_scanner`, xhigh",
             "`spark_worker`, xhigh",
-            "`luna_scanner`, high",
+            "`luna_scanner`, medium",
             "`luna_worker`, max",
             "`sol_worker`, xhigh",
             "`sol_advisor`, max",
