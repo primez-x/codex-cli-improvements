@@ -338,6 +338,23 @@ def managed_hook_contracts(source: Path) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _remove_gate_handlers(entry: Any) -> Any | None:
+    """Remove only managed handlers, preserving unrelated handlers in a shared group."""
+    if not isinstance(entry, dict):
+        return entry
+    handlers = entry.get("hooks")
+    if not isinstance(handlers, list):
+        return None if _contains_gate(entry) else entry
+    remaining = [handler for handler in handlers if not _contains_gate(handler)]
+    if len(remaining) == len(handlers):
+        return entry
+    if not remaining:
+        return None
+    preserved = json.loads(json.dumps(entry))
+    preserved["hooks"] = remaining
+    return preserved
+
+
 def hooks_text(existing: bytes, source: Path) -> bytes:
     try:
         value = json.loads(existing.decode("utf-8")) if existing else {"hooks": {}}
@@ -351,7 +368,8 @@ def hooks_text(existing: bytes, source: Path) -> bytes:
         current = target.get(event, [])
         if not isinstance(current, list):
             die(f"unsupported destination hook event format: {event}")
-        target[event] = [entry for entry in current if not _contains_gate(entry)] + [contract]
+        preserved = [_remove_gate_handlers(entry) for entry in current]
+        target[event] = [entry for entry in preserved if entry is not None] + [contract]
     newline = "\r\n" if b"\r\n" in existing else "\n"
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").replace("\n", newline).encode("utf-8")
 

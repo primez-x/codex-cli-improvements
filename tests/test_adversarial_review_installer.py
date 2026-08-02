@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -54,6 +55,39 @@ class InstallerTests(unittest.TestCase):
         }
         (home / "hooks.json").write_text(json.dumps(hooks, indent=2), encoding="utf-8")
         (home / "AGENTS.md").write_bytes(b"# local\r\nkeep this\r\n")
+        return home
+
+    def make_current_main_home(self, root: Path) -> Path:
+        """Model the current six-profile installation before adding the gate."""
+        home = root / "current-main-home"
+        (home / "agents").mkdir(parents=True)
+        for name in (
+            "spark_scanner",
+            "spark_worker",
+            "luna_scanner",
+            "luna_worker",
+            "sol_worker",
+            "sol_advisor",
+        ):
+            shutil.copy2(ROOT / "agents" / f"{name}.toml", home / "agents" / f"{name}.toml")
+
+        text = (ROOT / "config.toml").read_text(encoding="utf-8")
+        prefix, segments = installer_module._table_segments(text)
+        kept = [
+            segment.rstrip("\r\n")
+            for header, segment in segments
+            if header != "[agents.sol_reviewer]"
+            and not (
+                header == "[[skills.config]]"
+                and "./skills/adversarial-code-review/SKILL.md" in segment
+            )
+        ]
+        (home / "config.toml").write_text(
+            "\n\n".join([prefix.rstrip("\r\n"), *kept]).rstrip() + "\n",
+            encoding="utf-8",
+        )
+        shutil.copy2(ROOT / "hooks.json", home / "hooks.json")
+        (home / "AGENTS.md").write_text("# existing global agreements\n", encoding="utf-8")
         return home
 
     def install(self, home: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -271,6 +305,47 @@ class InstallerTests(unittest.TestCase):
             for name, data in original.items():
                 self.assertEqual((home / name).read_bytes(), data)
 
+    def test_install_preserves_current_main_routing_and_adjacent_hooks(self) -> None:
+        """The gate must add one identity without rewriting the six-profile router."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_current_main_home(Path(temporary))
+            before = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+            hooks_before = (home / "hooks.json").read_text(encoding="utf-8")
+
+            result = self.install(home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            after = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+
+            for key in (
+                "max_depth",
+                "max_concurrent_threads_per_session",
+                "default_subagent_model",
+                "default_subagent_reasoning_effort",
+            ):
+                self.assertEqual(after["agents"][key], before["agents"][key])
+            for name in (
+                "spark_scanner",
+                "spark_worker",
+                "luna_scanner",
+                "luna_worker",
+                "sol_worker",
+                "sol_advisor",
+            ):
+                self.assertEqual(after["agents"][name], before["agents"][name])
+            self.assertEqual(after["agents"]["luna_scanner"]["config_file"], "./agents/luna_scanner.toml")
+            with (home / "agents" / "luna_scanner.toml").open("rb") as stream:
+                self.assertEqual(tomllib.load(stream)["model_reasoning_effort"], "medium")
+            self.assertIn("sol_reviewer", after["agents"])
+
+            hooks_after = (home / "hooks.json").read_text(encoding="utf-8")
+            for marker in ("plan_gap_goal_hook.py", "instruction_learning_hook.py"):
+                self.assertIn(marker, hooks_before)
+                self.assertIn(marker, hooks_after)
+
+            again = self.install(home)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            self.assertTrue(json.loads(again.stdout)["idempotent"])
+
     def test_payload_is_exact_production_allowlist_with_one_canonical_packet_helper(self) -> None:
         """Copying tests or a second packet helper must fail this test."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -390,7 +465,7 @@ class InstallerTests(unittest.TestCase):
             ),
             "managed-block": lambda home: (home / "AGENTS.md").write_text(
                 (home / "AGENTS.md").read_text(encoding="utf-8").replace(
-                    "For a material delivery", "For some material deliveries"
+                    "`ReviewReceiptV1`", "`ReviewReceiptV0`"
                 ), encoding="utf-8"
             ),
         }

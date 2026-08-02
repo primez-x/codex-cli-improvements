@@ -98,8 +98,7 @@ These are personal defaults across Codex projects. Repository and nested
   gate-only `sol_reviewer`, accepts its strict `ReviewOutputV1`, and creates the
   local `ReviewReceiptV1`. Do not claim completion until that exact receipt and
   all required finding dispositions are recorded. Accepted findings require a
-  new generation,
-  refreeze, and rereview; a persisted blocker exits only as
+  new generation, refreeze, and rereview; a persisted blocker exits only as
   `[adversarial-review-blocked] Incomplete: ...`. This post-verification gate is
   distinct from the optional risk-triggered `sol_advisor` checkpoint and never
   adds a user approval step.
