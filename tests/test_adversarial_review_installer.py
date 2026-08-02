@@ -322,7 +322,6 @@ class InstallerTests(unittest.TestCase):
             before = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
             hooks_before = (home / "hooks.json").read_text(encoding="utf-8")
             routing_test = home / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py"
-            routing_test_before = routing_test.read_bytes()
 
             result = self.install(home)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -348,7 +347,10 @@ class InstallerTests(unittest.TestCase):
             with (home / "agents" / "luna_scanner.toml").open("rb") as stream:
                 self.assertEqual(tomllib.load(stream)["model_reasoning_effort"], "medium")
             self.assertIn("sol_reviewer", after["agents"])
-            self.assertEqual(routing_test.read_bytes(), routing_test_before)
+            self.assertEqual(
+                routing_test.read_bytes(),
+                (ROOT / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py").read_bytes(),
+            )
 
             hooks_after = (home / "hooks.json").read_text(encoding="utf-8")
             for marker in ("plan_gap_goal_hook.py", "instruction_learning_hook.py"):
@@ -381,7 +383,10 @@ class InstallerTests(unittest.TestCase):
             }
             expected_managed = {path for path in expected if path.startswith("skills/") and "plan-review-ladder" not in path}
             self.assertEqual(actual, expected_managed)
-            self.assertFalse(any(Path(path).name.startswith("test_") for path in expected))
+            self.assertEqual(
+                [path for path in expected if Path(path).name.startswith("test_")],
+                ["skills/delivery-orchestration/scripts/test_routing_policy.py"],
+            )
             self.assertEqual(
                 [path for path in expected if path.endswith("packet_integrity.py")],
                 ["skills/plan-review-ladder/scripts/packet_integrity.py"],
