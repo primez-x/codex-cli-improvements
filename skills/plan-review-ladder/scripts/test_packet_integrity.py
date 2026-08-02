@@ -10,10 +10,16 @@ from packet_integrity import (
     canonical_bytes,
     compute_packet_sha256,
     verify_packet_envelope,
+    compute_raw_sha256,
 )
 
 
 class PacketIntegrityTests(unittest.TestCase):
+    def test_compute_raw_sha256_hashes_exact_bytes(self) -> None:
+        self.assertEqual(
+            compute_raw_sha256(b"\x00review\xff"),
+            "9747cddf1054f045ffe4018535821a320986f45d596249eefc49eaca327d0ff3",
+        )
     def setUp(self) -> None:
         self.payload = {
             "packet_id": "packet-001",

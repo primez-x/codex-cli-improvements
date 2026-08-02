@@ -1,0 +1,780 @@
+{
+  "schema_version": 1,
+  "results_kind": "curated_evaluator_self_test",
+  "corpus_id": "adversarial-review-regression-v1",
+  "corpus_sha256": "3a41a172f02b8f6430d8d0e8e2c594bae30b492ac58b3605b97589c6a70d58a2",
+  "replay_id": "curated-evaluator-self-test-v1",
+  "cases": [
+    {
+      "id": "windhawk-4974-reviewed-5d853c8",
+      "input_sha256": "bd8ac353db3cd184555791dd6f1cec40f22c7451713e34af6a065cb6e4e5d436",
+      "output": {
+        "schema_version": 1,
+        "attempt_id": "windhawk-4974-reviewed-5d853c8-baseline-v1",
+        "packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bundle_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "snapshot_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verdict": "fail",
+        "coverage": [
+          "artifact_identity: reviewed - pinned commit and review comment",
+          "lifecycle_cleanup: reviewed - unload timer and hook teardown paths",
+          "concurrency_ownership: reviewed - cross-thread state and worker shutdown",
+          "input_command_boundaries: not_applicable - no command construction in scoped findings",
+          "memory_resource_safety: reviewed - callback lifetime and unload ownership",
+          "performance_hot_paths: reviewed - policy evaluation during window movement",
+          "repository_contracts: reviewed - existing-mod overlap and attribution",
+          "indirect_consumers: reviewed - Explorer unload and callback consumers",
+          "overlap_attribution: reviewed - existing implementation comparison",
+          "author_verification: reviewed - runtime and screenshot evidence gaps"
+        ],
+        "residual_risks": [],
+        "findings": [
+          {
+            "id": "CURATED-windhawk-4974-reviewed-5d853c8-1",
+            "severity": "medium",
+            "claim": "The README has no screenshot or GIF for the visible dock behavior.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/primez-x/windhawk-mods",
+                "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
+                "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "WindhawkModReadme"
+                }
+              }
+            ],
+            "correction": "Add a screenshot or GIF to the README that demonstrates dock click-through.",
+            "verification": "Render the README preview and confirm the screenshot or GIF loads."
+          },
+          {
+            "id": "CURATED-windhawk-4974-reviewed-5d853c8-2",
+            "severity": "high",
+            "claim": "g_regionMutationDepth is thread_local but is read on the worker thread, so that copy stays zero and the guard never fires.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/primez-x/windhawk-mods",
+                "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
+                "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "g_regionMutationDepth"
+                }
+              }
+            ],
+            "correction": "Replace the thread_local depth with a process-wide atomic counter shared by the callback threads.",
+            "verification": "Trigger a region mutation while the worker callback runs and confirm self-generated events are ignored."
+          },
+          {
+            "id": "CURATED-windhawk-4974-reviewed-5d853c8-3",
+            "severity": "high",
+            "claim": "DockExitHideTimerProc can remain as a queued TIMERPROC after unload and call unmapped memory.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/primez-x/windhawk-mods",
+                "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
+                "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "DockExitHideTimerProc"
+                }
+              }
+            ],
+            "correction": "Use a null TIMERPROC and handle WM_TIMER inside the taskbar subclass instead of a direct callback.",
+            "verification": "Queue WM_TIMER immediately before unload and confirm the stale timer is harmless with no callback into freed code."
+          },
+          {
+            "id": "CURATED-windhawk-4974-reviewed-5d853c8-4",
+            "severity": "high",
+            "claim": "RemoveAllTaskbarSubclasses retries in an unbounded loop, so a hung UI thread can hang unload indefinitely.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/primez-x/windhawk-mods",
+                "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
+                "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "RemoveAllTaskbarSubclasses"
+                }
+              }
+            ],
+            "correction": "Bound subclass removal with a deadline and continue to remove the subclass even if region cleanup fails.",
+            "verification": "Simulate a hung taskbar UI thread during disable and confirm unload completes by the deadline."
+          },
+          {
+            "id": "CURATED-windhawk-4974-reviewed-5d853c8-5",
+            "severity": "medium",
+            "claim": "The auto-hide implementation substantially overlaps existing mods and duplicates derived behavior without attribution.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/primez-x/windhawk-mods",
+                "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
+                "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "QueryViaVtable"
+                }
+              }
+            ],
+            "correction": "Reduce the scope to click-through only, extend the existing mods for deltas, and credit derived code.",
+            "verification": "Compare the retained features with the existing mod catalog and verify README attribution and license compatibility."
+          },
+          {
+            "id": "CURATED-windhawk-4974-reviewed-5d853c8-6",
+            "severity": "medium",
+            "claim": "GeometryWinEventProc handles every location-change event by running EnumWindows and DWM queries back-to-back.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/primez-x/windhawk-mods",
+                "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
+                "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "GeometryWinEventProc"
+                }
+              }
+            ],
+            "correction": "Coalesce policy refreshes behind a one-shot timer or enforce a minimum evaluation interval.",
+            "verification": "Drag and resize a window while measuring policy evaluation frequency and confirm the interval is bounded."
+          },
+          {
+            "id": "CURATED-windhawk-4974-reviewed-5d853c8-7",
+            "severity": "medium",
+            "claim": "InstallSubclassHookProc is a hand-rolled reimplementation of SetWindowSubclassFromAnyThread.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/primez-x/windhawk-mods",
+                "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
+                "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "InstallSubclassHookProc"
+                }
+              }
+            ],
+            "correction": "Use WindhawkUtils SetWindowSubclassFromAnyThread and RemoveWindowSubclassFromAnyThread helpers.",
+            "verification": "Install and remove the subclass cross-thread during unload and confirm no marker or retry loop remains."
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4934-reviewed-3650aa2",
+      "input_sha256": "494f503ce77c5e1f41c0fe590a1dbf05f153bdd09f277a24f342fd2e6d1ae093",
+      "output": {
+        "schema_version": 1,
+        "attempt_id": "windhawk-4934-reviewed-3650aa2-baseline-v1",
+        "packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bundle_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "snapshot_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verdict": "fail",
+        "coverage": [
+          "artifact_identity: reviewed - pinned commit and review comment",
+          "lifecycle_cleanup: reviewed - delayed module and launch failure paths",
+          "concurrency_ownership: not_applicable - scoped finding is a synchronous launch boundary",
+          "input_command_boundaries: reviewed - caller-controlled size and redirect input",
+          "memory_resource_safety: reviewed - fixed stack structure copy bounds",
+          "performance_hot_paths: not_applicable - no hot-path performance claim in ground truth",
+          "repository_contracts: reviewed - existing router overlap",
+          "indirect_consumers: reviewed - ShellExecute caller output contract",
+          "overlap_attribution: reviewed - pivot router comparison",
+          "author_verification: reviewed - invalid path and lost-link cases"
+        ],
+        "residual_risks": [],
+        "findings": [
+          {
+            "id": "CURATED-windhawk-4934-reviewed-3650aa2-1",
+            "severity": "high",
+            "claim": "CreateProcessInternalW_hook redirects when ExtractUrl is empty, so the clicked link is lost and a blank browser opens.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
+                "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
+                "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "CreateProcessInternalW_hook"
+                }
+              }
+            ],
+            "correction": "Fall back to the original call whenever URL extraction fails or returns an empty URL.",
+            "verification": "Exercise malformed and missing URL forms and confirm the original destination is preserved and opens."
+          },
+          {
+            "id": "CURATED-windhawk-4934-reviewed-3650aa2-2",
+            "severity": "high",
+            "claim": "ShellExecuteExW_hook copies fMask with SEE_MASK_IDLIST or SEE_MASK_CLASSNAME, which can make the substituted lpFile be ignored.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
+                "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
+                "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "ShellExecuteExW_hook"
+                }
+              }
+            ],
+            "correction": "Clear SEE_MASK_IDLIST and SEE_MASK_CLASSNAME and null lpIDList and lpClass before substitution.",
+            "verification": "Run IDLIST and CLASSNAME activation cases and confirm the replacement browser receives the exact URL."
+          },
+          {
+            "id": "CURATED-windhawk-4934-reviewed-3650aa2-3",
+            "severity": "high",
+            "claim": "memcpy uses caller-controlled cbSize to write a fixed stack struct, allowing a stack overflow.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
+                "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
+                "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "memcpy"
+                }
+              }
+            ],
+            "correction": "Require cbSize to equal sizeof the structure and use a bounded struct assignment copy.",
+            "verification": "Pass an oversized cbSize and confirm the call passes through with no overflow or stack overwrite."
+          },
+          {
+            "id": "CURATED-windhawk-4934-reviewed-3650aa2-4",
+            "severity": "medium",
+            "claim": "ExtractUrl and fixed-browser routing overlap pivotlink-browser-router as a near-neighbour Edge-protocol feature.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
+                "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
+                "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "ExtractUrl"
+                }
+              }
+            ],
+            "correction": "Extend the existing pivotlink-browser-router mod or document and attribute the exact behavioral delta.",
+            "verification": "Compare routing options and behavior with the catalog mod and verify the documented relationship."
+          },
+          {
+            "id": "CURATED-windhawk-4934-reviewed-3650aa2-5",
+            "severity": "medium",
+            "claim": "Wh_ModInit assumes shell32 is loaded, so the ShellExecute hook can be skipped at Outlook startup.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
+                "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
+                "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "Wh_ModInit"
+                }
+              }
+            ],
+            "correction": "Load shell32 explicitly or install the hook through a late-load LoadLibraryExW path.",
+            "verification": "Start Outlook before shell32 loads and confirm the ShellExecute hook is installed and redirect works."
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4935-reviewed-0c6c604",
+      "input_sha256": "596f592be26abfe08268c7ad7552a97f38f629079d273784ce8191884f8822e3",
+      "output": {
+        "schema_version": 1,
+        "attempt_id": "windhawk-4935-reviewed-0c6c604-baseline-v1",
+        "packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bundle_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "snapshot_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verdict": "fail",
+        "coverage": [
+          "artifact_identity: reviewed - pinned commit and review comment",
+          "lifecycle_cleanup: reviewed - subclass timer and unload behavior",
+          "concurrency_ownership: reviewed - process-global state across UI threads",
+          "input_command_boundaries: not_applicable - no external command boundary in scoped findings",
+          "memory_resource_safety: reviewed - timer and graphics resource ownership",
+          "performance_hot_paths: reviewed - per-item fade fan-out",
+          "repository_contracts: reviewed - repository-wide process scope",
+          "indirect_consumers: reviewed - all UI thread and control consumers",
+          "overlap_attribution: not_applicable - no overlap claim in this pinned review",
+          "author_verification: reviewed - unload and bulk-selection scenarios"
+        ],
+        "residual_risks": [],
+        "findings": [
+          {
+            "id": "CURATED-windhawk-4935-reviewed-0c6c604-1",
+            "severity": "high",
+            "claim": "g_lvSelectFadeAnims is process-global and mutated by multiple UI threads, racing unordered_map operations and risking heap corruption.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/crazyboyybs/windhawk-mods",
+                "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
+                "path": "mods/win32-ui-modernizer.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "g_lvSelectFadeAnims"
+                }
+              }
+            ],
+            "correction": "Guard the shared containers with a mutex or isolate the animation state as thread_local.",
+            "verification": "Drive concurrent selection changes in two windows and confirm no data race or heap corruption occurs."
+          },
+          {
+            "id": "CURATED-windhawk-4935-reviewed-0c6c604-2",
+            "severity": "high",
+            "claim": "HdrDarkPaintSubclassProc owns headers in every process and drops alignment, sort indicators, and owner-draw behavior for third-party consumers.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/crazyboyybs/windhawk-mods",
+                "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
+                "path": "mods/win32-ui-modernizer.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "HdrDarkPaintSubclassProc"
+                }
+              }
+            ],
+            "correction": "Honor header format, sort, and owner-draw contracts or narrow installation to specific hosts.",
+            "verification": "Render third-party right-aligned, sorted, and owner-drawn headers and confirm their behavior is preserved."
+          },
+          {
+            "id": "CURATED-windhawk-4935-reviewed-0c6c604-3",
+            "severity": "high",
+            "claim": "ListSelectFadeCleanup calls raw RemoveWindowSubclass cross-thread during unload and can leave a dangling callback into unmapped code.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/crazyboyybs/windhawk-mods",
+                "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
+                "path": "mods/win32-ui-modernizer.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "ListSelectFadeCleanup"
+                }
+              }
+            ],
+            "correction": "Install and remove the subclass with SetWindowSubclassFromAnyThread and RemoveWindowSubclassFromAnyThread.",
+            "verification": "Unload from a different UI thread, send the next message, and confirm no callback reaches freed code."
+          },
+          {
+            "id": "CURATED-windhawk-4935-reviewed-0c6c604-4",
+            "severity": "high",
+            "claim": "g_progressMarqueeMaskLayer is a global ComPtr shared across render targets and UI threads, causing races, leaks, or a shutdown double-release hang.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/crazyboyybs/windhawk-mods",
+                "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
+                "path": "mods/win32-ui-modernizer.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "g_progressMarqueeMaskLayer"
+                }
+              }
+            ],
+            "correction": "Make the layer thread_local, reset it on unload, and use no_destroy for shutdown safety.",
+            "verification": "Paint from two dialogs, then unload and shut down while confirming no leak, double-release, or hang."
+          },
+          {
+            "id": "CURATED-windhawk-4935-reviewed-0c6c604-5",
+            "severity": "medium",
+            "claim": "ListSelectFadeResyncWindow starts fades for a select-all of thousands of rows, repeating ancestor walks and map inserts.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/crazyboyybs/windhawk-mods",
+                "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
+                "path": "mods/win32-ui-modernizer.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "ListSelectFadeResyncWindow"
+                }
+              }
+            ],
+            "correction": "Count selection first, skip fades above a threshold, and hoist the invariant ancestor decision.",
+            "verification": "Use Ctrl+A on thousands of rows and measure latency and retained animation entries."
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4921-reviewed-f66c7c2",
+      "input_sha256": "3b5cc1407e494beea82f79173012ab42734ec3408fd2dd2c77cc16b9dde45393",
+      "output": {
+        "schema_version": 1,
+        "attempt_id": "windhawk-4921-reviewed-f66c7c2-baseline-v1",
+        "packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bundle_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "snapshot_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verdict": "fail",
+        "coverage": [
+          "artifact_identity: reviewed - pinned successor review revision",
+          "lifecycle_cleanup: reviewed - window destroy and tray icon teardown",
+          "concurrency_ownership: reviewed - reentrant window procedure iteration",
+          "input_command_boundaries: reviewed - bare executable resolution",
+          "memory_resource_safety: reviewed - live container iteration and handle lifetime",
+          "performance_hot_paths: reviewed - repeated icon and exclusion work",
+          "repository_contracts: reviewed - architecture and comparable tool mods",
+          "indirect_consumers: reviewed - shell icon registration consumers",
+          "overlap_attribution: reviewed - comparable tray implementations",
+          "author_verification: reviewed - restart, fallback, and mixed-DPI checks"
+        ],
+        "residual_risks": [],
+        "findings": [
+          {
+            "id": "CURATED-windhawk-4921-reviewed-f66c7c2-1",
+            "severity": "medium",
+            "claim": "The WM_DPICHANGED recovery path may be dead because process DPI awareness and message delivery are not verified.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/umnik1/windhawk-mods",
+                "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
+                "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "WM_DPICHANGED"
+                }
+              }
+            ],
+            "correction": "Confirm the executable manifest DPI awareness and retain TaskbarCreated as a reliable fallback.",
+            "verification": "Test high-DPI startup and Explorer restart and verify the icon size is correctly scaled."
+          },
+          {
+            "id": "CURATED-windhawk-4921-reviewed-f66c7c2-2",
+            "severity": "high",
+            "claim": "WindowProc can be re-entered on TaskbarCreated while g_trayIcons is being iterated, invalidating iterators and causing use-after-free.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/umnik1/windhawk-mods",
+                "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
+                "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "WindowProc"
+                }
+              }
+            ],
+            "correction": "Defer TaskbarCreated refresh work and guard RefreshDevices so it is non-reentrant.",
+            "verification": "Deliver TaskbarCreated while Shell_NotifyIconW refresh is in flight and confirm no iterator invalidation or use-after-free."
+          },
+          {
+            "id": "CURATED-windhawk-4921-reviewed-f66c7c2-3",
+            "severity": "high",
+            "claim": "ShellExecuteW launches a bare file name through a search path that begins with the current directory.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/umnik1/windhawk-mods",
+                "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
+                "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "ShellExecuteW"
+                }
+              }
+            ],
+            "correction": "Use an absolute SystemRoot System32 path and the default verb for the applet.",
+            "verification": "Set a hostile current directory and confirm the System32 applet and SndVol targets still launch."
+          },
+          {
+            "id": "CURATED-windhawk-4921-reviewed-f66c7c2-4",
+            "severity": "high",
+            "claim": "GetTrayIconSize falls back before the taskbar exists and the icon size is never recomputed when the taskbar appears.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/umnik1/windhawk-mods",
+                "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
+                "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "GetTrayIconSize"
+                }
+              }
+            ],
+            "correction": "Recompute the icon size from TaskbarCreated after the taskbar window becomes available.",
+            "verification": "Start at high-DPI logon before the taskbar appears and confirm the later icon size is correct."
+          },
+          {
+            "id": "CURATED-windhawk-4921-reviewed-f66c7c2-5",
+            "severity": "medium",
+            "claim": "IsExcluded lowercases every pattern for every device on every refresh.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/umnik1/windhawk-mods",
+                "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
+                "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "IsExcluded"
+                }
+              }
+            ],
+            "correction": "Precompute and cache lowercase patterns once in LoadSettings.",
+            "verification": "Refresh with many devices and patterns while measuring allocations and latency."
+          },
+          {
+            "id": "CURATED-windhawk-4921-reviewed-f66c7c2-6",
+            "severity": "medium",
+            "claim": "The x86-64 architecture restriction excludes 32-bit Windows although comparable tool mods omit it.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/umnik1/windhawk-mods",
+                "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
+                "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "architecture"
+                }
+              }
+            ],
+            "correction": "Remove the unnecessary architecture metadata restriction from the tool mod.",
+            "verification": "Build and load the tool mod on 32-bit, amd64, and arm64 targets."
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4976-reviewed-ff07922",
+      "input_sha256": "c7c367e997e319a097e3920084bf68590c6741aca036127c6a998693108835e0",
+      "output": {
+        "schema_version": 1,
+        "attempt_id": "windhawk-4976-reviewed-ff07922-baseline-v1",
+        "packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bundle_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "snapshot_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verdict": "fail",
+        "coverage": [
+          "artifact_identity: reviewed - pinned commit and review comment",
+          "lifecycle_cleanup: reviewed - graphics startup and paint cleanup",
+          "concurrency_ownership: not_applicable - no shared-thread claim in scoped review",
+          "input_command_boundaries: not_applicable - no command or untrusted input boundary",
+          "memory_resource_safety: reviewed - GDI object and device-context ownership",
+          "performance_hot_paths: reviewed - setting lookup inside paint hook",
+          "repository_contracts: reviewed - Windhawk paint-hook conventions",
+          "indirect_consumers: reviewed - Explorer paint consumers",
+          "overlap_attribution: not_applicable - no overlap claim in pinned review",
+          "author_verification: reviewed - low-width and zero-range paint cases"
+        ],
+        "residual_risks": [],
+        "findings": [
+          {
+            "id": "CURATED-windhawk-4976-reviewed-ff07922-1",
+            "severity": "high",
+            "claim": "GdiplusStartup has an unchecked result, so failed initialization can leave rendering as a silent no-op.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/Valer100/windhawk-mods",
+                "commit": "ff07922ef586237cec12e348cb4b3b721a6ba81e",
+                "path": "mods/disk-usage-bar-customizer.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "GdiplusStartup"
+                }
+              }
+            ],
+            "correction": "Check the startup status and fail initialization or use stock rendering as a fallback.",
+            "verification": "Simulate GDI+ startup failure and confirm initialization fails safely or stock rendering remains."
+          },
+          {
+            "id": "CURATED-windhawk-4976-reviewed-ff07922-2",
+            "severity": "high",
+            "claim": "DrawPercentageLabel deletes a font while it is still selected, leaking the GDI handle and leaving caller DC state changed.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/Valer100/windhawk-mods",
+                "commit": "ff07922ef586237cec12e348cb4b3b721a6ba81e",
+                "path": "mods/disk-usage-bar-customizer.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "DrawPercentageLabel"
+                }
+              }
+            ],
+            "correction": "Deselect and delete the font only after restoring the original font, color, and background mode.",
+            "verification": "Repaint repeatedly while tracking GDI handles and confirm the caller DC state is restored and handle count stays stable."
+          },
+          {
+            "id": "CURATED-windhawk-4976-reviewed-ff07922-3",
+            "severity": "medium",
+            "claim": "Wh_GetStringSetting is called inside the paint hook once per drive per repaint.",
+            "evidence": [
+              {
+                "kind": "git_commit",
+                "repository": "https://github.com/Valer100/windhawk-mods",
+                "commit": "ff07922ef586237cec12e348cb4b3b721a6ba81e",
+                "path": "mods/disk-usage-bar-customizer.wh.cpp",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "Wh_GetStringSetting"
+                }
+              }
+            ],
+            "correction": "Cache the font setting in LoadSettings and reuse it during paint.",
+            "verification": "Repaint many drives while counting setting reads and allocations and confirm they remain bounded."
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4935-corrected-2875fba",
+      "input_sha256": "2466b8df5b10fc282ed1dec1899239d5f6e81dc52316688cc439dfe054fda68e",
+      "output": {
+        "schema_version": 1,
+        "attempt_id": "windhawk-4935-corrected-2875fba-baseline-v1",
+        "packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bundle_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "snapshot_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verdict": "pass",
+        "coverage": [
+          "artifact_identity: reviewed - corrected successor commit and comment",
+          "lifecycle_cleanup: reviewed - successor teardown paths",
+          "concurrency_ownership: reviewed - successor per-thread ownership",
+          "input_command_boundaries: not_applicable - no scoped command boundary",
+          "memory_resource_safety: reviewed - successor timer and resource ownership",
+          "performance_hot_paths: reviewed - successor bounded animation work",
+          "repository_contracts: reviewed - repository scope retained",
+          "indirect_consumers: reviewed - UI control consumers",
+          "overlap_attribution: not_applicable - no overlap claim",
+          "author_verification: reviewed - corrected successor review was clean"
+        ],
+        "residual_risks": [],
+        "findings": []
+      }
+    },
+    {
+      "id": "python-shell-boundary-v1",
+      "input_sha256": "d5187b330d960e08147b140bf1fe6769dd23442bfc91f9779e201fb92fabc746",
+      "output": {
+        "schema_version": 1,
+        "attempt_id": "python-shell-boundary-v1-baseline-v1",
+        "packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bundle_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "snapshot_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verdict": "fail",
+        "coverage": [
+          "artifact_identity: reviewed - local fixture version and raw digest",
+          "lifecycle_cleanup: not_applicable - one-shot subprocess fixture",
+          "concurrency_ownership: not_applicable - no shared state in fixture",
+          "input_command_boundaries: reviewed - user value crosses a shell boundary",
+          "memory_resource_safety: not_applicable - managed Python memory only",
+          "performance_hot_paths: not_applicable - one-shot fixture",
+          "repository_contracts: reviewed - subprocess API contract",
+          "indirect_consumers: reviewed - operating-system shell consumer",
+          "overlap_attribution: not_applicable - standalone fixture",
+          "author_verification: reviewed - hostile metacharacter test required"
+        ],
+        "residual_risks": [],
+        "findings": [
+          {
+            "id": "CURATED-python-shell-boundary-v1-1",
+            "severity": "high",
+            "claim": "run_user_command passes user_value to shell=True, allowing command injection through shell metacharacters.",
+            "evidence": [
+              {
+                "kind": "bundle",
+                "uri": "bundle://ad16b1c8183f93b28ca3a563153a2cda8afb8270cc20abf0f152378f7dea2d9d/evaluation-inputs/python-shell-boundary.py.txt",
+                "sha256": "ad16b1c8183f93b28ca3a563153a2cda8afb8270cc20abf0f152378f7dea2d9d",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "run_user_command"
+                }
+              }
+            ],
+            "correction": "Validate the value and pass an argument vector with shell=False instead of a command shell.",
+            "verification": "Submit hostile metacharacters and confirm they remain inert and no extra command is executed."
+          }
+        ]
+      }
+    },
+    {
+      "id": "typescript-concurrency-boundary-v1",
+      "input_sha256": "893ae98749e1014f2b2eb376de62d431bcf52401c4dae3f5d29590cec7db1957",
+      "output": {
+        "schema_version": 1,
+        "attempt_id": "typescript-concurrency-boundary-v1-baseline-v1",
+        "packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bundle_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "snapshot_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verdict": "fail",
+        "coverage": [
+          "artifact_identity: reviewed - local fixture version and raw digest",
+          "lifecycle_cleanup: not_applicable - no persistent resource",
+          "concurrency_ownership: reviewed - shared counter spans an await boundary",
+          "input_command_boundaries: not_applicable - no external input",
+          "memory_resource_safety: reviewed - shared state lifetime is module scoped",
+          "performance_hot_paths: not_applicable - single reservation path",
+          "repository_contracts: reviewed - promise concurrency semantics",
+          "indirect_consumers: reviewed - concurrent callers consume duplicate reservations",
+          "overlap_attribution: not_applicable - standalone fixture",
+          "author_verification: reviewed - concurrent-call regression required"
+        ],
+        "residual_risks": [],
+        "findings": [
+          {
+            "id": "CURATED-typescript-concurrency-boundary-v1-1",
+            "severity": "high",
+            "claim": "Concurrent calls to reserve read the same current value across the await and return duplicate reservations from a lost update.",
+            "evidence": [
+              {
+                "kind": "bundle",
+                "uri": "bundle://68ff05f06830e9cbcff4e6ffe0b992252940d45d5f7fb5a692a97dde1588537b/evaluation-inputs/typescript-concurrency-boundary.ts.txt",
+                "sha256": "68ff05f06830e9cbcff4e6ffe0b992252940d45d5f7fb5a692a97dde1588537b",
+                "selector": {
+                  "kind": "symbol",
+                  "value": "reserve"
+                }
+              }
+            ],
+            "correction": "Serialize the read-increment-write sequence with a mutex across the await boundary.",
+            "verification": "Run parallel reservations and confirm every result is unique and the sequence is monotonic."
+          }
+        ]
+      }
+    },
+    {
+      "id": "python-shell-boundary-corrected-v1",
+      "input_sha256": "1ee8e3672d83b2bb5ef496532c3b3bc7a2e66f75479636849569d232caa9b88b",
+      "output": {
+        "schema_version": 1,
+        "attempt_id": "python-shell-boundary-corrected-v1-baseline-v1",
+        "packet_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bundle_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "snapshot_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verdict": "pass",
+        "coverage": [
+          "artifact_identity: reviewed - corrected fixture version and raw digest",
+          "lifecycle_cleanup: not_applicable - one-shot subprocess fixture",
+          "concurrency_ownership: not_applicable - no shared state in fixture",
+          "input_command_boundaries: reviewed - argument vector avoids shell interpretation",
+          "memory_resource_safety: not_applicable - managed Python memory only",
+          "performance_hot_paths: not_applicable - one-shot fixture",
+          "repository_contracts: reviewed - subprocess argument-vector contract",
+          "indirect_consumers: reviewed - operating system receives separated arguments",
+          "overlap_attribution: not_applicable - standalone corrected fixture",
+          "author_verification: reviewed - hostile metacharacter control required"
+        ],
+        "residual_risks": [],
+        "findings": []
+      }
+    }
+  ]
+}

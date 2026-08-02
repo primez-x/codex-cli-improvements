@@ -181,6 +181,13 @@ def compute_packet_sha256(packet_payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_bytes(packet_payload)).hexdigest()
 
 
+def compute_raw_sha256(value: bytes) -> str:
+    """Return the lowercase SHA-256 of exact, uncanonicalized byte content."""
+    if not isinstance(value, bytes):
+        raise ValueError("raw SHA-256 input must be bytes")
+    return hashlib.sha256(value).hexdigest()
+
+
 def _validate_payload(packet_payload: Mapping[str, Any], *, apply_defaults: bool) -> dict[str, Any]:
     if not isinstance(packet_payload, Mapping):
         raise ValueError("packet_payload must be a mapping")

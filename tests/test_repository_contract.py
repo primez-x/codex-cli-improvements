@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import re
 import tomllib
@@ -28,6 +29,7 @@ class RepositoryContractTests(unittest.TestCase):
             "terra_coordinator": ("gpt-5.6-terra", "medium"),
             "sol_worker": ("gpt-5.6-sol", "xhigh"),
             "sol_advisor": ("gpt-5.6-sol", "max"),
+            "sol_reviewer": ("gpt-5.6-sol", "max"),
             "sol_coordinator": ("gpt-5.6-sol", "max"),
         }
 
@@ -61,12 +63,24 @@ class RepositoryContractTests(unittest.TestCase):
                     (profile["model"], profile["model_reasoning_effort"]),
                     wanted,
                 )
+                if name == "sol_reviewer":
+                    self.assertEqual(profile["name"], "sol_reviewer")
+                    self.assertEqual(profile["sandbox_mode"], "read-only")
+                    instructions = profile["developer_instructions"].lower()
+                    for phrase in ("depth 1", "do not spawn", "do not emit a receipt", "reviewoutputv1"):
+                        self.assertIn(phrase, instructions)
+
+        advisor_bytes = (ROOT / "agents" / "sol_advisor.toml").read_bytes()
+        self.assertEqual(
+            hashlib.sha256(advisor_bytes).hexdigest(),
+            "82db5917aa0bb8fa778557c627b85b082c49d7828968ee8d9dc857d543cab835",
+        )
 
     def test_registered_skills_exist_and_use_relative_paths(self) -> None:
         skill_paths = [
             entry["path"] for entry in self.config.get("skills", {}).get("config", [])
         ]
-        self.assertEqual(len(skill_paths), 3)
+        self.assertEqual(len(skill_paths), 4)
         for configured in skill_paths:
             with self.subTest(path=configured):
                 path = Path(configured)
@@ -78,6 +92,7 @@ class RepositoryContractTests(unittest.TestCase):
         hooks = json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"]
         self.assertIn("UserPromptSubmit", hooks)
         self.assertIn("Stop", hooks)
+        self.assertEqual(set(hooks), {"UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"})
 
         serialized = json.dumps(hooks).lower()
         self.assertNotIn("c:\\\\users\\\\", serialized)
@@ -151,7 +166,7 @@ class RepositoryContractTests(unittest.TestCase):
             r"\b" + "bank" + r"\.ai\b",
             r"\b" + "one" + "drive" + r"\b",
         )
-        excluded_dirs = {".git", "__pycache__", ".pytest_cache", ".mypy_cache"}
+        excluded_dirs = {".git", ".superpowers", "__pycache__", ".pytest_cache", ".mypy_cache"}
         text_suffixes = {".json", ".md", ".py", ".toml", ".yaml", ".yml"}
 
         for path in ROOT.rglob("*"):

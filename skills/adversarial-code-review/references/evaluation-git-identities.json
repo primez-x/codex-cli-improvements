@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "authority": "github-primary-evidence-pins-v1",
+  "identities": [
+    {
+      "case_id": "windhawk-4974-reviewed-5d853c8",
+      "kind": "git_review",
+      "repository": "https://github.com/primez-x/windhawk-mods",
+      "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
+      "path": "mods/taskbar-dock-click-through.wh.cpp",
+      "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4974#issuecomment-5149979092",
+      "review_comment_sha256": "2bdcdc952be9f025f292402a6e2d0a8c83676fb913730c09dd0ca977afc1421a",
+      "source_sha256": "f0311a36a5f08dff1ed49b59c1b31102f2278882216dc248b17fd7e0b19f47c8",
+      "source_blob_sha1": "440bf028d3592c3f070bf058ee3161a5258c3076"
+    },
+    {
+      "case_id": "windhawk-4934-reviewed-3650aa2",
+      "kind": "git_review",
+      "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
+      "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
+      "path": "mods/outlook-msedge-redirect.wh.cpp",
+      "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4934#issuecomment-5133845773",
+      "review_comment_sha256": "af7e35415985b602012e1076ab90f4fbb59351182211b580e052ffde7d1fe8e0",
+      "source_sha256": "1bd90301ecc5c976f4ba7a1d536dcc4a2c4ac5c083a2ffeefce1236e6f5600d9",
+      "source_blob_sha1": "1f7a73decd6635f9e2d12fa4fc95dcfca631c60c"
+    },
+    {
+      "case_id": "windhawk-4935-reviewed-0c6c604",
+      "kind": "git_review",
+      "repository": "https://github.com/crazyboyybs/windhawk-mods",
+      "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
+      "path": "mods/win32-ui-modernizer.wh.cpp",
+      "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4935#issuecomment-5124176414",
+      "review_comment_sha256": "67ecc15c073e9df6d474e3568517d2f3b431f330912b65d96a974931a13879d0",
+      "source_sha256": "5b74274c8f601ad837fd04d8c580287760f3595deba5aa4a9db6d9f74d169cfd",
+      "source_blob_sha1": "627cde90f46d8b070bbe367ef3b1d642c61e8209"
+    },
+    {
+      "case_id": "windhawk-4921-reviewed-f66c7c2",
+      "kind": "git_review",
+      "repository": "https://github.com/umnik1/windhawk-mods",
+      "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
+      "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+      "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4921#issuecomment-5130185356",
+      "review_comment_sha256": "ca5ade0c0438e688215f72f709440b24226353999dc8a9e895b673e779fc5fbf",
+      "source_sha256": "b99e73f525cbf2ef209f2533024426e5adca9af7ba13d779270789abbdcdd603",
+      "source_blob_sha1": "72b2e78db14ec3378a604fc21f418ef72e4f1b46"
+    },
+    {
+      "case_id": "windhawk-4976-reviewed-ff07922",
+      "kind": "git_review",
+      "repository": "https://github.com/Valer100/windhawk-mods",
+      "commit": "ff07922ef586237cec12e348cb4b3b721a6ba81e",
+      "path": "mods/disk-usage-bar-customizer.wh.cpp",
+      "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4976#issuecomment-5151837923",
+      "review_comment_sha256": "1fe54d2b87298eb6101a8b2115c0346ec263276df6b09c0531d57b422ba6a95b",
+      "source_sha256": "917d440bd0c16706ee3fdfd54dd3183acc797c16be4c7ff70996ad38adf9615f",
+      "source_blob_sha1": "3cfee00a3f2d65ed35ea6dafd9f1db6f3f96f468"
+    },
+    {
+      "case_id": "windhawk-4935-corrected-2875fba",
+      "kind": "git_review",
+      "repository": "https://github.com/crazyboyybs/windhawk-mods",
+      "commit": "2875fba30b743688aeb9a73da3f134d7319bbcb9",
+      "path": "mods/win32-ui-modernizer.wh.cpp",
+      "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4935#issuecomment-5126300904",
+      "review_comment_sha256": "459aa4ea43419fee519e9b95b82f8c4b6c9db27e51bd33e4c24ea7514b82c226",
+      "source_sha256": "d456881ec04f68985e55a13b960b7e83927245ff5f714ba3fcb65f1d495af1bd",
+      "source_blob_sha1": "acce037e271f4b0cc0bb5448cfe01abc10879fe4"
+    }
+  ]
+}

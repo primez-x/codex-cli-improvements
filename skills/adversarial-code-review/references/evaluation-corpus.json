@@ -1,0 +1,1560 @@
+{
+  "schema_version": 1,
+  "corpus_id": "adversarial-review-regression-v1",
+  "lens_sha256": "0119b61300dcaace9b6d699cdc7a0892b026988516f15999534046e8bec75d7d",
+  "cases": [
+    {
+      "id": "windhawk-4974-reviewed-5d853c8",
+      "kind": "windhawk_cpp",
+      "input": {
+        "kind": "git_review",
+        "repository": "https://github.com/primez-x/windhawk-mods",
+        "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
+        "path": "mods/taskbar-dock-click-through.wh.cpp",
+        "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4974#issuecomment-5149979092",
+        "review_comment_sha256": "2bdcdc952be9f025f292402a6e2d0a8c83676fb913730c09dd0ca977afc1421a",
+        "source_sha256": "f0311a36a5f08dff1ed49b59c1b31102f2278882216dc248b17fd7e0b19f47c8",
+        "source_blob_sha1": "440bf028d3592c3f070bf058ee3161a5258c3076"
+      },
+      "ground_truth": {
+        "allow_findings": true,
+        "required_categories": [
+          "author_verification",
+          "concurrency_ownership",
+          "indirect_consumers",
+          "lifecycle_cleanup",
+          "overlap_attribution",
+          "performance_hot_paths",
+          "repository_contracts"
+        ],
+        "expectations": [
+          {
+            "category": "author_verification",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "WindhawkModReadme"
+            },
+            "claim_concepts": [
+              [
+                "screenshot",
+                "gif"
+              ],
+              [
+                "readme"
+              ],
+              [
+                "missing",
+                "absent",
+                "no"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "add",
+                "include"
+              ],
+              [
+                "screenshot",
+                "gif"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "render",
+                "preview"
+              ],
+              [
+                "screenshot",
+                "gif"
+              ]
+            ]
+          },
+          {
+            "category": "concurrency_ownership",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "g_regionMutationDepth"
+            },
+            "claim_concepts": [
+              [
+                "g_regionmutationdepth"
+              ],
+              [
+                "thread_local",
+                "thread local"
+              ],
+              [
+                "worker thread",
+                "different thread"
+              ],
+              [
+                "zero",
+                "never fires"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "atomic"
+              ],
+              [
+                "global",
+                "process-wide"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "region mutation"
+              ],
+              [
+                "worker",
+                "callback"
+              ],
+              [
+                "ignored",
+                "suppressed"
+              ]
+            ]
+          },
+          {
+            "category": "indirect_consumers",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "DockExitHideTimerProc"
+            },
+            "claim_concepts": [
+              [
+                "timerproc",
+                "timer callback"
+              ],
+              [
+                "unload",
+                "unloaded"
+              ],
+              [
+                "unmapped memory",
+                "freed code"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "wm_timer"
+              ],
+              [
+                "subclass"
+              ],
+              [
+                "null timerproc",
+                "nullptr"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "queue",
+                "queued"
+              ],
+              [
+                "wm_timer",
+                "timer"
+              ],
+              [
+                "unload"
+              ],
+              [
+                "no callback",
+                "harmless"
+              ]
+            ]
+          },
+          {
+            "category": "lifecycle_cleanup",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "RemoveAllTaskbarSubclasses"
+            },
+            "claim_concepts": [
+              [
+                "unbounded",
+                "infinite"
+              ],
+              [
+                "unload",
+                "disable"
+              ],
+              [
+                "hung",
+                "hang"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "deadline",
+                "bounded"
+              ],
+              [
+                "subclass removal",
+                "remove the subclass"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "hung taskbar",
+                "hung ui thread"
+              ],
+              [
+                "unload",
+                "disable"
+              ],
+              [
+                "deadline",
+                "completes"
+              ]
+            ]
+          },
+          {
+            "category": "overlap_attribution",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "QueryViaVtable"
+            },
+            "claim_concepts": [
+              [
+                "auto-hide"
+              ],
+              [
+                "duplicate",
+                "duplicates",
+                "overlap"
+              ],
+              [
+                "existing mods",
+                "existing mod"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "reduce the scope",
+                "click-through only"
+              ],
+              [
+                "extend",
+                "existing mod"
+              ],
+              [
+                "credit",
+                "attribution"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "compare"
+              ],
+              [
+                "catalog",
+                "existing mods"
+              ],
+              [
+                "attribution",
+                "license"
+              ]
+            ]
+          },
+          {
+            "category": "performance_hot_paths",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "GeometryWinEventProc"
+            },
+            "claim_concepts": [
+              [
+                "locationchange",
+                "location change",
+                "location-change"
+              ],
+              [
+                "enumwindows"
+              ],
+              [
+                "dwm"
+              ],
+              [
+                "every event",
+                "back-to-back"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "coalesce",
+                "rate-limit"
+              ],
+              [
+                "minimum interval",
+                "one-shot timer"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "drag",
+                "resize"
+              ],
+              [
+                "policy evaluation"
+              ],
+              [
+                "frequency",
+                "interval"
+              ]
+            ]
+          },
+          {
+            "category": "repository_contracts",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "InstallSubclassHookProc"
+            },
+            "claim_concepts": [
+              [
+                "hand-rolled",
+                "reimplementation"
+              ],
+              [
+                "setwindowsubclassfromanythread"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "windhawkutils"
+              ],
+              [
+                "setwindowsubclassfromanythread"
+              ],
+              [
+                "removewindowsubclassfromanythread"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "cross-thread"
+              ],
+              [
+                "unload"
+              ],
+              [
+                "marker",
+                "retry"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4934-reviewed-3650aa2",
+      "kind": "windhawk_cpp",
+      "input": {
+        "kind": "git_review",
+        "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
+        "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
+        "path": "mods/outlook-msedge-redirect.wh.cpp",
+        "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4934#issuecomment-5133845773",
+        "review_comment_sha256": "af7e35415985b602012e1076ab90f4fbb59351182211b580e052ffde7d1fe8e0",
+        "source_sha256": "1bd90301ecc5c976f4ba7a1d536dcc4a2c4ac5c083a2ffeefce1236e6f5600d9",
+        "source_blob_sha1": "1f7a73decd6635f9e2d12fa4fc95dcfca631c60c"
+      },
+      "ground_truth": {
+        "allow_findings": true,
+        "required_categories": [
+          "indirect_consumers",
+          "input_command_boundaries",
+          "memory_resource_safety",
+          "overlap_attribution",
+          "repository_contracts"
+        ],
+        "expectations": [
+          {
+            "category": "indirect_consumers",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "CreateProcessInternalW_hook"
+            },
+            "claim_concepts": [
+              [
+                "extracturl"
+              ],
+              [
+                "empty",
+                "fails"
+              ],
+              [
+                "link",
+                "destination"
+              ],
+              [
+                "lost",
+                "blank"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "original call",
+                "pass through",
+                "fallback"
+              ],
+              [
+                "empty url",
+                "extraction fails"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "malformed url",
+                "missing url"
+              ],
+              [
+                "original destination",
+                "original launch"
+              ],
+              [
+                "preserved",
+                "opens"
+              ]
+            ]
+          },
+          {
+            "category": "input_command_boundaries",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "ShellExecuteExW_hook"
+            },
+            "claim_concepts": [
+              [
+                "fmask"
+              ],
+              [
+                "see_mask_idlist",
+                "see_mask_classname"
+              ],
+              [
+                "lpfile"
+              ],
+              [
+                "ignored"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "clear"
+              ],
+              [
+                "see_mask_idlist",
+                "see_mask_classname"
+              ],
+              [
+                "lpidlist",
+                "lpclass"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "idlist",
+                "classname"
+              ],
+              [
+                "replacement browser"
+              ],
+              [
+                "exact url"
+              ]
+            ]
+          },
+          {
+            "category": "memory_resource_safety",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "memcpy"
+            },
+            "claim_concepts": [
+              [
+                "cbsize"
+              ],
+              [
+                "caller-controlled",
+                "caller controlled"
+              ],
+              [
+                "stack"
+              ],
+              [
+                "overflow"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "sizeof"
+              ],
+              [
+                "struct assignment",
+                "copy"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "oversized cbsize",
+                "larger cbsize"
+              ],
+              [
+                "pass through",
+                "passes through",
+                "reject"
+              ],
+              [
+                "no overflow",
+                "no overwrite"
+              ]
+            ]
+          },
+          {
+            "category": "overlap_attribution",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "ExtractUrl"
+            },
+            "claim_concepts": [
+              [
+                "pivotlink-browser-router"
+              ],
+              [
+                "overlap",
+                "near-neighbour"
+              ],
+              [
+                "fixed browser",
+                "fixed-browser",
+                "edge protocol",
+                "edge-protocol"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "extend"
+              ],
+              [
+                "existing mod",
+                "pivotlink-browser-router"
+              ],
+              [
+                "document",
+                "attribution"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "compare"
+              ],
+              [
+                "options",
+                "behavior"
+              ],
+              [
+                "catalog",
+                "relationship"
+              ]
+            ]
+          },
+          {
+            "category": "repository_contracts",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "Wh_ModInit"
+            },
+            "claim_concepts": [
+              [
+                "shell32"
+              ],
+              [
+                "assumes"
+              ],
+              [
+                "hook"
+              ],
+              [
+                "skipped"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "loadlibraryexw",
+                "load library"
+              ],
+              [
+                "late load",
+                "late-load",
+                "retry"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "outlook startup",
+                "start outlook"
+              ],
+              [
+                "before shell32"
+              ],
+              [
+                "hook installed",
+                "redirect works"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4935-reviewed-0c6c604",
+      "kind": "windhawk_cpp",
+      "input": {
+        "kind": "git_review",
+        "repository": "https://github.com/crazyboyybs/windhawk-mods",
+        "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
+        "path": "mods/win32-ui-modernizer.wh.cpp",
+        "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4935#issuecomment-5124176414",
+        "review_comment_sha256": "67ecc15c073e9df6d474e3568517d2f3b431f330912b65d96a974931a13879d0",
+        "source_sha256": "5b74274c8f601ad837fd04d8c580287760f3595deba5aa4a9db6d9f74d169cfd",
+        "source_blob_sha1": "627cde90f46d8b070bbe367ef3b1d642c61e8209"
+      },
+      "ground_truth": {
+        "allow_findings": true,
+        "required_categories": [
+          "concurrency_ownership",
+          "indirect_consumers",
+          "lifecycle_cleanup",
+          "memory_resource_safety",
+          "performance_hot_paths"
+        ],
+        "expectations": [
+          {
+            "category": "concurrency_ownership",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "g_lvSelectFadeAnims"
+            },
+            "claim_concepts": [
+              [
+                "process-global",
+                "global"
+              ],
+              [
+                "ui thread",
+                "ui threads",
+                "multiple threads",
+                "multiple ui threads"
+              ],
+              [
+                "unordered_map",
+                "container"
+              ],
+              [
+                "race",
+                "heap corruption"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "mutex",
+                "thread_local"
+              ],
+              [
+                "guard",
+                "isolate"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "two windows",
+                "multiple windows"
+              ],
+              [
+                "concurrent selection",
+                "simultaneous selection"
+              ],
+              [
+                "no race",
+                "no data race",
+                "no corruption",
+                "no heap corruption"
+              ]
+            ]
+          },
+          {
+            "category": "indirect_consumers",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "HdrDarkPaintSubclassProc"
+            },
+            "claim_concepts": [
+              [
+                "every process",
+                "third-party"
+              ],
+              [
+                "header",
+                "headers"
+              ],
+              [
+                "drops",
+                "discards"
+              ],
+              [
+                "sort",
+                "alignment",
+                "ownerdraw"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "honor",
+                "preserve"
+              ],
+              [
+                "format",
+                "sort",
+                "ownerdraw"
+              ],
+              [
+                "narrow",
+                "specific hosts"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "third-party"
+              ],
+              [
+                "right-aligned",
+                "sort arrow",
+                "owner-drawn"
+              ],
+              [
+                "preserved",
+                "renders"
+              ]
+            ]
+          },
+          {
+            "category": "lifecycle_cleanup",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "ListSelectFadeCleanup"
+            },
+            "claim_concepts": [
+              [
+                "removewindowsubclass"
+              ],
+              [
+                "cross-thread"
+              ],
+              [
+                "unload"
+              ],
+              [
+                "dangling",
+                "unmapped"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "removewindowsubclassfromanythread"
+              ],
+              [
+                "setwindowsubclassfromanythread"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "different ui thread",
+                "cross-thread"
+              ],
+              [
+                "unload"
+              ],
+              [
+                "next message"
+              ],
+              [
+                "callback"
+              ],
+              [
+                "freed code"
+              ]
+            ]
+          },
+          {
+            "category": "memory_resource_safety",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "g_progressMarqueeMaskLayer"
+            },
+            "claim_concepts": [
+              [
+                "global"
+              ],
+              [
+                "comptr",
+                "layer"
+              ],
+              [
+                "render target",
+                "render targets",
+                "ui thread",
+                "ui threads"
+              ],
+              [
+                "double-release",
+                "leak",
+                "shutdown hang"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "thread_local"
+              ],
+              [
+                "reset"
+              ],
+              [
+                "no_destroy"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "two dialogs",
+                "multiple ui threads"
+              ],
+              [
+                "unload",
+                "shutdown"
+              ],
+              [
+                "no leak",
+                "no double-release",
+                "no hang"
+              ]
+            ]
+          },
+          {
+            "category": "performance_hot_paths",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "ListSelectFadeResyncWindow"
+            },
+            "claim_concepts": [
+              [
+                "select-all",
+                "bulk selection"
+              ],
+              [
+                "thousands"
+              ],
+              [
+                "ancestor walk",
+                "ancestor walks",
+                "map entry",
+                "map inserts"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "count"
+              ],
+              [
+                "selection"
+              ],
+              [
+                "threshold",
+                "skip"
+              ],
+              [
+                "hoist"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "ctrl+a",
+                "select all"
+              ],
+              [
+                "thousands"
+              ],
+              [
+                "latency",
+                "entries"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4921-reviewed-f66c7c2",
+      "kind": "windhawk_cpp",
+      "input": {
+        "kind": "git_review",
+        "repository": "https://github.com/umnik1/windhawk-mods",
+        "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
+        "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+        "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4921#issuecomment-5130185356",
+        "review_comment_sha256": "ca5ade0c0438e688215f72f709440b24226353999dc8a9e895b673e779fc5fbf",
+        "source_sha256": "b99e73f525cbf2ef209f2533024426e5adca9af7ba13d779270789abbdcdd603",
+        "source_blob_sha1": "72b2e78db14ec3378a604fc21f418ef72e4f1b46"
+      },
+      "ground_truth": {
+        "allow_findings": true,
+        "required_categories": [
+          "author_verification",
+          "concurrency_ownership",
+          "input_command_boundaries",
+          "lifecycle_cleanup",
+          "performance_hot_paths",
+          "repository_contracts"
+        ],
+        "expectations": [
+          {
+            "category": "author_verification",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "WM_DPICHANGED"
+            },
+            "claim_concepts": [
+              [
+                "wm_dpichanged"
+              ],
+              [
+                "dpi-aware",
+                "dpi awareness"
+              ],
+              [
+                "not delivered",
+                "dead"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "verify",
+                "confirm"
+              ],
+              [
+                "manifest",
+                "dpi awareness"
+              ],
+              [
+                "fallback",
+                "taskbarcreated"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "high-dpi",
+                "high dpi"
+              ],
+              [
+                "startup",
+                "restart"
+              ],
+              [
+                "icon size",
+                "scaled"
+              ]
+            ]
+          },
+          {
+            "category": "concurrency_ownership",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "WindowProc"
+            },
+            "claim_concepts": [
+              [
+                "re-entered",
+                "reentrant"
+              ],
+              [
+                "g_trayicons"
+              ],
+              [
+                "iterator",
+                "iterators",
+                "iteration"
+              ],
+              [
+                "use-after-free",
+                "invalidates"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "defer"
+              ],
+              [
+                "refresh"
+              ],
+              [
+                "guard",
+                "non-reentrant"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "taskbarcreated"
+              ],
+              [
+                "refresh in flight",
+                "shell_notifyiconw"
+              ],
+              [
+                "no invalidation",
+                "no iterator invalidation"
+              ],
+              [
+                "use-after-free"
+              ]
+            ]
+          },
+          {
+            "category": "input_command_boundaries",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "ShellExecuteW"
+            },
+            "claim_concepts": [
+              [
+                "bare file name",
+                "bare filename"
+              ],
+              [
+                "search path"
+              ],
+              [
+                "current directory"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "absolute"
+              ],
+              [
+                "path"
+              ],
+              [
+                "systemroot"
+              ],
+              [
+                "default verb"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "hostile current directory",
+                "current directory"
+              ],
+              [
+                "system32"
+              ],
+              [
+                "applet",
+                "sndvol"
+              ]
+            ]
+          },
+          {
+            "category": "lifecycle_cleanup",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "GetTrayIconSize"
+            },
+            "claim_concepts": [
+              [
+                "taskbar"
+              ],
+              [
+                "before"
+              ],
+              [
+                "fallback",
+                "falls back"
+              ],
+              [
+                "never recomputed",
+                "never re-derived"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "taskbarcreated"
+              ],
+              [
+                "recompute",
+                "re-derive"
+              ],
+              [
+                "icon size"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "logon",
+                "startup"
+              ],
+              [
+                "high-dpi",
+                "high dpi"
+              ],
+              [
+                "taskbar appears"
+              ],
+              [
+                "icon size"
+              ],
+              [
+                "correct"
+              ]
+            ]
+          },
+          {
+            "category": "performance_hot_paths",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "IsExcluded"
+            },
+            "claim_concepts": [
+              [
+                "tolower",
+                "lowercase",
+                "lowercases"
+              ],
+              [
+                "every device"
+              ],
+              [
+                "every pattern"
+              ],
+              [
+                "refresh"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "precompute",
+                "cache"
+              ],
+              [
+                "loadsettings"
+              ],
+              [
+                "lowercase patterns"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "many devices",
+                "many patterns"
+              ],
+              [
+                "refresh"
+              ],
+              [
+                "allocations",
+                "latency"
+              ]
+            ]
+          },
+          {
+            "category": "repository_contracts",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "architecture"
+            },
+            "claim_concepts": [
+              [
+                "x86-64"
+              ],
+              [
+                "32-bit",
+                "32 bit"
+              ],
+              [
+                "excluded",
+                "excludes"
+              ],
+              [
+                "tool mods",
+                "comparable mods"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "remove"
+              ],
+              [
+                "architecture metadata",
+                "architecture restriction"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "build",
+                "load"
+              ],
+              [
+                "32-bit",
+                "amd64",
+                "arm64"
+              ],
+              [
+                "tool mod"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4976-reviewed-ff07922",
+      "kind": "windhawk_cpp",
+      "input": {
+        "kind": "git_review",
+        "repository": "https://github.com/Valer100/windhawk-mods",
+        "commit": "ff07922ef586237cec12e348cb4b3b721a6ba81e",
+        "path": "mods/disk-usage-bar-customizer.wh.cpp",
+        "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4976#issuecomment-5151837923",
+        "review_comment_sha256": "1fe54d2b87298eb6101a8b2115c0346ec263276df6b09c0531d57b422ba6a95b",
+        "source_sha256": "917d440bd0c16706ee3fdfd54dd3183acc797c16be4c7ff70996ad38adf9615f",
+        "source_blob_sha1": "3cfee00a3f2d65ed35ea6dafd9f1db6f3f96f468"
+      },
+      "ground_truth": {
+        "allow_findings": true,
+        "required_categories": [
+          "lifecycle_cleanup",
+          "memory_resource_safety",
+          "performance_hot_paths"
+        ],
+        "expectations": [
+          {
+            "category": "lifecycle_cleanup",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "GdiplusStartup"
+            },
+            "claim_concepts": [
+              [
+                "gdiplusstartup"
+              ],
+              [
+                "result",
+                "status"
+              ],
+              [
+                "not checked",
+                "unchecked"
+              ],
+              [
+                "blank",
+                "no-op"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "check"
+              ],
+              [
+                "failure",
+                "failed",
+                "fail"
+              ],
+              [
+                "fallback",
+                "return false"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "force",
+                "simulate"
+              ],
+              [
+                "gdiplus failure",
+                "gdi+ startup failure"
+              ],
+              [
+                "stock rendering",
+                "initialization fails"
+              ]
+            ]
+          },
+          {
+            "category": "memory_resource_safety",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "DrawPercentageLabel"
+            },
+            "claim_concepts": [
+              [
+                "font"
+              ],
+              [
+                "selected"
+              ],
+              [
+                "deleteobject",
+                "deletes"
+              ],
+              [
+                "leak",
+                "leaking"
+              ],
+              [
+                "dc state",
+                "text color"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "deselect",
+                "restore"
+              ],
+              [
+                "font",
+                "color",
+                "background mode"
+              ],
+              [
+                "delete"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "repaint"
+              ],
+              [
+                "gdi handles"
+              ],
+              [
+                "dc state"
+              ],
+              [
+                "stable",
+                "restored"
+              ]
+            ]
+          },
+          {
+            "category": "performance_hot_paths",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "Wh_GetStringSetting"
+            },
+            "claim_concepts": [
+              [
+                "wh_getstringsetting"
+              ],
+              [
+                "paint hook",
+                "every paint"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "cache"
+              ],
+              [
+                "loadsettings"
+              ],
+              [
+                "font"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "many drives",
+                "repaint"
+              ],
+              [
+                "setting reads",
+                "allocations"
+              ],
+              [
+                "bounded",
+                "none"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "windhawk-4935-corrected-2875fba",
+      "kind": "corrected_control",
+      "input": {
+        "kind": "git_review",
+        "repository": "https://github.com/crazyboyybs/windhawk-mods",
+        "commit": "2875fba30b743688aeb9a73da3f134d7319bbcb9",
+        "path": "mods/win32-ui-modernizer.wh.cpp",
+        "review_comment_url": "https://github.com/ramensoftware/windhawk-mods/pull/4935#issuecomment-5126300904",
+        "review_comment_sha256": "459aa4ea43419fee519e9b95b82f8c4b6c9db27e51bd33e4c24ea7514b82c226",
+        "source_sha256": "d456881ec04f68985e55a13b960b7e83927245ff5f714ba3fcb65f1d495af1bd",
+        "source_blob_sha1": "acce037e271f4b0cc0bb5448cfe01abc10879fe4"
+      },
+      "ground_truth": {
+        "allow_findings": false,
+        "required_categories": [],
+        "expectations": []
+      }
+    },
+    {
+      "id": "python-shell-boundary-v1",
+      "kind": "non_cpp",
+      "input": {
+        "kind": "local_fixture",
+        "path": "evaluation-inputs/python-shell-boundary.py.txt",
+        "sha256": "ad16b1c8183f93b28ca3a563153a2cda8afb8270cc20abf0f152378f7dea2d9d",
+        "version": 1
+      },
+      "ground_truth": {
+        "allow_findings": true,
+        "required_categories": [
+          "input_command_boundaries"
+        ],
+        "expectations": [
+          {
+            "category": "input_command_boundaries",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "run_user_command"
+            },
+            "claim_concepts": [
+              [
+                "user_value",
+                "user value"
+              ],
+              [
+                "shell=true",
+                "shell"
+              ],
+              [
+                "injection",
+                "command"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "argument vector",
+                "argv"
+              ],
+              [
+                "shell=false",
+                "without a shell"
+              ],
+              [
+                "validate"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "metacharacter",
+                "metacharacters",
+                "hostile"
+              ],
+              [
+                "inert"
+              ],
+              [
+                "extra command"
+              ],
+              [
+                "executed"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "typescript-concurrency-boundary-v1",
+      "kind": "non_cpp",
+      "input": {
+        "kind": "local_fixture",
+        "path": "evaluation-inputs/typescript-concurrency-boundary.ts.txt",
+        "sha256": "68ff05f06830e9cbcff4e6ffe0b992252940d45d5f7fb5a692a97dde1588537b",
+        "version": 1
+      },
+      "ground_truth": {
+        "allow_findings": true,
+        "required_categories": [
+          "concurrency_ownership"
+        ],
+        "expectations": [
+          {
+            "category": "concurrency_ownership",
+            "evidence_selector": {
+              "kind": "symbol",
+              "value": "reserve"
+            },
+            "claim_concepts": [
+              [
+                "concurrent calls",
+                "parallel calls"
+              ],
+              [
+                "await"
+              ],
+              [
+                "same current",
+                "lost update",
+                "duplicate"
+              ]
+            ],
+            "correction_concepts": [
+              [
+                "mutex",
+                "lock",
+                "serialize"
+              ],
+              [
+                "increment"
+              ],
+              [
+                "await boundary"
+              ]
+            ],
+            "verification_concepts": [
+              [
+                "parallel reservations",
+                "concurrent reservations"
+              ],
+              [
+                "unique"
+              ],
+              [
+                "monotonic",
+                "sequence"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "python-shell-boundary-corrected-v1",
+      "kind": "corrected_non_cpp_control",
+      "input": {
+        "kind": "local_fixture",
+        "path": "evaluation-inputs/python-shell-boundary-corrected.py.txt",
+        "sha256": "53cee24b92ff977e4bcfb801c298cd5378c842042c8d1c7c564dce21a132ff48",
+        "version": 1
+      },
+      "ground_truth": {
+        "allow_findings": false,
+        "required_categories": [],
+        "expectations": []
+      }
+    }
+  ]
+}

@@ -43,6 +43,10 @@ config_file = "./agents/sol_worker.toml"
 description = "Max-effort terminal depth-1 adversarial advisor for consequential architecture, plans, decisions, or diffs without a Sol-led subtree."
 config_file = "./agents/sol_advisor.toml"
 
+[agents.sol_reviewer]
+description = "Terminal Sol reviewer that returns only a strict evidence-bound review JSON receipt."
+config_file = "./agents/sol_reviewer.toml"
+
 [agents.sol_coordinator]
 description = "Max-effort depth-1 Sol supervisor for architecture, adversarial review, and complex bounded workstreams."
 config_file = "./agents/sol_coordinator.toml"
@@ -60,4 +64,8 @@ enabled = true
 
 [[skills.config]]
 path = "./skills/instruction-learning-loop/SKILL.md"
+enabled = true
+
+[[skills.config]]
+path = "./skills/adversarial-code-review/SKILL.md"
 enabled = true

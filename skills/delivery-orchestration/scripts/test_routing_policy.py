@@ -52,6 +52,7 @@ class RoutingPolicyTests(unittest.TestCase):
             "terra_coordinator": ("gpt-5.6-terra", "medium"),
             "sol_worker": ("gpt-5.6-sol", "xhigh"),
             "sol_advisor": ("gpt-5.6-sol", "max"),
+            "sol_reviewer": ("gpt-5.6-sol", "max"),
             "sol_coordinator": ("gpt-5.6-sol", "max"),
         }
 
@@ -123,6 +124,12 @@ class RoutingPolicyTests(unittest.TestCase):
             "spark fast path",
             "luna is the default",
             "escalate the model",
+            "terminal `sol_reviewer`",
+            "recorded reason",
+            "locally-created receipt",
+            "require refreeze plus rereview",
+            "immutable primary counterevidence",
+            "never success",
         ):
             self.assertIn(phrase, flat_skill)
 

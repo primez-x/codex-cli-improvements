@@ -31,6 +31,14 @@ PLAN_GAP_POSIX = f'python3 -c "{PLAN_GAP_CODE}"'
 PLAN_GAP_WINDOWS = f'python -c "{PLAN_GAP_CODE}"'
 LEARNING_POSIX = f'python3 -c "{LEARNING_CODE}"'
 LEARNING_WINDOWS = f'python -c "{LEARNING_CODE}"'
+REVIEW_CODE = _dispatcher_code("skills", "adversarial-code-review", "scripts", "lifecycle_gate.py")
+REVIEW_POSIX = f'python3 -c "{REVIEW_CODE}"'
+REVIEW_WINDOWS = f'python -c "{REVIEW_CODE}"'
+MUTATION_MATCHER = (
+    "^(?:Bash|bash|PowerShell|shell_command|functions[.]shell_command|exec_command|"
+    "functions[.]exec_command|apply_patch|functions[.]apply_patch|Edit|Write|"
+    "mcp__filesystem__(?:create_directory|edit_file|move_file|write_file))$"
+)
 
 
 class HooksConfigTests(unittest.TestCase):
@@ -40,22 +48,39 @@ class HooksConfigTests(unittest.TestCase):
 
     def test_registers_plan_gap_and_instruction_learning_events(self) -> None:
         hooks = self.config["hooks"]
-        self.assertEqual(set(hooks), {"UserPromptSubmit", "Stop"})
+        self.assertEqual(set(hooks), {"UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"})
 
         submit = hooks["UserPromptSubmit"]
         self.assertEqual(len(submit), 1)
         submit_commands = [entry["command"] for entry in submit[0]["hooks"]]
         self.assertEqual(
             submit_commands,
-            [PLAN_GAP_POSIX, LEARNING_POSIX],
+            [PLAN_GAP_POSIX, LEARNING_POSIX, REVIEW_POSIX],
         )
 
         stop = hooks["Stop"]
         self.assertEqual(len(stop), 1)
         self.assertEqual(
             [entry["command"] for entry in stop[0]["hooks"]],
-            [LEARNING_POSIX],
+            [LEARNING_POSIX, REVIEW_POSIX],
         )
+        for event in ("PreToolUse", "PostToolUse"):
+            self.assertEqual(hooks[event][0]["matcher"], MUTATION_MATCHER)
+        for event in ("SubagentStart", "SubagentStop"):
+            self.assertEqual(hooks[event][0]["matcher"], "^sol_reviewer$")
+        self.assertEqual(hooks["SubagentStart"][0]["hooks"][0]["additionalContextLimit"], 4000)
+        for event in ("UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop"):
+            review_hooks = [
+                entry
+                for group in hooks[event]
+                for entry in group["hooks"]
+                if entry["command"] == REVIEW_POSIX
+            ]
+            self.assertEqual(len(review_hooks), 1)
+            self.assertGreaterEqual(review_hooks[0]["timeout"], 30)
+        stop_review = [entry for entry in hooks["Stop"][0]["hooks"] if entry["command"] == REVIEW_POSIX]
+        self.assertEqual(len(stop_review), 1)
+        self.assertGreaterEqual(stop_review[0]["timeout"], 60)
 
     def test_commands_use_expected_windows_and_posix_home_relative_paths(self) -> None:
         commands = [
@@ -64,14 +89,10 @@ class HooksConfigTests(unittest.TestCase):
             for group in event
             for entry in group["hooks"]
         ]
-        self.assertEqual(
-            [(entry["command"], entry["commandWindows"]) for entry in commands],
-            [
-                (PLAN_GAP_POSIX, PLAN_GAP_WINDOWS),
-                (LEARNING_POSIX, LEARNING_WINDOWS),
-                (LEARNING_POSIX, LEARNING_WINDOWS),
-            ],
-        )
+        command_pairs = [(entry["command"], entry["commandWindows"]) for entry in commands]
+        self.assertIn((PLAN_GAP_POSIX, PLAN_GAP_WINDOWS), command_pairs)
+        self.assertIn((LEARNING_POSIX, LEARNING_WINDOWS), command_pairs)
+        self.assertIn((REVIEW_POSIX, REVIEW_WINDOWS), command_pairs)
 
         for entry in commands:
             for command in (entry["command"], entry["commandWindows"]):
@@ -101,6 +122,24 @@ class HooksConfigTests(unittest.TestCase):
                     "instruction-learning-loop",
                     "scripts",
                     "instruction_learning_hook.py",
+                ),
+            ),
+            (
+                REVIEW_POSIX,
+                (
+                    "skills",
+                    "adversarial-code-review",
+                    "scripts",
+                    "lifecycle_gate.py",
+                ),
+            ),
+            (
+                REVIEW_WINDOWS,
+                (
+                    "skills",
+                    "adversarial-code-review",
+                    "scripts",
+                    "lifecycle_gate.py",
                 ),
             ),
         ]
