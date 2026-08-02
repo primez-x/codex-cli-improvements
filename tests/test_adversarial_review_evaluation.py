@@ -481,7 +481,7 @@ class EvaluationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "results.json"
-            wrong = replay_record("terra_worker")
+            wrong = replay_record("luna_worker")
             path.write_text(json.dumps(wrong), encoding="utf-8")
             result = self.invoke(CORPUS, path, reviewer_profile=True)
             self.assertNotEqual(result.returncode, 0)

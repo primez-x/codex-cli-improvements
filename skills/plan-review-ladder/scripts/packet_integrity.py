@@ -19,11 +19,11 @@ MAX_DEADLINE_MINUTES = 45
 MIN_GRACE_MINUTES = 1
 MAX_GRACE_MINUTES = 5
 MIN_DESCENDANT_BUDGET = 0
-MAX_DESCENDANT_BUDGET = 2
+MAX_DESCENDANT_BUDGET = 0
 TERMINAL_PROFILES = frozenset({"spark_scanner", "luna_scanner", "sol_advisor"})
-COORDINATOR_PROFILES = frozenset({"luna_coordinator", "terra_coordinator"})
-SOL_COORDINATOR_PROFILE = "sol_coordinator"
-ALLOWED_PROFILES = TERMINAL_PROFILES | COORDINATOR_PROFILES | {SOL_COORDINATOR_PROFILE}
+# The adversarial gate's sol_reviewer identity is not a plan-review route.
+REJECTED_PROFILES = frozenset({"sol_reviewer"})
+ALLOWED_PROFILES = TERMINAL_PROFILES
 
 _MISSING = object()
 _DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
@@ -120,6 +120,8 @@ def validate_budgets(
 
     if reviewer_profile is _MISSING:
         raise ValueError("reviewer_profile is required before dispatch")
+    if isinstance(reviewer_profile, str) and reviewer_profile in REJECTED_PROFILES:
+        raise ValueError(f"{reviewer_profile} is not a plan-review routing profile")
     if not isinstance(reviewer_profile, str) or reviewer_profile not in ALLOWED_PROFILES:
         raise ValueError(f"reviewer_profile is not an allowed planning profile: {reviewer_profile!r}")
     if deadline_minutes is _MISSING:
@@ -133,9 +135,7 @@ def validate_budgets(
     if descendant_budget is _MISSING:
         if not use_defaults:
             raise ValueError("descendant_budget is required before dispatch")
-        descendant_budget = (
-            0 if reviewer_profile in TERMINAL_PROFILES else 1
-        )
+        descendant_budget = DEFAULT_DESCENDANT_BUDGET
     budgets = {
         "deadline_minutes": _validate_integer(
             "deadline_minutes", deadline_minutes, MIN_DEADLINE_MINUTES, MAX_DEADLINE_MINUTES
@@ -150,12 +150,8 @@ def validate_budgets(
             MAX_DESCENDANT_BUDGET,
         ),
     }
-    if reviewer_profile in TERMINAL_PROFILES and budgets["descendant_budget"] != 0:
+    if budgets["descendant_budget"] != 0:
         raise ValueError(f"{reviewer_profile} requires descendant_budget exactly 0")
-    if reviewer_profile in COORDINATOR_PROFILES and budgets["descendant_budget"] != 1:
-        raise ValueError(f"{reviewer_profile} requires descendant_budget exactly 1")
-    if reviewer_profile == SOL_COORDINATOR_PROFILE and not 1 <= budgets["descendant_budget"] <= 2:
-        raise ValueError("sol_coordinator requires descendant_budget in 1..2")
     return budgets
 
 

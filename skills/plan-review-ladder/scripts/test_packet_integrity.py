@@ -9,8 +9,8 @@ from packet_integrity import (
     build_packet_envelope,
     canonical_bytes,
     compute_packet_sha256,
-    verify_packet_envelope,
     compute_raw_sha256,
+    verify_packet_envelope,
 )
 
 
@@ -20,17 +20,18 @@ class PacketIntegrityTests(unittest.TestCase):
             compute_raw_sha256(b"\x00review\xff"),
             "9747cddf1054f045ffe4018535821a320986f45d596249eefc49eaca327d0ff3",
         )
+
     def setUp(self) -> None:
         self.payload = {
             "packet_id": "packet-001",
             "request": {"goal": "review", "constraints": ["read-only"]},
             "evidence": {"files": ["SKILL.md"], "head": "abc123"},
-            "candidate": {"route": "Full", "steps": ["inspect"]},
-            "reviewer_lens": "sol-adversarial-risk",
-            "reviewer_profile": "sol_coordinator",
+            "candidate": {"route": "Standard", "steps": ["inspect"]},
+            "reviewer_lens": "luna-contract-completeness",
+            "reviewer_profile": "luna_scanner",
             "deadline_minutes": 10,
             "grace_minutes": 2,
-            "descendant_budget": 1,
+            "descendant_budget": 0,
         }
 
     def test_canonical_bytes_sort_nested_keys_without_insignificant_whitespace(self) -> None:
@@ -120,50 +121,54 @@ class PacketIntegrityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build_packet_envelope(payload)
 
-    def test_profile_compatible_descendant_budgets_are_enforced(self) -> None:
-        valid_budgets = {
-            "spark_scanner": 0,
-            "luna_scanner": 0,
-            "sol_advisor": 0,
-            "luna_coordinator": 1,
-            "terra_coordinator": 1,
-            "sol_coordinator": 2,
+    def test_all_supported_profiles_are_terminal_and_have_no_descendant_budget(self) -> None:
+        supported_profiles = {
+            "spark_scanner",
+            "luna_scanner",
+            "sol_advisor",
         }
-        for profile, budget in valid_budgets.items():
+        for profile in supported_profiles:
             payload = copy.deepcopy(self.payload)
             payload["reviewer_profile"] = profile
-            payload["descendant_budget"] = budget
+            payload["descendant_budget"] = 0
             self.assertIsNotNone(build_packet_envelope(payload))
-        for profile, budget in (
-            ("spark_scanner", 1),
-            ("luna_scanner", 1),
-            ("sol_advisor", 1),
-            ("luna_coordinator", 0),
-            ("terra_coordinator", 0),
-            ("luna_coordinator", 2),
-            ("terra_coordinator", 2),
-            ("sol_coordinator", 0),
-            ("sol_coordinator", 3),
-            ("spark_worker", 0),
-            ("unknown_profile", 0),
+        for profile in supported_profiles:
+            for budget in (1, 2):
+                payload = copy.deepcopy(self.payload)
+                payload["reviewer_profile"] = profile
+                payload["descendant_budget"] = budget
+                with self.assertRaises(ValueError):
+                    build_packet_envelope(payload)
+
+        for profile in (
+            "spark_worker",
+            "luna_worker",
+            "sol_worker",
+            "terra_worker",
+            "terra_coordinator",
+            "luna_coordinator",
+            "sol_coordinator",
+            "spark_coordinator",
+            "sol_reviewer",
+            "unknown_profile",
         ):
             payload = copy.deepcopy(self.payload)
             payload["reviewer_profile"] = profile
-            payload["descendant_budget"] = budget
+            payload["descendant_budget"] = 0
             with self.assertRaises(ValueError):
                 build_packet_envelope(payload)
 
-    def test_profile_defaults_select_the_required_descendant_budget(self) -> None:
-        for profile, expected in (
-            ("spark_scanner", 0),
-            ("luna_coordinator", 1),
-            ("sol_coordinator", 1),
+    def test_supported_profile_defaults_select_zero_descendant_budget(self) -> None:
+        for profile in (
+            "spark_scanner",
+            "luna_scanner",
+            "sol_advisor",
         ):
             payload = copy.deepcopy(self.payload)
             payload["reviewer_profile"] = profile
             payload.pop("descendant_budget")
             envelope = build_packet_envelope(payload)
-            self.assertEqual(envelope["packet_payload"]["descendant_budget"], expected)
+            self.assertEqual(envelope["packet_payload"]["descendant_budget"], 0)
 
 
 if __name__ == "__main__":
