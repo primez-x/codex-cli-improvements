@@ -16,8 +16,16 @@ from pathlib import Path
 
 
 TRIGGER_PROMPTS = {
+    "Implement the plan",
     "Implement the plan.",
+    "Yes implement the plan",
+    "Yes implement the plan.",
+    "Yes, implement the plan",
+    "Yes, implement the plan.",
+    "Yes implement this plan",
+    "Yes implement this plan.",
     "Yes, implement this plan",
+    "Yes, implement this plan.",
 }
 CLIENT_NAME = "plan_gap_goal_hook"
 LOG_NAME = "plan_gap_goal_hook.log"

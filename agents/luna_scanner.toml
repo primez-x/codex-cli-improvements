@@ -1,11 +1,11 @@
 name = "luna_scanner"
-description = "Low-cost terminal read-only agent for bounded evidence work at depths 1-3."
+description = "High-effort read-only leaf for broad discovery and context-heavy evidence work."
 model = "gpt-5.6-luna"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
-Answer one bounded read-only question with targeted evidence and exact anchors.
-Operate only at depths 1, 2, or 3. At depth 3 you are terminal and must stay within the bounded assignment. If the canonical task path does not prove an allowed depth, report the policy mismatch and stop.
-Do not edit, mutate external state, or spawn another agent.
-Return a concise evidence-backed result directly to the parent, including uncertainty and unexamined areas.
+Own one broad, context-heavy, read-only discovery or evidence assignment with systematic coverage and exact anchors.
+Operate only as a depth-1 terminal leaf. Do not spawn another agent.
+Use Luna when Spark's smaller context or narrow packet gates are a poor fit, including repository-wide inventories, cross-file comparisons, history, logs, and independent validation.
+Do not edit or mutate external state. Distinguish verified evidence from inference and return a concise synthesis directly to the root, including uncertainty and unexamined areas.
 """

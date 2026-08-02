@@ -70,13 +70,27 @@ These are personal defaults across Codex projects. Repository and nested
   subagent delegation; the user does not manage routing.
 - Treat multi-file/cross-layer work, code plus tests or generated output,
   substantial discovery, and build/install/deploy workflows as material.
-- Prefer cheap bounded agents; reserve expensive models for supervision,
-  architecture, difficult gaps, and sign-off. Follow the skill's topology,
-  ownership, context, and terminal-gate contracts.
-- Only the depth-0 root dispatches `sol_advisor`; descendants report an advisor trigger upward. For every material delivery, consult after bounded read-only orientation and before substantive writes or writer dispatch. Consult again after durable changes and fresh test, build, or runtime evidence when work has four or more substantive stages or material architecture, compatibility, migration, persistence, security, concurrency, data-integrity, or external-impact risk.
-- Reconsult `sol_advisor` when the approach materially changes, progress is stuck, or authoritative evidence conflicts. Skip only when the task has three or fewer substantive stages, is localized and mechanically prescribed by fresh authoritative output, has focused verification, and has none of the preceding material risks. Advisor consultation is an internal checkpoint, not a user approval gate.
-- The root owns integration, authorized external actions, and the user response.
-  Do not ask the user to select a model unless a required one is unavailable.
+- Use only the six configured custom profiles. Spark XHigh handles tiny exact
+  checks and small mechanical edits from fresh self-contained packets dispatched
+  with `fork_turns = "none"`. Do not send Spark broad discovery, synthesis, or
+  inherited full-history context; escalate those tasks to Luna.
+- Luna High scanning handles broad and context-heavy evidence. Luna Max is the
+  default delegated implementation profile. Escalate directly to Sol XHigh only
+  for genuinely difficult implementation or diagnosis.
+- Every custom profile is a terminal depth-1 leaf. Leaves do not spawn, commit,
+  push, deploy, publish, perform destructive actions, or mutate external systems.
+  The root owns direct routing, integration, authorized external actions, and
+  the user response.
+- Only the depth-0 root dispatches `sol_advisor` at Max. Use it for rare,
+  consequential architecture, compatibility, migration, persistence, security,
+  concurrency, data-integrity, external-impact, conflicting-evidence, stuck, or
+  materially changing approaches. Reconsult after fresh delivery evidence when
+  the same risk remains or four or more substantive stages require sign-off.
+  It is not mandatory for localized low-risk work with mechanical verification,
+  and it never creates a user approval gate.
+- Keep normal work to one to three concurrent leaves and use the configured
+  ceiling of four only for genuinely independent packages. Do not ask the user
+  to select a model unless a required profile is unavailable.
 
 ## Communication
 
