@@ -225,7 +225,7 @@ def source_config(source: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     }:
         die("source config has no exact adversarial skill registration")
     if agent != {
-        "description": "Terminal Sol reviewer that returns only a strict evidence-bound review JSON receipt.",
+        "description": "Gate-only terminal Sol reviewer that emits only strict evidence-bound ReviewOutputV1 JSON.",
         "config_file": "./agents/sol_reviewer.toml",
     }:
         die("source config has no exact sol_reviewer registration")

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import hashlib
 from pathlib import Path
 import re
 import tomllib
@@ -9,6 +8,17 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+GENERAL_ROUTING_MATRIX = {
+    "spark_scanner": ("gpt-5.3-codex-spark", "xhigh"),
+    "spark_worker": ("gpt-5.3-codex-spark", "xhigh"),
+    "luna_scanner": ("gpt-5.6-luna", "medium"),
+    "luna_worker": ("gpt-5.6-luna", "max"),
+    "sol_worker": ("gpt-5.6-sol", "xhigh"),
+    "sol_advisor": ("gpt-5.6-sol", "max"),
+}
+REVIEWER_PROFILE_NAME = "sol_reviewer"
+REVIEWER_PROFILE = ("gpt-5.6-sol", "max")
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -19,30 +29,20 @@ class RepositoryContractTests(unittest.TestCase):
 
     def test_config_registers_only_the_supported_routing_matrix(self) -> None:
         agents = self.config["agents"]
-        expected = {
-            "spark_scanner": ("gpt-5.3-codex-spark", "high"),
-            "spark_worker": ("gpt-5.3-codex-spark", "xhigh"),
-            "luna_scanner": ("gpt-5.6-luna", "medium"),
-            "luna_worker": ("gpt-5.6-luna", "high"),
-            "luna_coordinator": ("gpt-5.6-luna", "high"),
-            "terra_worker": ("gpt-5.6-terra", "medium"),
-            "terra_coordinator": ("gpt-5.6-terra", "medium"),
-            "sol_worker": ("gpt-5.6-sol", "xhigh"),
-            "sol_advisor": ("gpt-5.6-sol", "max"),
-            "sol_reviewer": ("gpt-5.6-sol", "max"),
-            "sol_coordinator": ("gpt-5.6-sol", "max"),
-        }
+        self.assertNotIn(REVIEWER_PROFILE_NAME, GENERAL_ROUTING_MATRIX)
 
         self.assertEqual(
             (self.config["model"], self.config["model_reasoning_effort"]),
             ("gpt-5.6-sol", "medium"),
         )
+        self.assertEqual(agents["max_depth"], 1)
+        self.assertEqual(agents["max_concurrent_threads_per_session"], 4)
         self.assertEqual(
             (
                 agents["default_subagent_model"],
                 agents["default_subagent_reasoning_effort"],
             ),
-            ("gpt-5.6-luna", "high"),
+            ("gpt-5.6-luna", "max"),
         )
 
         registered = {
@@ -50,10 +50,24 @@ class RepositoryContractTests(unittest.TestCase):
             for name, value in agents.items()
             if isinstance(value, dict) and "config_file" in value
         }
-        self.assertEqual(registered, set(expected))
-        self.assertNotIn("spark_coordinator", registered)
+        self.assertEqual(
+            registered,
+            set(GENERAL_ROUTING_MATRIX) | {REVIEWER_PROFILE_NAME},
+        )
+        self.assertTrue(registered)
 
-        for name, wanted in expected.items():
+        profile_files = {
+            path.stem for path in (ROOT / "agents").glob("*.toml")
+        }
+        self.assertEqual(
+            profile_files,
+            set(GENERAL_ROUTING_MATRIX) | {REVIEWER_PROFILE_NAME},
+        )
+        self.assertFalse(
+            any("terra" in name or "coordinator" in name for name in profile_files)
+        )
+
+        for name, wanted in GENERAL_ROUTING_MATRIX.items():
             with self.subTest(agent=name):
                 path = ROOT / agents[name]["config_file"]
                 self.assertTrue(path.is_file())
@@ -63,18 +77,113 @@ class RepositoryContractTests(unittest.TestCase):
                     (profile["model"], profile["model_reasoning_effort"]),
                     wanted,
                 )
-                if name == "sol_reviewer":
-                    self.assertEqual(profile["name"], "sol_reviewer")
-                    self.assertEqual(profile["sandbox_mode"], "read-only")
-                    instructions = profile["developer_instructions"].lower()
-                    for phrase in ("depth 1", "do not spawn", "do not emit a receipt", "reviewoutputv1"):
-                        self.assertIn(phrase, instructions)
 
-        advisor_bytes = (ROOT / "agents" / "sol_advisor.toml").read_bytes()
+    def test_registered_profiles_are_terminal_and_root_coordinates_directly(self) -> None:
+        registered = {
+            name
+            for name, value in self.config["agents"].items()
+            if isinstance(value, dict) and "config_file" in value
+        }
         self.assertEqual(
-            hashlib.sha256(advisor_bytes).hexdigest(),
-            "82db5917aa0bb8fa778557c627b85b082c49d7828968ee8d9dc857d543cab835",
+            registered,
+            set(GENERAL_ROUTING_MATRIX) | {REVIEWER_PROFILE_NAME},
         )
+        self.assertFalse(any(name.endswith("_coordinator") for name in registered))
+
+        for name in GENERAL_ROUTING_MATRIX:
+            with self.subTest(agent=name):
+                instructions = (
+                    ROOT / self.config["agents"][name]["config_file"]
+                ).read_text(encoding="utf-8").lower()
+                self.assertRegex(instructions, r"do not[^.\n]*spawn")
+
+    def test_gate_only_reviewer_profile_is_read_only_and_returns_review_output(self) -> None:
+        agents = self.config["agents"]
+        self.assertIn(REVIEWER_PROFILE_NAME, agents)
+        reviewer_path = ROOT / agents[REVIEWER_PROFILE_NAME]["config_file"]
+        self.assertTrue(reviewer_path.is_file())
+        with reviewer_path.open("rb") as stream:
+            reviewer = tomllib.load(stream)
+
+        self.assertEqual(reviewer["name"], REVIEWER_PROFILE_NAME)
+        self.assertEqual(
+            (reviewer["model"], reviewer["model_reasoning_effort"]),
+            REVIEWER_PROFILE,
+        )
+        self.assertEqual(reviewer["sandbox_mode"], "read-only")
+        instructions = reviewer["developer_instructions"].lower()
+        for phrase in (
+            "operate only at depth 1",
+            "do not spawn",
+            "do not emit a receipt",
+            "reviewoutputv1",
+        ):
+            self.assertIn(phrase, instructions)
+        self.assertRegex(instructions, r"do not[^.\n]*(?:edit|mutate)")
+
+    def test_runtime_assets_do_not_reference_retired_profiles(self) -> None:
+        retired = (
+            "spark_" + "coordinator",
+            "luna_" + "coordinator",
+            "terra_" + "worker",
+            "terra_" + "coordinator",
+            "sol_" + "coordinator",
+        )
+        paths = [ROOT / "config.toml", ROOT / "AGENTS.md", ROOT / "README.md"]
+        paths.extend((ROOT / "agents").glob("*.toml"))
+        paths.extend((ROOT / "skills" / "delivery-orchestration").rglob("*.md"))
+        paths.extend((ROOT / "skills" / "plan-review-ladder").rglob("*.md"))
+        paths.append(
+            ROOT / "skills" / "plan-review-ladder" / "scripts" / "packet_integrity.py"
+        )
+        for path in paths:
+            text = path.read_text(encoding="utf-8").lower()
+            for profile in retired:
+                with self.subTest(path=path.relative_to(ROOT), profile=profile):
+                    self.assertNotIn(profile, text)
+
+    def test_readme_explains_routing_methodology_and_rejected_alternatives(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8").lower()
+        normalized = " ".join(readme.split())
+
+        for heading in (
+            "## routing decision method",
+            "## why terra is not configured",
+            "## why the other model efforts are not configured",
+            "## when to revisit the matrix",
+        ):
+            self.assertIn(heading, readme)
+
+        for phrase in (
+            "hard gates",
+            "pareto",
+            "role-specific weights",
+            "distinct routing region",
+            "benchmark snapshot",
+            "provisional estimates",
+            "not universal pricing",
+            "121,600",
+            "258,400",
+            "terra low",
+            "terra medium",
+            "terra high",
+            "terra xhigh",
+            "terra max",
+            "luna medium",
+            "luna xhigh",
+            "sol low",
+            "sol high",
+            "sol ultra",
+            "$0.0289",
+            "$0.1598",
+            "$0.0431",
+            "$0.3041",
+            "$0.0658",
+            "$0.4300",
+            "$0.7328",
+            "$1.1671",
+        ):
+            self.assertIn(phrase, normalized)
 
     def test_registered_skills_exist_and_use_relative_paths(self) -> None:
         skill_paths = [

@@ -1,54 +1,61 @@
 # Delegation Topology And Cost Ceilings
 
-Treat the Sol Medium root as depth 0 and count task-path segments after
-`/root`. If depth is unavailable or ambiguous, fail closed and do not spawn.
+The Sol Medium root is depth 0. The six general-purpose routing profiles are
+terminal depth 1 leaves that report directly to the root. The gate-only
+`sol_reviewer` identity is also depth 1 but is dispatched only by the managed
+adversarial gate, not by normal routing. `max_depth = 1` is both the configured
+and behavioral boundary: leaves do not spawn.
 
 ## Model And Effort Matrix
 
 | Profile | Effort | Allowed depth | Purpose |
 | --- | --- | --- | --- |
-| Spark scanner | high | 1-3 | Exact low-context evidence under every fast-path gate |
-| Spark worker | xhigh | 1-3 | Small explicit edits with mechanical verification |
-| Luna scanner | medium | 1-3 | Broader evidence, audits, comparisons, and test gaps |
-| Luna worker | high | 1-3 | Default routine implementation and verification |
-| Luna coordinator | high | 1-2 | Low-cost bounded orchestration and synthesis |
-| Terra worker | medium | 1-2 | Ambiguous or cross-layer implementation |
-| Terra coordinator | medium | 1-2 | Cross-workstream decisions and integration |
-| Sol advisor | max | 1 | Independent consequential adversarial challenge |
-| Sol worker | xhigh | 1 | Rare difficult implementation or diagnosis |
-| Sol coordinator | max | 1 | Advanced supervision of a bounded non-Sol subtree |
+| Spark scanner | xhigh | 1 | Tiny exact read-only evidence from a bounded packet |
+| Spark worker | xhigh | 1 | Small localized mechanical edits with focused checks |
+| Luna scanner | medium | 1 | Broad discovery, large-context evidence, and validation |
+| Luna worker | max | 1 | Default substantial implementation and verification |
+| Sol worker | xhigh | 1 | Rare genuinely difficult implementation or diagnosis |
+| Sol advisor | max | 1 | Rare consequential adversarial challenge and sign-off |
+| Gate-only `sol_reviewer` | max | 1 | Mandatory post-verification review; not a routing profile |
 
-Spark is a terminal fast path, not the default. Luna is the default delegated
-model. Terra handles work that exceeds Luna because of ambiguity, context, or
-cross-layer integration. Sol xhigh is reserved for rare difficult terminal
-work; Sol max is reserved for supervision and adversarial sign-off. Profiles
-use their configured efforts, and agents escalate the model rather than making
-ad-hoc effort changes.
+The six general-purpose routing efforts are fixed per profile. The gate-only
+reviewer is fixed at Sol/max and is not an escalation tier. Route by task shape
+and escalate the model rather than changing effort ad hoc: Spark fast path, Luna
+default, then Sol only for difficulty or consequential risk.
 
-## Depth Rules
+## Context And Packet Rules
 
-- Depth 1 may use Spark, Luna, Terra, or Sol.
-- Depth 2 may use Spark, Luna, or Terra. Sol is prohibited below depth 1.
-- Depth 3 may use only terminal Spark or Luna scanners and workers. Depth-3
-  agents never coordinate or spawn.
+Spark is optimized for latency but has materially less context than the 5.6
+profiles. The current catalog advertises about 128k tokens for Spark and 272k
+for 5.6, with effective usable limits reduced by system overhead. Never use
+Spark as a repository explorer simply because it is fast.
 
-Agents choose depth automatically; do not ask the user to manage routing. Use
-an escalation bias rather than a quota: over time, expect roughly 60% of
-delegated work to stop at depth 1, roughly 30% to reach depth 2, and no more
-than about 10% to reach depth 3. Never add depth to imitate that distribution.
-A depth-2 coordinator may use depth 3 whenever distinct terminal leaf work
-materially improves the outcome within budget.
+Every Spark dispatch uses `fork_turns = "none"` and a fresh self-contained,
+bounded packet containing:
 
-- A depth-1 coordinator may spawn at most three direct children inside its
-  assigned subtree budget.
-- A depth-2 coordinator may spawn at most two terminal Spark or Luna children.
-- Default to no more than three concurrent subagents. Use up to six for complex
-  work and the configured ceiling of eight only for exceptional work with
-  enough independent packages.
-- Never spawn merely to fill slots. Stop when evidence and implementation
-  coverage are sufficient.
+- one exact question or small deliverable;
+- explicit paths, symbols, or other anchors;
+- exclusive owned paths for a writer;
+- constraints and non-goals;
+- the focused command or observable evidence expected;
+- stop conditions requiring Luna escalation when scope, ambiguity, or context
+  grows.
 
-Prefer `fork_turns = "none"` with a self-contained packet containing scope,
-success criteria, evidence, stop conditions, output format, exclusive
-`owned_paths`, and subtree budget. Reuse and steer an existing agent while its
-context remains useful.
+Use Luna Medium scanning for broad discovery and Luna Max for default delivery;
+the scanner returns anchored facts while the root owns consequential synthesis.
+Use Sol XHigh work only after Luna is genuinely insufficient; use Sol Max advice
+only for a named consequential risk or checkpoint. The gate-only `sol_reviewer`
+is invoked after fresh verification for material deliveries and emits only
+`ReviewOutputV1`; the gate creates the local receipt.
+
+## Concurrency And Ownership
+
+- Normal work uses one to three active leaves.
+- The ceiling is four spawned threads; the root is not counted in that setting.
+- Every leaf has descendant budget zero.
+- One live writer owns a file. Serialize overlaps and reserve integration for
+  the root.
+- Leaves never commit, push, publish, deploy, perform destructive actions, or
+  mutate external systems.
+- Prefer self-contained packets even for 5.6 profiles; use inherited history
+  only when it is materially useful and safely within context.
