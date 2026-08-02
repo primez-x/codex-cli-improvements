@@ -86,7 +86,11 @@ class InstallerTests(unittest.TestCase):
             "\n\n".join([prefix.rstrip("\r\n"), *kept]).rstrip() + "\n",
             encoding="utf-8",
         )
-        shutil.copy2(ROOT / "hooks.json", home / "hooks.json")
+        hooks = json.loads((ROOT / "hooks.json").read_text(encoding="utf-8"))
+        for event, entries in hooks["hooks"].items():
+            preserved = [installer_module._remove_gate_handlers(entry) for entry in entries]
+            hooks["hooks"][event] = [entry for entry in preserved if entry is not None]
+        (home / "hooks.json").write_text(json.dumps(hooks, indent=2), encoding="utf-8")
         (home / "AGENTS.md").write_text("# existing global agreements\n", encoding="utf-8")
         return home
 
@@ -345,6 +349,13 @@ class InstallerTests(unittest.TestCase):
             again = self.install(home)
             self.assertEqual(again.returncode, 0, again.stderr)
             self.assertTrue(json.loads(again.stdout)["idempotent"])
+
+    def test_reinstall_preserves_adjacent_handlers_in_a_shared_managed_group(self) -> None:
+        existing = (ROOT / "hooks.json").read_bytes()
+        merged = installer_module.hooks_text(existing, ROOT).decode("utf-8")
+        for marker in ("plan_gap_goal_hook.py", "instruction_learning_hook.py"):
+            self.assertIn(marker, merged)
+        self.assertEqual(merged.count("lifecycle_gate.py"), 12)
 
     def test_payload_is_exact_production_allowlist_with_one_canonical_packet_helper(self) -> None:
         """Copying tests or a second packet helper must fail this test."""
