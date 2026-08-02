@@ -41,8 +41,8 @@ bounded packet containing:
 - stop conditions requiring Luna escalation when scope, ambiguity, or context
   grows.
 
-Use Luna Medium scanning for broad discovery and Luna Max for default delivery;
-the scanner returns anchored facts while the root owns consequential synthesis.
+Use Luna Medium scanning for broad read-only discovery and Luna Max for default
+delivery. The root retains conflicting-evidence and consequential synthesis.
 Use Sol XHigh work only after Luna is genuinely insufficient; use Sol Max advice
 only for a named consequential risk or checkpoint. The gate-only `sol_reviewer`
 is invoked after fresh verification for material deliveries and emits only

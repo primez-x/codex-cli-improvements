@@ -180,9 +180,9 @@ freeze one immutable evidence bundle, and dispatch only the gate-only
 terminal `sol_reviewer` Sol/max identity. The reviewer emits one strict
 `ReviewOutputV1` with every mandatory lens covered; the lifecycle gate creates
 the locally-created receipt (`ReviewReceiptV1`) and validates its binding to the
-bundle, output, generation,
-and mutation epoch. Completion requires that exact receipt and complete finding
-dispositions. Accepted findings advance the generation and require refreeze plus
+bundle, output, generation, and mutation epoch. Completion requires that exact
+receipt and complete finding dispositions. Accepted findings advance the
+generation and require refreeze plus
 rereview; critical/high rejections require immutable primary counterevidence.
 Read-only, plan-only, and genuinely localized mechanical work may be exempt only
 with an exact recorded reason. A persisted blocker may exit only as a visibly
