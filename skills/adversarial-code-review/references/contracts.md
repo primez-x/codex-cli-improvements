@@ -3,7 +3,7 @@
 All records reject unknown fields and schema versions other than `1`. Canonical serialization and SHA-256 calculation use `plan-review-ladder/scripts/packet_integrity.py` exclusively.
 
 The field-level authority for `ReviewOutputV1` and its finding schema is the
-[`validate_review_output` implementation](../scripts/review_contracts.py#L167-L187).
+[`validate_review_output` implementation](../scripts/review_contracts.py).
 It binds attempt, packet, bundle, snapshot, verdict, coverage, risks, and
 complete stable findings. Lifecycle validation additionally requires one
 evidence-bearing coverage disposition for every mandatory lens named by the
