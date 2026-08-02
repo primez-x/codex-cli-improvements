@@ -423,7 +423,7 @@ class InstallerTests(unittest.TestCase):
             "Hooks own `UserPromptSubmit`",
         ):
             self.assertIn(phrase, skill)
-        self.assertIn("review_contracts.py#L", contracts)
+        self.assertIn("](../scripts/review_contracts.py)", contracts)
         self.assertIn("Strict pass example", contracts)
         self.assertIn("Strict finding example", contracts)
         self.assertIn('"schema_version": 1', contracts)
