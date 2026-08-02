@@ -73,14 +73,10 @@ MANAGED_ROOTS = {
     "skills/adversarial-code-review": {
         path for path in COPY_MANIFEST if path.startswith("skills/adversarial-code-review/")
     },
-    "skills/delivery-orchestration": {
-        path for path in COPY_MANIFEST if path.startswith("skills/delivery-orchestration/")
-    },
 }
 STALE_MANAGED_FILES = {
     "skills/adversarial-code-review/references/evaluation-candidate-results.json",
     "skills/adversarial-code-review/scripts/packet_integrity.py",
-    "skills/delivery-orchestration/scripts/test_routing_policy.py",
 }
 
 
