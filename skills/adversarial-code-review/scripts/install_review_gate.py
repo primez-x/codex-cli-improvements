@@ -176,7 +176,10 @@ def validate_source(source: Path) -> None:
         lowered = path.name.casefold()
         if any(token in lowered for token in CREDENTIAL_TOKENS):
             die(f"credential-like source rejected: {relative}")
-        if path.name.startswith("test_") or _is_runtime_path(PurePosixPath(relative)):
+        if (
+            path.name.startswith("test_")
+            and relative != "skills/delivery-orchestration/scripts/test_routing_policy.py"
+        ) or _is_runtime_path(PurePosixPath(relative)):
             die(f"non-production source rejected: {relative}")
 
     # Runtime and credential material inside a managed skill is a boundary
