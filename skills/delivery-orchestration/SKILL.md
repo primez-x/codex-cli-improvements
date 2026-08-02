@@ -10,182 +10,175 @@ description: >-
 
 # Delivery Orchestration
 
-Keep the configured Sol Medium root focused on the outcome, decisions,
-integration, and final verification. Route each delegated task to the cheapest,
-fastest model-effort profile that can satisfy its context, judgment, ownership,
-and verification needs.
+Keep the configured Sol Medium root focused on the outcome, routing, decisions,
+integration, authorized external actions, and final verification. The root
+directly coordinates terminal depth-1 leaves and chooses the cheapest profile
+that preserves the required context, judgment, ownership, and evidence quality.
 
-This skill explicitly requests proactive subagent delegation for every material
-delivery task. Do not wait for the user to ask for agents or manage routing.
+This skill explicitly requests proactive subagent delegation for material
+delivery. Do not wait for the user to select models or manage routing.
 
 ## 1. Define The Delivery Contract
 
 Before editing, record a compact working contract:
 
-- requested outcome and acceptance criteria;
-- in-scope systems, repositories, and external targets;
-- explicit authorization boundaries;
-- current source and dirty-worktree baseline;
+- requested outcome, acceptance criteria, and non-goals;
+- in-scope systems, repositories, paths, and external targets;
+- authorization boundaries and current dirty-worktree baseline;
 - required source, test, build, generated-output, runtime, and release gates;
-- terminal condition and current blockers.
+- terminal condition, current evidence, assumptions, and blockers.
 
-Treat the user's outcome as the active objective across turns. A plan, local
-edit, passing unit test, Git push, package upload, or prior failed attempt is an
-intermediate state unless it satisfies the terminal condition.
+Treat a plan, edit, passing focused test, commit, push, build, or artifact upload
+as an intermediate state unless it satisfies the complete terminal condition.
 
 ## 2. Route Work By Task Shape
 
-A task is material when any of these is true:
+A task is material when it likely changes more than one file or concern, aligns
+code with tests or generated output, crosses layers, requires a build/install or
+runtime smoke, would fill root context with discovery/logs, or carries material
+compatibility, security, persistence, concurrency, data-integrity, migration,
+or external-impact risk.
 
-- more than one file or one independent concern is likely to change;
-- code and tests, generated output, documentation, or configuration must align;
-- the task crosses UI, model, service, server, package, or deployment layers;
-- a build, package, install, migration, release, or live smoke is required;
-- discovery, logs, or repeated commands would materially pollute root context;
-- failure recovery, compatibility, security, permissions, or data integrity
-  needs independent challenge.
-
-For a material task, dispatch at least one bounded agent before the root
-accumulates bulk evidence or command output. A non-material quick edit may also
-use the Spark fast path when dispatch is faster than retaining it on the root.
+For material delivery, dispatch at least one bounded terminal leaf. Keep normal
+work to one to three active leaves and use the configured ceiling of four only
+for genuinely independent packages. `max_concurrent_threads_per_session = 4`
+counts spawned threads, not the root. Every leaf reports directly to the root
+and must not spawn.
 
 ### Spark fast path
 
-For fast-path work, use `spark_scanner` at high effort or `spark_worker` at xhigh effort only when
-every gate is true:
+Use `spark_scanner`, xhigh, for a tiny exact read-only check and
+`spark_worker`, xhigh, for a small mechanical edit only when every gate passes:
 
-- the question, deliverable, and target files or symbols are explicit;
-- required context is small and localized;
+- the target, anchors, owned paths, deliverable, and expected evidence are
+  explicit;
+- the required context is small and localized;
 - no architecture, product, compatibility, security, or ownership decision is
   unresolved;
 - success is mechanically verifiable with a focused check;
 - failure is cheap, reversible, and cannot silently damage adjacent behavior.
 
-Spark never coordinates. If any gate fails, or its task discovers ambiguity or
-expanding scope, it stops and returns the evidence to its parent.
+Spark has a materially smaller context window than the 5.6 family. The current
+catalog advertises about 128k tokens for Spark versus 272k for 5.6 profiles,
+with lower usable limits after system overhead. Always dispatch Spark with
+`fork_turns = "none"` and a fresh self-contained bounded packet containing
+exact anchors rather than inherited conversation history. Do not send broad
+discovery or synthesis to Spark. If a gate fails, scope expands, or context
+pressure appears, stop and escalate to Luna.
 
-### Default and escalation routes
+### Luna default
 
-Luna is the default for delegated work that is routine but needs multi-step
-tool use, broader context, or judgment. For routine work, use `luna_scanner` at medium effort and `luna_worker` or `luna_coordinator` at high effort.
+Luna is the default delegated model:
 
-Use Terra at medium effort for ambiguous, multi-file, cross-layer, or
-integration-heavy work that exceeds a bounded Luna assignment. Use
-`sol_worker` at xhigh for rare difficult implementation or diagnosis. Use
-`sol_advisor` or `sol_coordinator` at max only for consequential adversarial
-review, architecture, security, concurrency, persistence, difficult failure
-recovery, or a Sol-supervised subtree.
+- use `luna_scanner`, high, for broad or context-heavy read-only discovery,
+  inventories, comparisons, history, logs, and independent validation;
+- use `luna_worker`, max, for the default implementation path: substantial
+  routine edits, debugging, tests, documentation, and multi-file integration.
 
-Profiles use their configured efforts; agents escalate the model rather than
-making ad-hoc effort changes. Correct an otherwise sound task packet once; when
-capability, context, or semantic risk is the constraint, escalate the model
-from Spark to Luna, Luna to Terra, or Terra to Sol. Max effort is reserved for
-the Sol advisor and coordinator profiles, not routine work.
+Luna's low cost and larger context make it the preferred step above Spark.
+Escalate the model directly from Luna to Sol when difficulty or consequential
+risk exceeds Luna; there is no intermediate custom model tier.
 
-Use a coordinator only when its bounded subtree clearly reduces root work.
-The root chooses models, effort, and depth automatically and never asks the
-user to manage routing.
+### Sol escalation
 
-If concurrent writing is unsafe, keep one writer and delegate a read-only
-source comparison, test run, output verification, or failure analysis. A dirty
-worktree is not a reason to avoid all delegation.
+Use `sol_worker`, xhigh, only for genuinely difficult, ambiguous,
+security-sensitive, cross-layer implementation or diagnosis that Luna cannot
+reliably finish. Use `sol_advisor`, max, only for rare consequential
+architecture, risk, plan, or final-diff challenge. Do not use either profile as
+a routine throughput tier.
 
-Keep normal work to one to three active children. Add depth or agents only for
-distinct work packages with material value.
+Only the depth-0 root dispatches `sol_advisor`. An early checkpoint is
+risk-triggered when material architecture, compatibility, migration,
+persistence, security, concurrency, data integrity, external impact, conflicting
+authority, a stuck approach, or a material approach change is present. A final
+checkpoint is risk-triggered after durable changes and fresh evidence when the
+same risks remain or the delivery has four or more substantive stages. Sol is
+not mandatory for localized, low-risk, mechanically prescribed work with
+focused verification. A current Sol-reviewed immutable handoff may satisfy the
+early checkpoint when scope and evidence are unchanged.
 
-Follow [delegation topology](references/delegation-topology.md) for model,
-effort, depth, subtree, and concurrency ceilings.
+Give the advisor the checkpoint type, request and acceptance criteria,
+authority boundaries, concise evidence anchors, hypothesis or diff,
+uncertainties, and specific questions. Final-delivery packets include actual
+applicable test, build, and runtime evidence. Disposition each actionable
+finding as accepted, rejected, or deferred against primary evidence. Fix
+accepted high-severity gaps and rerun affected gates. The advisor never edits,
+expands authorization, owns the user response, or creates a user approval gate.
+
+See [delegation topology](references/delegation-topology.md) for the canonical
+profile matrix, context split, and terminal-leaf rules.
 
 ## 3. Assign Ownership Precisely
 
 Give every writer a self-contained packet containing:
 
 - exact exclusive `owned_paths`;
-- requested behavior and non-goals;
-- authoritative source and applicable instructions;
-- expected interfaces with root- or sibling-owned work;
-- focused verification;
-- evidence and output format;
-- stop conditions and subtree budget.
+- requested behavior, non-goals, and authoritative anchors;
+- applicable instructions and interfaces with root-owned work;
+- focused verification, expected evidence, and output format;
+- stop conditions and an explicit zero descendant budget.
 
-One live writer owns a file. Serialize same-file work. Reserve integration
-files for the root or one coordinator. Subagents never commit, push, publish,
-deploy, or perform destructive or external actions.
+One live writer owns a file. Serialize same-file work. Subagents never commit,
+push, publish, deploy, perform destructive actions, or mutate external systems.
+Inspect returned diffs and evidence before integrating or editing a returned
+path.
 
-Scanner/advisor no-edit rules remain behavioral boundaries even when a parent
-permission mode is not mechanically read-only. Use parent read-only mode when
-isolation is required and inspect the worktree or external evidence afterward.
+## 4. Protect Root Context And Recover Deliberately
 
-Inspect returned evidence and diffs. Reconcile conflicts, steer gaps, and
-return ownership before editing a child-owned path.
+Delegate broad discovery, long logs, inventories, and repeated test monitoring
+to Luna and require a distilled result. Prefer bounded commands and exact
+anchors. Reuse a useful leaf for a related follow-up. After two repetitions of
+the same command or wait path without new evidence, stop and replan.
 
-## 4. Protect Root Context
+For a failure, capture the exact stage and error, identify whether source,
+generated state, environment, authorization, or an external dependency owns it,
+then apply a source-grounded correction or materially different safe path.
+Rerun the affected gate and every downstream gate invalidated by the change.
 
-Do not make the root consume long searches, build logs, repeated wait output,
-or broad test traces when a scanner or worker can return a distilled result.
+## 5. Git Completion
 
-- Prefer bounded commands and focused output.
-- Delegate long-running build/test monitoring when external action is not
-  involved.
-- After two repetitions of the same command or wait path without new evidence,
-  stop and replan instead of continuing the loop.
-- After a context compaction, reconstruct the delivery contract and current
-  terminal state before acting.
-- Reuse an existing agent for a related follow-up rather than spawning a fresh
-  replacement.
+For authorized implementation or remediation that changes a Git repository,
+scoped commit and push are a standing terminal condition. On an existing
+task-aligned feature branch, commit the task-owned diff and push its configured
+upstream. On a default, detached, mismatched, or unsafe branch, create
+`agent/<task-slug>` from the correct base and push it. Never force-push, and
+never push directly to the default branch without explicit instruction.
 
-## 5. Recover From Failure Without Goal Drift
+Before staging, inspect dirty files and ahead-of-upstream history. Use explicit
+paths or hunks, never `git add -A` in a mixed tree. If ownership overlaps or
+unrelated commits would be published, use an isolated worktree or clone and
+apply only the task diff.
 
-Treat each failure as evidence:
-
-1. Capture the exact failing stage, command, artifact, target, and current
-   error.
-2. Determine whether source, generated state, environment, authorization, or an
-   external dependency owns the failure.
-3. Delegate a bounded independent diagnosis when the cause is not immediate.
-4. Apply a source-grounded correction or try a materially different safe path.
-5. Re-run the affected gate and every downstream gate invalidated by the
-   correction.
-
-A failure from an earlier artifact or attempt is not proof that the current
-artifact will fail. Re-attempt an authorized build/install/deploy after material
-state changes. Do not retry unchanged operations indefinitely.
-
-Stop only when completion requires new authority, unavailable user input, or an
-external-state change and safe in-scope diagnostics and alternatives are
-exhausted. Report the exact blocker and the evidence needed to resume.
+Completion requires a local task-only commit, successful push, and remote-ref
+verification: the remote head must equal the local SHA, or, if it advanced
+concurrently, the task commit must be an ancestor. Never bypass authentication,
+branch protection, hooks, or non-fast-forward safeguards. Explicit `do not
+commit`, `leave uncommitted`, `no push`, `commit only`, `keep local`, and
+equivalent constraints override this default. Pull requests, merges, releases,
+and deployments remain separately authorized.
 
 ## 6. Enforce Terminal Criteria
 
-Before finalizing, compare the result with the delivery contract. Require all
-applicable gates:
+Before finalizing, require every applicable gate:
 
 - intended source and only intended files changed;
-- focused tests, lint, type checks, formatting, and diff sanity pass;
-- generated artifacts and manifests match their source;
-- build/package/output checks pass;
-- compatibility, security, accessibility, performance, and failure paths are
-  covered in proportion to risk;
-- durable corrections, repeated failures, and instruction drift are classified
-  through `instruction-learning-loop`, with its disposition reported;
-- authorized external mutation completed on the named target;
-- health check and representative no-save runtime or visual smoke pass;
+- focused tests, lint, type checks, formatting, and `git diff --check` pass;
+- generated artifacts, manifests, builds, packages, and runtime smoke match
+  their source and target;
+- realistic negative, compatibility, security, performance, and failure paths
+  are covered in proportion to risk;
+- durable corrections and instruction drift are classified through
+  `instruction-learning-loop` and its disposition is reported;
+- authorized external mutation and remote verification completed;
 - residual risks and intentionally deferred work are explicit.
 
-When this skill, `config.toml`, or a custom agent profile changes, run:
+When this skill, `config.toml`, or a custom profile changes, run:
 
 ```powershell
-python "$HOME\.codex\skills\delivery-orchestration\scripts\test_routing_policy.py"
+$env:CODEX_ROUTING_HOME = (Resolve-Path .).Path
+python -B .\skills\delivery-orchestration\scripts\test_routing_policy.py
+Remove-Item Env:CODEX_ROUTING_HOME
 ```
 
-Cheap agents may execute and monitor tests, builds, and other verification.
-The root validates their command scope, distilled evidence, and terminal-gate
-disposition; it does not need to personally stream every log or wait loop.
-
-For an authorized release, do not call the result live after only a commit, Git
-push, build, archive upload, or package upload. Installation and live smoke are
-separate required evidence. Name the target whenever saying that something was
-pushed or deployed.
-
 Return a final answer only when the terminal condition is satisfied or a
-concrete external blocker remains after the recovery procedure.
+concrete external blocker remains after safe recovery paths are exhausted.
