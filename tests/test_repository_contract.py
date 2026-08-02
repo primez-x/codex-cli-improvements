@@ -114,6 +114,49 @@ class RepositoryContractTests(unittest.TestCase):
                 with self.subTest(path=path.relative_to(ROOT), profile=profile):
                     self.assertNotIn(profile, text)
 
+    def test_readme_explains_routing_methodology_and_rejected_alternatives(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8").lower()
+        normalized = " ".join(readme.split())
+
+        for heading in (
+            "## routing decision method",
+            "## why terra is not configured",
+            "## why the other model efforts are not configured",
+            "## when to revisit the matrix",
+        ):
+            self.assertIn(heading, readme)
+
+        for phrase in (
+            "hard gates",
+            "pareto",
+            "role-specific weights",
+            "distinct routing region",
+            "benchmark snapshot",
+            "provisional estimates",
+            "not universal pricing",
+            "121,600",
+            "258,400",
+            "terra low",
+            "terra medium",
+            "terra high",
+            "terra xhigh",
+            "terra max",
+            "luna medium",
+            "luna xhigh",
+            "sol low",
+            "sol high",
+            "sol ultra",
+            "$0.0289",
+            "$0.1598",
+            "$0.0431",
+            "$0.3041",
+            "$0.0658",
+            "$0.4300",
+            "$0.7328",
+            "$1.1671",
+        ):
+            self.assertIn(phrase, normalized)
+
     def test_registered_skills_exist_and_use_relative_paths(self) -> None:
         skill_paths = [
             entry["path"] for entry in self.config.get("skills", {}).get("config", [])
