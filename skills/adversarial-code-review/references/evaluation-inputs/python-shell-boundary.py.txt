@@ -1,0 +1,6 @@
+# fixture-version: 1
+import subprocess
+
+
+def run_user_command(user_value: str) -> None:
+    subprocess.run(user_value, shell=True, check=True)

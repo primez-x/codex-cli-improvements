@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "copy_paths": [
+    "skills/adversarial-code-review/SKILL.md",
+    "skills/adversarial-code-review/agents/openai.yaml",
+    "skills/adversarial-code-review/references/contracts.md",
+    "skills/adversarial-code-review/references/evaluation-corpus.json",
+    "skills/adversarial-code-review/references/evaluation-git-identities.json",
+    "skills/adversarial-code-review/references/evaluation-inputs/python-shell-boundary-corrected.py.txt",
+    "skills/adversarial-code-review/references/evaluation-inputs/python-shell-boundary.py.txt",
+    "skills/adversarial-code-review/references/evaluation-inputs/typescript-concurrency-boundary.ts.txt",
+    "skills/adversarial-code-review/references/evaluation-replay-workflow.md",
+    "skills/adversarial-code-review/references/evaluation-self-test-results.json",
+    "skills/adversarial-code-review/references/managed-agents-instruction.md",
+    "skills/adversarial-code-review/references/production-manifest.json",
+    "skills/adversarial-code-review/references/review-lenses.md",
+    "skills/adversarial-code-review/scripts/evaluate_review_corpus.py",
+    "skills/adversarial-code-review/scripts/install_review_gate.py",
+    "skills/adversarial-code-review/scripts/lifecycle_gate.py",
+    "skills/adversarial-code-review/scripts/review_contracts.py",
+    "skills/adversarial-code-review/scripts/verification_evidence.py",
+    "skills/delivery-orchestration/SKILL.md",
+    "skills/delivery-orchestration/agents/openai.yaml",
+    "skills/delivery-orchestration/references/delegation-topology.md",
+    "agents/sol_reviewer.toml",
+    "skills/plan-review-ladder/scripts/packet_integrity.py"
+  ],
+  "semantic_inputs": [
+    {
+      "path": "config.toml",
+      "role": "codex_config_source"
+    },
+    {
+      "path": "hooks.json",
+      "role": "hook_config_source"
+    }
+  ],
+  "review_paths": [
+    "skills/adversarial-code-review/SKILL.md",
+    "skills/adversarial-code-review/agents/openai.yaml",
+    "skills/adversarial-code-review/references/contracts.md",
+    "skills/adversarial-code-review/references/evaluation-corpus.json",
+    "skills/adversarial-code-review/references/evaluation-git-identities.json",
+    "skills/adversarial-code-review/references/evaluation-inputs/python-shell-boundary-corrected.py.txt",
+    "skills/adversarial-code-review/references/evaluation-inputs/python-shell-boundary.py.txt",
+    "skills/adversarial-code-review/references/evaluation-inputs/typescript-concurrency-boundary.ts.txt",
+    "skills/adversarial-code-review/references/evaluation-replay-workflow.md",
+    "skills/adversarial-code-review/references/evaluation-self-test-results.json",
+    "skills/adversarial-code-review/references/managed-agents-instruction.md",
+    "skills/adversarial-code-review/references/production-manifest.json",
+    "skills/adversarial-code-review/references/review-lenses.md",
+    "skills/adversarial-code-review/scripts/evaluate_review_corpus.py",
+    "skills/adversarial-code-review/scripts/install_review_gate.py",
+    "skills/adversarial-code-review/scripts/lifecycle_gate.py",
+    "skills/adversarial-code-review/scripts/review_contracts.py",
+    "skills/adversarial-code-review/scripts/verification_evidence.py",
+    "skills/delivery-orchestration/SKILL.md",
+    "skills/delivery-orchestration/agents/openai.yaml",
+    "skills/delivery-orchestration/references/delegation-topology.md",
+    "agents/sol_reviewer.toml",
+    "skills/plan-review-ladder/scripts/packet_integrity.py",
+    "config.toml",
+    "hooks.json"
+  ]
+}

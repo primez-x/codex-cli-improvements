@@ -1,0 +1,594 @@
+"""Behavioral tests for the one-way adversarial-review installer."""
+from __future__ import annotations
+
+import csv
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+INSTALLER = ROOT / "skills" / "adversarial-code-review" / "scripts" / "install_review_gate.py"
+MANAGED_MARKER = "adversarial-code-review"
+INSTALLER_SPEC = importlib.util.spec_from_file_location("adversarial_review_installer", INSTALLER)
+assert INSTALLER_SPEC is not None and INSTALLER_SPEC.loader is not None
+installer_module = importlib.util.module_from_spec(INSTALLER_SPEC)
+INSTALLER_SPEC.loader.exec_module(installer_module)
+
+
+class InstallerTests(unittest.TestCase):
+    def invoke(
+        self,
+        *args: str,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-B", str(INSTALLER), *args],
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, **(env or {})},
+        )
+
+    def make_home(self, root: Path) -> Path:
+        home = root / "home"
+        home.mkdir()
+        (home / "config.toml").write_text(
+            'model = "x"\n[agents]\nmax_depth = 2\n',
+            encoding="utf-8",
+            newline="\r\n",
+        )
+        hooks = {
+            "trustedHandlerHashes": {"keep-handler": "keep-hash"},
+            "localMetadata": {"keep": True},
+            "hooks": {
+                "Stop": [{"matcher": "^unrelated$", "hooks": [{"type": "command", "command": "keep", "trust": "keep"}]}],
+                "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "keep-prompt"}]}],
+            },
+        }
+        (home / "hooks.json").write_text(json.dumps(hooks, indent=2), encoding="utf-8")
+        (home / "AGENTS.md").write_bytes(b"# local\r\nkeep this\r\n")
+        return home
+
+    def install(self, home: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        return self.invoke("install", "--source-root", str(ROOT), "--codex-home", str(home), env=env)
+
+    def recovery_fixture(self, root: Path) -> tuple[Path, str, Path, dict[str, bytes]]:
+        home = root / "recovery-home"
+        managed = home / "managed"
+        managed.mkdir(parents=True)
+        preimages = {
+            "managed/a.txt": b"old-a\n",
+            "managed/b.txt": b"old-b\n",
+        }
+        for relative, data in preimages.items():
+            (home / relative).write_bytes(data)
+        transaction_id = "a" * 32
+        writes = {
+            "managed/a.txt": b"new-a\n",
+            "managed/b.txt": b"new-b\n",
+            "managed/new.txt": b"created\n",
+        }
+        with installer_module._install_lock(home):
+            transaction = installer_module._prepare_transaction(home, transaction_id, writes, set())
+        return home, transaction_id, transaction, writes
+
+    def update_journal(self, transaction: Path, **updates: object) -> dict[str, object]:
+        journal_path = transaction / "journal.json"
+        journal = json.loads(journal_path.read_text(encoding="utf-8"))
+        journal.update(updates)
+        installer_module._atomic_json(journal_path, journal)
+        return journal
+
+    def test_prepared_recovery_does_not_rewrite_untouched_preimages(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home, transaction_id, transaction, _ = self.recovery_fixture(Path(temporary))
+            a = home / "managed/a.txt"
+            b = home / "managed/b.txt"
+            old_timestamp = 1_700_000_000_000_000_000
+            os.utime(a, ns=(old_timestamp, old_timestamp))
+            os.utime(b, ns=(old_timestamp, old_timestamp))
+
+            with installer_module._install_lock(home):
+                recovered = installer_module._recover_incomplete(home)
+
+            self.assertEqual(recovered, [transaction_id])
+            self.assertEqual(a.stat().st_mtime_ns, old_timestamp)
+            self.assertEqual(b.stat().st_mtime_ns, old_timestamp)
+            self.assertFalse((home / "managed/new.txt").exists())
+            journal = json.loads((transaction / "journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(journal["status"], "rolled_back")
+            self.assertEqual(journal["applied"], [])
+            self.assertIsNone(journal["next_path"])
+
+    def test_recovery_accepts_before_and_after_replace_next_path_states(self) -> None:
+        for replaced in (False, True):
+            with self.subTest(replaced=replaced), tempfile.TemporaryDirectory() as temporary:
+                home, transaction_id, transaction, writes = self.recovery_fixture(Path(temporary))
+                a = home / "managed/a.txt"
+                b = home / "managed/b.txt"
+                old_timestamp = 1_700_000_000_000_000_000
+                os.utime(b, ns=(old_timestamp, old_timestamp))
+                self.update_journal(transaction, status="applying", next_path="managed/a.txt")
+                if replaced:
+                    a.write_bytes(writes["managed/a.txt"])
+
+                with installer_module._install_lock(home):
+                    recovered = installer_module._recover_incomplete(home)
+
+                self.assertEqual(recovered, [transaction_id])
+                self.assertEqual(a.read_bytes(), b"old-a\n")
+                self.assertEqual(b.stat().st_mtime_ns, old_timestamp)
+                self.assertFalse((home / "managed/new.txt").exists())
+                journal = json.loads((transaction / "journal.json").read_text(encoding="utf-8"))
+                self.assertEqual(journal["status"], "rolled_back")
+                self.assertEqual(journal["applied"], [])
+                self.assertIsNone(journal["next_path"])
+
+    def test_incomplete_recovery_refuses_untouched_and_potentially_applied_drift_atomically(self) -> None:
+        for drifted in ("managed/a.txt", "managed/new.txt"):
+            with self.subTest(drifted=drifted), tempfile.TemporaryDirectory() as temporary:
+                home, transaction_id, transaction, writes = self.recovery_fixture(Path(temporary))
+                self.update_journal(
+                    transaction,
+                    status="applying",
+                    applied=["managed/a.txt"],
+                    next_path="managed/b.txt",
+                )
+                (home / "managed/a.txt").write_bytes(writes["managed/a.txt"])
+                (home / "managed/b.txt").write_bytes(writes["managed/b.txt"])
+                drift_target = home / drifted
+                drift_target.write_bytes(b"third-party-drift\n")
+                before = {
+                    relative: (home / relative).read_bytes() if (home / relative).is_file() else None
+                    for relative in writes
+                }
+                journal_before = (transaction / "journal.json").read_bytes()
+
+                with self.assertRaisesRegex(ValueError, "drift"):
+                    with installer_module._install_lock(home):
+                        installer_module._recover_incomplete(home)
+
+                after = {
+                    relative: (home / relative).read_bytes() if (home / relative).is_file() else None
+                    for relative in writes
+                }
+                self.assertEqual(after, before)
+                self.assertEqual((transaction / "journal.json").read_bytes(), journal_before)
+
+    def test_mid_rollback_progress_is_restartable_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home, transaction_id, transaction, writes = self.recovery_fixture(Path(temporary))
+            self.update_journal(
+                transaction,
+                status="applying",
+                applied=["managed/a.txt", "managed/b.txt"],
+                next_path="managed/new.txt",
+            )
+            for relative, data in writes.items():
+                (home / relative).write_bytes(data)
+
+            original_atomic_json = installer_module._atomic_json
+            interrupted = False
+
+            def interrupt_after_first_progress(path: Path, value: dict[str, object]) -> None:
+                nonlocal interrupted
+                original_atomic_json(path, value)
+                if (
+                    not interrupted
+                    and path == transaction / "journal.json"
+                    and value.get("status") == "rolling_back"
+                    and value.get("next_path") is None
+                    and len(value.get("applied", [])) == 2
+                ):
+                    interrupted = True
+                    raise RuntimeError("simulated rollback crash")
+
+            installer_module._atomic_json = interrupt_after_first_progress
+            try:
+                with self.assertRaisesRegex(RuntimeError, "simulated rollback crash"):
+                    installer_module._rollback_transaction(home, transaction_id, acquire=True)
+            finally:
+                installer_module._atomic_json = original_atomic_json
+
+            interrupted_journal = json.loads((transaction / "journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(interrupted_journal["status"], "rolling_back")
+            self.assertEqual(interrupted_journal["applied"], ["managed/a.txt", "managed/b.txt"])
+            self.assertFalse((home / "managed/new.txt").exists())
+            self.assertEqual((home / "managed/a.txt").read_bytes(), writes["managed/a.txt"])
+            self.assertEqual((home / "managed/b.txt").read_bytes(), writes["managed/b.txt"])
+
+            with installer_module._install_lock(home):
+                self.assertEqual(installer_module._recover_incomplete(home), [transaction_id])
+                self.assertEqual(installer_module._recover_incomplete(home), [])
+
+            self.assertEqual((home / "managed/a.txt").read_bytes(), b"old-a\n")
+            self.assertEqual((home / "managed/b.txt").read_bytes(), b"old-b\n")
+            self.assertFalse((home / "managed/new.txt").exists())
+            final_journal = json.loads((transaction / "journal.json").read_text(encoding="utf-8"))
+            self.assertEqual(final_journal["status"], "rolled_back")
+            self.assertEqual(final_journal["applied"], [])
+            self.assertIsNone(final_journal["next_path"])
+
+    def test_preview_install_verify_idempotent_stateful_smoke_and_rollback(self) -> None:
+        """Removing real lifecycle execution or raw rollback must fail this test."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            original = {name: (home / name).read_bytes() for name in ("config.toml", "hooks.json", "AGENTS.md")}
+
+            preview = self.invoke("preview", "--source-root", str(ROOT), "--codex-home", str(home))
+            self.assertEqual(preview.returncode, 0, preview.stderr)
+            preview_data = json.loads(preview.stdout)
+            self.assertTrue(preview_data["copy"])
+            self.assertEqual(preview_data["semantic"], ["AGENTS.md", "config.toml", "hooks.json"])
+
+            installed = self.install(home)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            receipt = json.loads(installed.stdout)
+            transaction = home / ".adversarial-review-install" / receipt["transaction_id"]
+            self.assertTrue((transaction / "manifest.json").is_file())
+            self.assertEqual(json.loads((transaction / "journal.json").read_text(encoding="utf-8"))["status"], "completed")
+
+            verified = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
+            self.assertEqual(verified.returncode, 0, verified.stderr)
+            self.assertTrue(json.loads(verified.stdout)["ok"])
+
+            smoke = self.invoke("smoke", "--source-root", str(ROOT), "--codex-home", str(home))
+            self.assertEqual(smoke.returncode, 0, smoke.stderr)
+            smoke_data = json.loads(smoke.stdout)
+            self.assertTrue(smoke_data["ok"])
+            self.assertTrue(smoke_data["wrong_profile_rejected"])
+            self.assertTrue(smoke_data["copied_output_rejected"])
+            self.assertTrue(smoke_data["replayed_output_rejected"])
+            self.assertTrue(smoke_data["correct_profile_provenance"])
+            self.assertTrue(smoke_data["final_stop_accepted"])
+            self.assertTrue(smoke_data["prompt_pending_classification"])
+            self.assertTrue(smoke_data["managed_mutation_reserved"])
+            self.assertTrue(smoke_data["managed_mutation_recorded_once"])
+            self.assertEqual(smoke_data["fixture_observations"]["mutation_epoch_before"], 0)
+            self.assertEqual(smoke_data["fixture_observations"]["mutation_epoch_after"], 1)
+            self.assertEqual(smoke_data["fixture_observations"]["inflight_after_pre"], ["fixture-mutation-1"])
+            self.assertEqual(smoke_data["fixture_observations"]["inflight_after_post"], [])
+            self.assertEqual(
+                smoke_data["events"],
+                ["UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"],
+            )
+
+            again = self.install(home)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            self.assertTrue(json.loads(again.stdout)["idempotent"])
+
+            rolled_back = self.invoke(
+                "rollback", "--codex-home", str(home), "--transaction-id", receipt["transaction_id"]
+            )
+            self.assertEqual(rolled_back.returncode, 0, rolled_back.stderr)
+            for name, data in original.items():
+                self.assertEqual((home / name).read_bytes(), data)
+
+    def test_payload_is_exact_production_allowlist_with_one_canonical_packet_helper(self) -> None:
+        """Copying tests or a second packet helper must fail this test."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            result = self.install(home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            expected = set(json.loads(result.stdout)["installed_files"])
+            actual = {
+                path.relative_to(home).as_posix()
+                for root in (home / "skills" / "adversarial-code-review", home / "skills" / "delivery-orchestration")
+                for path in root.rglob("*")
+                if path.is_file()
+            }
+            expected_managed = {path for path in expected if path.startswith("skills/") and "plan-review-ladder" not in path}
+            self.assertEqual(actual, expected_managed)
+            self.assertFalse(any(Path(path).name.startswith("test_") for path in expected))
+            self.assertEqual(
+                [path for path in expected if path.endswith("packet_integrity.py")],
+                ["skills/plan-review-ladder/scripts/packet_integrity.py"],
+            )
+            self.assertFalse((home / "skills" / "adversarial-code-review" / "scripts" / "packet_integrity.py").exists())
+            self.assertIn(
+                "skills/adversarial-code-review/references/evaluation-self-test-results.json",
+                expected,
+            )
+            self.assertIn(
+                "skills/adversarial-code-review/references/evaluation-git-identities.json",
+                expected,
+            )
+            self.assertIn(
+                "skills/adversarial-code-review/references/evaluation-inputs/python-shell-boundary-corrected.py.txt",
+                expected,
+            )
+            self.assertIn(
+                "skills/adversarial-code-review/references/evaluation-replay-workflow.md",
+                expected,
+            )
+
+    def test_skill_routes_materiality_lifecycle_entrypoints_and_output_authority(self) -> None:
+        """Forward-use guidance must expose decisions and executable entrypoints."""
+        skill = (ROOT / "skills" / "adversarial-code-review" / "SKILL.md").read_text(encoding="utf-8")
+        contracts = (ROOT / "skills" / "adversarial-code-review" / "references" / "contracts.md").read_text(encoding="utf-8")
+        for phrase in (
+            "Multi-file or cross-layer",
+            "record an exact exemption reason",
+            "lifecycle_gate.py classify",
+            "lifecycle_gate.py freeze",
+            "lifecycle_gate.py disposition",
+            "lifecycle_gate.py status",
+            "Hooks own `UserPromptSubmit`",
+        ):
+            self.assertIn(phrase, skill)
+        self.assertIn("review_contracts.py#L", contracts)
+        self.assertIn("Strict pass example", contracts)
+        self.assertIn("Strict finding example", contracts)
+        self.assertIn('"schema_version": 1', contracts)
+        workflow = (ROOT / "skills" / "adversarial-code-review" / "references" / "evaluation-replay-workflow.md").read_text(encoding="utf-8")
+        for phrase in (
+            "freeze the case",
+            "Dispatch `sol_reviewer`",
+            "export-replay",
+            "Capture stdout unchanged",
+            "Do not hand-create or edit",
+            "--lifecycle-state-root",
+            "--claim-empirical-quality",
+            "local administrator",
+        ):
+            self.assertIn(phrase, workflow)
+        self.assertIn("one-to-one semantic correspondence", contracts)
+
+    def test_hook_merge_replaces_only_managed_entries_and_preserves_trust_data(self) -> None:
+        """Importing adjacent hooks or retaining stale handlers must fail this test."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            destination = json.loads((home / "hooks.json").read_text(encoding="utf-8"))
+            destination["hooks"]["PreToolUse"] = [
+                {"matcher": "^old$", "hooks": [{"type": "command", "command": "old adversarial-code-review lifecycle_gate.py"}]},
+                {"matcher": "^keep$", "hooks": [{"type": "command", "command": "keep-pre"}]},
+            ]
+            (home / "hooks.json").write_text(json.dumps(destination, indent=3), encoding="utf-8")
+
+            result = self.install(home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            installed = json.loads((home / "hooks.json").read_text(encoding="utf-8"))
+            self.assertEqual(installed["trustedHandlerHashes"], {"keep-handler": "keep-hash"})
+            self.assertEqual(installed["localMetadata"], {"keep": True})
+            serialized = json.dumps(installed)
+            self.assertIn("keep-prompt", serialized)
+            self.assertIn("keep-pre", serialized)
+            self.assertIn('"trust": "keep"', serialized)
+            self.assertNotIn("plan_gap_goal_hook", serialized)
+            self.assertNotIn("instruction_learning_hook", serialized)
+            self.assertNotIn("old adversarial-code-review", serialized)
+            self.assertEqual(serialized.count("lifecycle_gate.py"), 12)  # command + commandWindows, six events.
+
+    def test_semantic_corruption_fails_verify(self) -> None:
+        """Fail-open semantic comparisons must fail this test."""
+        mutators = {
+            "config-agent": lambda home: (home / "config.toml").write_text(
+                (home / "config.toml").read_text(encoding="utf-8").replace(
+                    './agents/sol_reviewer.toml', './agents/wrong.toml'
+                ), encoding="utf-8"
+            ),
+            "config-skill": lambda home: (home / "config.toml").write_text(
+                (home / "config.toml").read_text(encoding="utf-8").replace(
+                    './skills/adversarial-code-review/SKILL.md', './skills/wrong/SKILL.md'
+                ), encoding="utf-8"
+            ),
+            "profile-purpose": lambda home: (home / "agents" / "sol_reviewer.toml").write_text(
+                (home / "agents" / "sol_reviewer.toml").read_text(encoding="utf-8").replace(
+                    "Review only the frozen bundle", "Review the mutable workspace"
+                ), encoding="utf-8"
+            ),
+            "hooks-matcher": lambda home: (home / "hooks.json").write_text(
+                (home / "hooks.json").read_text(encoding="utf-8").replace('^sol_reviewer$', '^anything$'),
+                encoding="utf-8",
+            ),
+            "managed-block": lambda home: (home / "AGENTS.md").write_text(
+                (home / "AGENTS.md").read_text(encoding="utf-8").replace(
+                    "For a material delivery", "For some material deliveries"
+                ), encoding="utf-8"
+            ),
+        }
+        for name, mutate in mutators.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                home = self.make_home(Path(temporary))
+                result = self.install(home)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                mutate(home)
+                verified = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
+                self.assertNotEqual(verified.returncode, 0, verified.stdout)
+                self.assertFalse(json.loads(verified.stdout)["ok"])
+
+    def test_install_rolls_back_on_replacement_validator_and_smoke_failures(self) -> None:
+        """Any post-journal failure leaving partial live bytes must fail this test."""
+        for failure in ("replace:2", "validators", "smoke"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                home = self.make_home(Path(temporary))
+                originals = {name: (home / name).read_bytes() for name in ("config.toml", "hooks.json", "AGENTS.md")}
+                result = self.install(home, env={"CODEX_ADVERSARIAL_INSTALL_FAIL_STEP": failure})
+                self.assertNotEqual(result.returncode, 0)
+                for name, data in originals.items():
+                    self.assertEqual((home / name).read_bytes(), data)
+                self.assertFalse((home / "agents" / "sol_reviewer.toml").exists())
+
+    def test_smoke_and_install_fail_when_prompt_or_epoch_observation_is_regressed(self) -> None:
+        """A read-only misclassification or omitted epoch increment must fail installation."""
+        mutations = {
+            "prompt": ('return "pending", None', 'return "exempt", "automatic: injected regression"'),
+            "epoch": (
+                'state["mutation_epoch"] += 1\n                changed = True',
+                'state["mutation_epoch"] += 0\n                changed = True',
+            ),
+        }
+        for name, (before, after) in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                source = root / "source"
+                shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", "__pycache__", ".superpowers", "tmp"))
+                gate = source / "skills" / "adversarial-code-review" / "scripts" / "lifecycle_gate.py"
+                text = gate.read_text(encoding="utf-8")
+                self.assertIn(before, text)
+                gate.write_text(text.replace(before, after, 1), encoding="utf-8")
+                home = self.make_home(root)
+                originals = {path: (home / path).read_bytes() for path in ("config.toml", "hooks.json", "AGENTS.md")}
+                result = self.invoke("install", "--source-root", str(source), "--codex-home", str(home))
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                for path, data in originals.items():
+                    self.assertEqual((home / path).read_bytes(), data)
+
+    def test_next_install_recovers_an_interrupted_journal_before_applying(self) -> None:
+        """Ignoring a prepared/applying recovery journal must fail this test."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            transaction_id = "b" * 32
+            with installer_module._install_lock(home):
+                transaction = installer_module._prepare_transaction(
+                    home,
+                    transaction_id,
+                    {"AGENTS.md": b"partially replaced\n"},
+                    set(),
+                )
+            journal_path = transaction / "journal.json"
+            self.update_journal(transaction, status="applying", next_path="AGENTS.md")
+            (home / "AGENTS.md").write_bytes(b"partially replaced\n")
+            pending = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
+            self.assertNotEqual(pending.returncode, 0)
+            self.assertIn("recovery-journal", pending.stdout)
+
+            recovered = self.install(home)
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertIn(transaction_id, json.loads(recovered.stdout)["recovered"])
+            self.assertEqual(json.loads(journal_path.read_text(encoding="utf-8"))["status"], "rolled_back")
+            self.assertEqual(
+                self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home)).returncode,
+                0,
+            )
+
+    def test_explicit_completed_rollback_refuses_live_drift_and_a_later_install(self) -> None:
+        """Historical rollback must never overwrite user edits or a newer completed install."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            first = self.install(home)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            first_id = json.loads(first.stdout)["transaction_id"]
+
+            user_edit = home / "skills" / "adversarial-code-review" / "references" / "contracts.md"
+            user_edit.write_text(user_edit.read_text(encoding="utf-8") + "\nuser-owned drift\n", encoding="utf-8")
+            drifted = self.invoke("rollback", "--codex-home", str(home), "--transaction-id", first_id)
+            self.assertNotEqual(drifted.returncode, 0)
+            self.assertIn("drift", (drifted.stdout + drifted.stderr).lower())
+            self.assertTrue(user_edit.read_text(encoding="utf-8").endswith("user-owned drift\n"))
+
+            # Restore the exact first postimage, then make a genuinely newer install.
+            user_edit.write_bytes((ROOT / user_edit.relative_to(home)).read_bytes())
+            source = root / "source-newer"
+            shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", "__pycache__", ".superpowers", "tmp"))
+            newer_contract = source / user_edit.relative_to(home)
+            newer_contract.write_text(newer_contract.read_text(encoding="utf-8") + "\nnewer package revision\n", encoding="utf-8")
+            second = self.invoke("install", "--source-root", str(source), "--codex-home", str(home))
+            self.assertEqual(second.returncode, 0, second.stderr)
+            second_id = json.loads(second.stdout)["transaction_id"]
+            self.assertNotEqual(first_id, second_id)
+
+            historical = self.invoke("rollback", "--codex-home", str(home), "--transaction-id", first_id)
+            self.assertNotEqual(historical.returncode, 0)
+            self.assertIn("later", (historical.stdout + historical.stderr).lower())
+            self.assertTrue(user_edit.read_text(encoding="utf-8").endswith("newer package revision\n"))
+
+    @unittest.skipUnless(os.name == "nt", "Windows ACL behavior")
+    def test_transaction_backup_and_staging_leaves_have_private_recursive_acls(self) -> None:
+        """Relying on chmod instead of a recursive Windows ACL must fail."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            result = self.install(home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            transaction = home / ".adversarial-review-install" / json.loads(result.stdout)["transaction_id"]
+            leaves = [
+                transaction / "backup" / "AGENTS.md",
+                transaction / "staging" / "agents" / "sol_reviewer.toml",
+                transaction / "journal.json",
+            ]
+            identity = subprocess.run(
+                ["whoami", "/user", "/fo", "csv", "/nh"], text=True, capture_output=True, check=False
+            )
+            self.assertEqual(identity.returncode, 0, identity.stderr)
+            current_user_sid = next(csv.reader([identity.stdout.strip()]))[1]
+            for index, leaf in enumerate(leaves):
+                with self.subTest(leaf=leaf.relative_to(transaction)):
+                    acl_path = root / f"transaction-{index}.acl"
+                    saved = subprocess.run(
+                        ["icacls", str(leaf), "/save", str(acl_path), "/c"],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(saved.returncode, 0, saved.stderr)
+                    sddl = acl_path.read_text(encoding="utf-16-le")
+                    self.assertNotIn(";;;BU)", sddl)
+                    self.assertNotIn(";;;WD)", sddl)
+                    self.assertNotIn(";;;AU)", sddl)
+                    self.assertIn(current_user_sid, sddl)
+                    self.assertIn(";;;SY)", sddl)
+                    self.assertIn(";;;BA)", sddl)
+
+    def test_rejects_overlap_runtime_source_symlink_and_unsafe_rollback(self) -> None:
+        """Lexical or resolved path escape and unauthenticated rollback must fail this test."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            overlap = self.invoke("preview", "--source-root", str(home), "--codex-home", str(home))
+            self.assertNotEqual(overlap.returncode, 0)
+
+            source = root / "source"
+            shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", "__pycache__", ".superpowers", "tmp"))
+            (source / "skills" / "adversarial-code-review" / "state").mkdir()
+            runtime = self.invoke("preview", "--source-root", str(source), "--codex-home", str(home))
+            self.assertNotEqual(runtime.returncode, 0)
+
+            traversal = self.invoke("rollback", "--codex-home", str(home), "--transaction-id", "../escape")
+            self.assertNotEqual(traversal.returncode, 0)
+
+            installed = self.install(home)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            transaction_id = json.loads(installed.stdout)["transaction_id"]
+            manifest_path = home / ".adversarial-review-install" / transaction_id / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            backed_up = next(path for path, record in manifest["paths"].items() if record["present"])
+            manifest["paths"][backed_up]["sha256"] = "0" * 64
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            corrupt = self.invoke("rollback", "--codex-home", str(home), "--transaction-id", transaction_id)
+            self.assertNotEqual(corrupt.returncode, 0)
+
+            link_source = root / "link-source"
+            try:
+                link_source.symlink_to(ROOT, target_is_directory=True)
+            except OSError:
+                pass
+            else:
+                linked = self.invoke("preview", "--source-root", str(link_source), "--codex-home", str(home))
+                self.assertNotEqual(linked.returncode, 0)
+
+            outside = root / "outside"
+            outside.mkdir()
+            linked_parent = root / "linked-parent"
+            linked_parent.mkdir()
+            linked_home = self.make_home(linked_parent)
+            skills_link = linked_home / "skills"
+            try:
+                skills_link.symlink_to(outside, target_is_directory=True)
+            except OSError:
+                pass
+            else:
+                escaped = self.install(linked_home)
+                self.assertNotEqual(escaped.returncode, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

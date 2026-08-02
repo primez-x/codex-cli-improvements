@@ -1,0 +1,9 @@
+// fixture-version: 1
+let nextReservation = 0;
+
+export async function reserve(): Promise<number> {
+  const current = nextReservation;
+  await Promise.resolve();
+  nextReservation = current + 1;
+  return current;
+}

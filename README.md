@@ -11,7 +11,9 @@ credentials, local runtime state, or machine-specific paths.
 ## Included
 
 - `config.toml`: an orchestration-only configuration example.
-- `agents/`: ten scanner, worker, coordinator, and advisor profiles.
+- `agents/`: scanner, worker, coordinator, advisor, and terminal reviewer profiles.
+- `skills/adversarial-code-review/`: immutable evidence contracts and the
+  lifecycle review gate.
 - `skills/delivery-orchestration/`: adaptive implementation routing,
   ownership, integration, and completion gates.
 - `skills/plan-review-ladder/`: independent multi-model plan review with
@@ -77,19 +79,34 @@ handling, and evidence-limited telemetry.
 Use this repository as a source package, not as a blind replacement for an
 existing Codex home:
 
-1. Back up the current Codex configuration.
-2. Copy `agents/` and the three directories under `skills/` into the matching
-   directories under `CODEX_HOME` (normally `~/.codex`).
-3. Merge the root model, `[agents]`, `[agents.*]`, `[features]`, and
-   `[[skills.config]]` entries from `config.toml` into the local config.
-4. Merge `hooks.json` with any existing hook registrations and copy
-   `hooks/plan_gap_goal_hook.py`. The registered commands honor `CODEX_HOME`;
-   when it is unset they resolve the default `~/.codex` user profile home.
-5. Restart Codex and begin a new task so hook registrations, model profiles,
-   and skill routing reload.
-6. In the new task, open `/hooks`, review the two user-level hook events and
-   all three handler registrations, and approve them for this installation. Do
-   not bypass trust controls; review and approve the user-level hooks instead.
+Use the transactional installer instead of manually copying or merging files.
+It uses an explicit production-file allowlist, previews raw copied paths and
+exact managed TOML/JSON/instruction changes, writes a private staged payload and
+recovery journal, authenticates every backup, is idempotent, and can roll back
+a transaction. It preserves unrelated hook groups, hook trust metadata, agents,
+skills, config sections, and instructions:
+
+Incomplete-transaction recovery is compare-and-swap safe against its journal:
+only `applied` paths and the in-flight `next_path` are rollback candidates,
+untouched paths are never rewritten, and every live target must still equal an
+authenticated preimage, postimage, or expected absence before recovery mutates
+anything. Per-path `rolling_back` progress makes an interrupted rollback
+restartable; unrecognized drift is preserved and blocks recovery.
+
+```powershell
+python -B .\skills\adversarial-code-review\scripts\install_review_gate.py preview --source-root . --codex-home $env:CODEX_HOME
+python -B .\skills\adversarial-code-review\scripts\install_review_gate.py install --source-root . --codex-home $env:CODEX_HOME
+python -B .\skills\adversarial-code-review\scripts\install_review_gate.py verify --source-root . --codex-home $env:CODEX_HOME
+python -B .\skills\adversarial-code-review\scripts\install_review_gate.py smoke --source-root . --codex-home $env:CODEX_HOME
+```
+
+`install` and `verify` run both installed skill validators plus a stateful
+handler-contract smoke. The smoke creates a temporary Git delivery and derives
+wrong-profile, copied-output, replay, correct-profile, and final-Stop outcomes
+from the real lifecycle handler. It is not proof that a running Codex app loaded
+or trusted handlers. Restart Codex, open a new task, use `/hooks` to review and
+approve all six changed handlers, then run the live provenance smoke. The
+installer never writes trusted hashes or bypasses trust controls.
 
 Model availability and supported reasoning efforts can vary by account and
 Codex release. Verify the local model catalog before enabling a profile.
@@ -105,12 +122,38 @@ Remove-Item Env:CODEX_ROUTING_HOME
 
 python -B .\skills\plan-review-ladder\scripts\test_plan_routing.py
 python -B .\skills\instruction-learning-loop\scripts\test_instruction_learning.py
+python -B .\skills\adversarial-code-review\scripts\lifecycle_gate.py health
+python -B .\skills\adversarial-code-review\scripts\evaluate_review_corpus.py --corpus .\skills\adversarial-code-review\references\evaluation-corpus.json --results .\skills\adversarial-code-review\references\evaluation-self-test-results.json --git-identities .\skills\adversarial-code-review\references\evaluation-git-identities.json
+python -B -m unittest discover -s .\tests -p "test_adversarial_review_installer.py" -v
+python -B -m unittest discover -s .\tests -p "test_adversarial_review_evaluation.py" -v
 python -B -m unittest discover -s .\tests -v
 ```
 
-After installation, use `/hooks` to confirm both registered events and all
-three handlers are enabled, then run the unit-test commands above as a positive
+After installation, restart Codex, use `/hooks` to confirm all six registered
+events and their handlers are enabled, then run the unit-test commands above as a positive
 smoke check.
+
+For a material delivery, the gate classifies exact owned paths, freezes one
+canonical bundle containing the snapshot, contract, packet, and reviewable
+source bytes. The bundle digest-binds the versioned review-lens checklist, and
+the output must disposition every mandatory lens. The gate binds the configured
+`sol_reviewer` agent/model/profile to a single attempt and generation. The hook
+creates the receipt locally from the validated output and disposition ledger.
+Accepted findings invalidate that receipt and require a new generation, freeze,
+and review. The pinned corpus evaluator checks strict `ReviewOutputV1` records,
+known-category recall, authenticated Git identities, immutable local inputs,
+curated evaluator self-test outputs, and corrected-control false positives.
+The curated file tests scoring mechanics only. Reviewer-quality evaluation
+requires a fresh provenance-bound `sol_reviewer`/Sol/max replay created through
+the documented freeze/dispatch/lifecycle-export workflow. Empirical evaluation
+requires both `--lifecycle-state-root` and `--claim-empirical-quality`, and the
+evaluator revalidates the retained state, active pointer, profile, bundle bytes,
+output, disposition, and receipt. Standalone self-consistent JSON is rejected.
+Even a passing replay is empirical regression evidence, not
+proof of complete defect detection. A persisted
+infrastructure or reviewer blocker can exit only as
+`[adversarial-review-blocked] Incomplete: ...`; it is never a successful
+delivery.
 
 The repository contract tests also reject machine-specific absolute paths and
 project-specific material in the reusable package.

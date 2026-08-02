@@ -172,6 +172,17 @@ applicable gates:
 - health check and representative no-save runtime or visual smoke pass;
 - residual risks and intentionally deferred work are explicit.
 
+For every material delivery, after fresh verification, classify and freeze the
+delivery with `adversarial-code-review`, then dispatch the terminal
+`sol_reviewer` against that immutable bundle. Completion requires its exact
+locally-created receipt and complete dispositions. Accepted findings advance
+the delivery generation and require refreeze plus rereview; critical/high
+rejections require immutable primary counterevidence. Read-only, plan-only,
+and localized mechanically prescribed work may be exempt only with a recorded
+reason. A persisted blocker may exit only as a visibly blocker-qualified
+incomplete result, never success. This final review does not replace the
+adaptive implementation routing above.
+
 When this skill, `config.toml`, or a custom agent profile changes, run:
 
 ```powershell
