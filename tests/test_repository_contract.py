@@ -19,28 +19,26 @@ class RepositoryContractTests(unittest.TestCase):
     def test_config_registers_only_the_supported_routing_matrix(self) -> None:
         agents = self.config["agents"]
         expected = {
-            "spark_scanner": ("gpt-5.3-codex-spark", "high"),
+            "spark_scanner": ("gpt-5.3-codex-spark", "xhigh"),
             "spark_worker": ("gpt-5.3-codex-spark", "xhigh"),
-            "luna_scanner": ("gpt-5.6-luna", "medium"),
-            "luna_worker": ("gpt-5.6-luna", "high"),
-            "luna_coordinator": ("gpt-5.6-luna", "high"),
-            "terra_worker": ("gpt-5.6-terra", "medium"),
-            "terra_coordinator": ("gpt-5.6-terra", "medium"),
+            "luna_scanner": ("gpt-5.6-luna", "high"),
+            "luna_worker": ("gpt-5.6-luna", "max"),
             "sol_worker": ("gpt-5.6-sol", "xhigh"),
             "sol_advisor": ("gpt-5.6-sol", "max"),
-            "sol_coordinator": ("gpt-5.6-sol", "max"),
         }
 
         self.assertEqual(
             (self.config["model"], self.config["model_reasoning_effort"]),
             ("gpt-5.6-sol", "medium"),
         )
+        self.assertEqual(agents["max_depth"], 1)
+        self.assertEqual(agents["max_concurrent_threads_per_session"], 4)
         self.assertEqual(
             (
                 agents["default_subagent_model"],
                 agents["default_subagent_reasoning_effort"],
             ),
-            ("gpt-5.6-luna", "high"),
+            ("gpt-5.6-luna", "max"),
         )
 
         registered = {
@@ -49,7 +47,15 @@ class RepositoryContractTests(unittest.TestCase):
             if isinstance(value, dict) and "config_file" in value
         }
         self.assertEqual(registered, set(expected))
-        self.assertNotIn("spark_coordinator", registered)
+        self.assertTrue(registered)
+
+        profile_files = {
+            path.stem for path in (ROOT / "agents").glob("*.toml")
+        }
+        self.assertEqual(profile_files, set(expected))
+        self.assertFalse(
+            any("terra" in name or "coordinator" in name for name in profile_files)
+        )
 
         for name, wanted in expected.items():
             with self.subTest(agent=name):
@@ -61,6 +67,52 @@ class RepositoryContractTests(unittest.TestCase):
                     (profile["model"], profile["model_reasoning_effort"]),
                     wanted,
                 )
+
+    def test_registered_profiles_are_terminal_and_root_coordinates_directly(self) -> None:
+        registered = {
+            name
+            for name, value in self.config["agents"].items()
+            if isinstance(value, dict) and "config_file" in value
+        }
+        self.assertEqual(
+            registered,
+            {
+                "spark_scanner",
+                "spark_worker",
+                "luna_scanner",
+                "luna_worker",
+                "sol_worker",
+                "sol_advisor",
+            },
+        )
+        self.assertFalse(any(name.endswith("_coordinator") for name in registered))
+
+        for name in registered:
+            with self.subTest(agent=name):
+                instructions = (
+                    ROOT / self.config["agents"][name]["config_file"]
+                ).read_text(encoding="utf-8").lower()
+                self.assertRegex(instructions, r"do not[^.\n]*spawn")
+
+    def test_runtime_assets_do_not_reference_retired_profiles(self) -> None:
+        retired = (
+            "luna_" + "coordinator",
+            "terra_" + "worker",
+            "terra_" + "coordinator",
+            "sol_" + "coordinator",
+        )
+        paths = [ROOT / "config.toml", ROOT / "AGENTS.md", ROOT / "README.md"]
+        paths.extend((ROOT / "agents").glob("*.toml"))
+        paths.extend((ROOT / "skills" / "delivery-orchestration").rglob("*.md"))
+        paths.extend((ROOT / "skills" / "plan-review-ladder").rglob("*.md"))
+        paths.append(
+            ROOT / "skills" / "plan-review-ladder" / "scripts" / "packet_integrity.py"
+        )
+        for path in paths:
+            text = path.read_text(encoding="utf-8").lower()
+            for profile in retired:
+                with self.subTest(path=path.relative_to(ROOT), profile=profile):
+                    self.assertNotIn(profile, text)
 
     def test_registered_skills_exist_and_use_relative_paths(self) -> None:
         skill_paths = [

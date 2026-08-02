@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -195,7 +196,7 @@ class AuditTests(unittest.TestCase):
         skill_dir = skills_root / "note.skill"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text(
-            "---\nname: note-skill\ndescription: durable note skill with UTF-8 evidence âœ“\n---\n\n"
+            "---\nname: note-skill\ndescription: durable note skill with UTF-8 evidence ✓\n---\n\n"
             "This is a long duplicate evidence block intentionally repeated across multiple files.\n\n"
             "This line links to [here](./missing.md) and remains local.\n",
             encoding="utf-8",
@@ -209,19 +210,31 @@ class AuditTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+        qv_src = (
+            Path(__file__).resolve().parents[2]
+            / ".system"
+            / "skill-creator"
+            / "scripts"
+            / "quick_validate.py"
+        )
         qv_dst_dir = self.home / "skills/.system/skill-creator/scripts"
         qv_dst_dir.mkdir(parents=True, exist_ok=True)
-        (qv_dst_dir / "quick_validate.py").write_text(
-            "from pathlib import Path\n"
-            "import sys\n\n"
-            "if len(sys.argv) != 2:\n"
-            "    raise SystemExit(2)\n"
-            "skill_dir = Path(sys.argv[1])\n"
-            "skill_md = skill_dir / 'SKILL.md'\n"
-            "if not skill_md.is_file() or not skill_md.read_text(encoding='utf-8').startswith('---'):\n"
-            "    raise SystemExit(1)\n",
-            encoding="utf-8",
-        )
+        qv_dst = qv_dst_dir / "quick_validate.py"
+        if qv_src.is_file():
+            shutil.copy(qv_src, qv_dst)
+        else:
+            # A portable source checkout does not include Codex system skills.
+            qv_dst.write_text(
+                "from pathlib import Path\n"
+                "import sys\n\n"
+                "if len(sys.argv) != 2:\n"
+                "    raise SystemExit(2)\n"
+                "skill_dir = Path(sys.argv[1])\n"
+                "skill_md = skill_dir / 'SKILL.md'\n"
+                "if not skill_md.is_file() or not skill_md.read_text(encoding='utf-8').startswith('---'):\n"
+                "    raise SystemExit(1)\n",
+                encoding="utf-8",
+            )
 
         # nested AGENTS reference to allow containment checks
         inside_skill = shared_root / "resources"

@@ -35,11 +35,22 @@ class PlanGapGoalHookTests(unittest.TestCase):
 
         return calls
 
-    def test_existing_plan_acceptance_prompt_sets_goal(self) -> None:
-        self.assertEqual(self.run_hook("Implement the plan."), ["thread-123"])
-
-    def test_windows_client_plan_acceptance_prompt_sets_goal(self) -> None:
-        self.assertEqual(self.run_hook("Yes, implement this plan"), ["thread-123"])
+    def test_all_supported_plan_acceptance_prompts_set_goal(self) -> None:
+        prompts = (
+            "Implement the plan",
+            "Implement the plan.",
+            "Yes implement the plan",
+            "Yes implement the plan.",
+            "Yes, implement the plan",
+            "Yes, implement the plan.",
+            "Yes implement this plan",
+            "Yes implement this plan.",
+            "Yes, implement this plan",
+            "Yes, implement this plan.",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                self.assertEqual(self.run_hook(prompt), ["thread-123"])
 
     def test_non_acceptance_prompt_does_not_set_goal(self) -> None:
         self.assertEqual(self.run_hook("Please explain the plan first."), [])
