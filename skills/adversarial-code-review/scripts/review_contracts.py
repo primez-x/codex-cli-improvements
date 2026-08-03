@@ -60,6 +60,23 @@ def _sha(value: Any, field: str) -> str:
     return value
 
 
+def delivery_address_sha256(session_id: Any, task_id: Any, delivery_id: Any) -> str:
+    """Return one collision-resistant address for a delivery identity tuple."""
+
+    identity = {
+        "session_sha256": hashlib.sha256(
+            _nonempty(session_id, "session_id").encode("utf-8")
+        ).hexdigest(),
+        "task_sha256": hashlib.sha256(
+            _nonempty(task_id, "task_id").encode("utf-8")
+        ).hexdigest(),
+        "delivery_sha256": hashlib.sha256(
+            _nonempty(delivery_id, "delivery_id").encode("utf-8")
+        ).hexdigest(),
+    }
+    return compute_packet_sha256(identity)
+
+
 def validate_git_object_id(value: Any, field: str = "Git object id") -> str:
     object_id = _nonempty(value, field)
     if len(object_id) not in {40, 64} or any(character not in _HEX for character in object_id):

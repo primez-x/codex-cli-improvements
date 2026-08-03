@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import importlib.util
 import json
 import os
@@ -72,9 +73,29 @@ class InstallerTests(unittest.TestCase):
             shutil.copy2(ROOT / "agents" / f"{name}.toml", home / "agents" / f"{name}.toml")
         routing_test = home / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py"
         routing_test.parent.mkdir(parents=True)
-        shutil.copy2(
-            ROOT / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py",
-            routing_test,
+        routing_test.write_text(
+            'raise SystemExit("stale six-profile validator")\n',
+            encoding="utf-8",
+        )
+        (routing_test.parent / "local-validator-helper.py").write_text(
+            "# preserve adjacent user-owned helper\n",
+            encoding="utf-8",
+        )
+        plan_root = home / "skills" / "plan-review-ladder"
+        for relative in (
+            "SKILL.md",
+            "agents/openai.yaml",
+            "references/review-lenses.md",
+            "scripts/packet_integrity.py",
+            "scripts/test_packet_integrity.py",
+            "scripts/test_plan_routing.py",
+        ):
+            target = plan_root.joinpath(*relative.split("/"))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f"# stale current-main {relative}\n", encoding="utf-8")
+        (plan_root / "scripts" / "local-plan-helper.py").write_text(
+            "# preserve adjacent user-owned plan helper\n",
+            encoding="utf-8",
         )
 
         text = (ROOT / "config.toml").read_text(encoding="utf-8")
@@ -315,6 +336,232 @@ class InstallerTests(unittest.TestCase):
             for name, data in original.items():
                 self.assertEqual((home / name).read_bytes(), data)
 
+    def test_completed_rollback_refuses_legacy_script_with_composite_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            legacy_gate = home / installer_module.LIFECYCLE_GATE_PATH
+            legacy_gate.parent.mkdir(parents=True)
+            legacy_gate.write_text(
+                "def delivery_path(root, state):\n"
+                "    if False:\n"
+                "        return root / 'deliveries' / delivery_address_sha256(\n"
+                "            state['session_id'], state['task_id'], state['delivery_id']\n"
+                "        ) / f\"generation-{state['generation']}.json\"\n"
+                "    return root / 'deliveries' / 'legacy'\n",
+                encoding="utf-8",
+            )
+            installed = self.install(home)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            transaction_id = json.loads(installed.stdout)["transaction_id"]
+            composite_state = (
+                home
+                / "hooks"
+                / "state"
+                / "adversarial-review"
+                / "deliveries"
+                / ("a" * 64)
+                / "generation-0.json"
+            )
+            composite_state.parent.mkdir(parents=True)
+            composite_state.write_text("{}\n", encoding="utf-8")
+
+            refused = self.invoke(
+                "rollback",
+                "--codex-home",
+                str(home),
+                "--transaction-id",
+                transaction_id,
+            )
+
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("composite lifecycle state", (refused.stdout + refused.stderr).lower())
+            transaction = home / ".adversarial-review-install" / transaction_id
+            self.assertEqual(
+                json.loads((transaction / "journal.json").read_text(encoding="utf-8"))["status"],
+                "completed",
+            )
+            self.assertTrue(
+                (
+                    home
+                    / "skills"
+                    / "adversarial-code-review"
+                    / "scripts"
+                    / "lifecycle_gate.py"
+                ).is_file()
+            )
+            shutil.rmtree(home / "hooks" / "state")
+            rolled_back = self.invoke(
+                "rollback",
+                "--codex-home",
+                str(home),
+                "--transaction-id",
+                transaction_id,
+            )
+            self.assertEqual(rolled_back.returncode, 0, rolled_back.stderr)
+
+    def test_completed_rollback_accepts_structurally_compatible_predecessor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            compatible_gate = home / installer_module.LIFECYCLE_GATE_PATH
+            compatible_gate.parent.mkdir(parents=True)
+            compatible_gate.write_text(
+                "import hashlib\n"
+                "import json\n"
+                "DELIVERY_ADDRESSING = 'composite-v1'\n"
+                "def delivery_address_sha256(session_id, task_id, delivery_id):\n"
+                "    identity = {\n"
+                "        'delivery_sha256': hashlib.sha256(delivery_id.encode()).hexdigest(),\n"
+                "        'session_sha256': hashlib.sha256(session_id.encode()).hexdigest(),\n"
+                "        'task_sha256': hashlib.sha256(task_id.encode()).hexdigest(),\n"
+                "    }\n"
+                "    return hashlib.sha256(json.dumps(\n"
+                "        identity, sort_keys=True, separators=(',', ':')\n"
+                "    ).encode()).hexdigest()\n"
+                "def delivery_path(root, state):\n"
+                "    return root / 'deliveries' / delivery_address_sha256(\n"
+                "        state['session_id'], state['task_id'], state['delivery_id']\n"
+                "    ) / f\"generation-{state['generation']}.json\"\n",
+                encoding="utf-8",
+            )
+            installed = self.install(home)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            transaction_id = json.loads(installed.stdout)["transaction_id"]
+            composite_state = (
+                home
+                / "hooks"
+                / "state"
+                / "adversarial-review"
+                / "deliveries"
+                / ("b" * 64)
+                / "generation-0.json"
+            )
+            composite_state.parent.mkdir(parents=True)
+            composite_state.write_text("{}\n", encoding="utf-8")
+
+            rolled_back = self.invoke(
+                "rollback",
+                "--codex-home",
+                str(home),
+                "--transaction-id",
+                transaction_id,
+            )
+
+            self.assertEqual(rolled_back.returncode, 0, rolled_back.stderr)
+            self.assertEqual(
+                compatible_gate.read_text(encoding="utf-8"),
+                "import hashlib\n"
+                "import json\n"
+                "DELIVERY_ADDRESSING = 'composite-v1'\n"
+                "def delivery_address_sha256(session_id, task_id, delivery_id):\n"
+                "    identity = {\n"
+                "        'delivery_sha256': hashlib.sha256(delivery_id.encode()).hexdigest(),\n"
+                "        'session_sha256': hashlib.sha256(session_id.encode()).hexdigest(),\n"
+                "        'task_sha256': hashlib.sha256(task_id.encode()).hexdigest(),\n"
+                "    }\n"
+                "    return hashlib.sha256(json.dumps(\n"
+                "        identity, sort_keys=True, separators=(',', ':')\n"
+                "    ).encode()).hexdigest()\n"
+                "def delivery_path(root, state):\n"
+                "    return root / 'deliveries' / delivery_address_sha256(\n"
+                "        state['session_id'], state['task_id'], state['delivery_id']\n"
+                "    ) / f\"generation-{state['generation']}.json\"\n",
+            )
+            spec = importlib.util.spec_from_file_location("rolled_back_compatible_gate", compatible_gate)
+            self.assertIsNotNone(spec)
+            self.assertIsNotNone(spec.loader)
+            compatible_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(compatible_module)
+            state = {
+                "session_id": "session",
+                "task_id": "task",
+                "delivery_id": "delivery",
+                "generation": 2,
+            }
+            identity = {
+                "delivery_sha256": hashlib.sha256(b"delivery").hexdigest(),
+                "session_sha256": hashlib.sha256(b"session").hexdigest(),
+                "task_sha256": hashlib.sha256(b"task").hexdigest(),
+            }
+            expected_address = hashlib.sha256(
+                json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            self.assertEqual(
+                compatible_module.delivery_path(Path("root"), state),
+                Path("root") / "deliveries" / expected_address / "generation-2.json",
+            )
+
+    @unittest.skipUnless(os.name == "nt", "Windows extended-path behavior")
+    def test_completed_rollback_discovers_long_override_state_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            installed = self.install(home)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            transaction_id = json.loads(installed.stdout)["transaction_id"]
+            long_state_top = root / ("state-a-" + "a" * 110) / ("state-b-" + "b" * 110)
+            state_root = long_state_top / "state"
+            composite_state = (
+                state_root
+                / "deliveries"
+                / ("c" * 64)
+                / "generation-0.json"
+            )
+            extended_state = Path("\\\\?\\" + os.path.abspath(composite_state))
+            extended_state.parent.mkdir(parents=True)
+            extended_state.write_text("{}\n", encoding="utf-8")
+            self.assertGreater(len(str(state_root)), 260)
+
+            refused = self.invoke(
+                "rollback",
+                "--codex-home",
+                str(home),
+                "--transaction-id",
+                transaction_id,
+                env={"CODEX_ADVERSARIAL_STATE": str(state_root)},
+            )
+
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("composite lifecycle state", (refused.stdout + refused.stderr).lower())
+            shutil.rmtree(Path("\\\\?\\" + os.path.abspath(long_state_top)))
+
+    def test_install_rolls_back_when_plan_review_skill_metadata_is_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            shutil.copytree(
+                ROOT,
+                source,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", ".superpowers", "tmp"),
+            )
+            plan_skill = source / "skills" / "plan-review-ladder" / "SKILL.md"
+            plan_skill.write_text(
+                plan_skill.read_text(encoding="utf-8").replace(
+                    "name: plan-review-ladder",
+                    "name: wrong-plan-review-ladder",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            home = self.make_home(root)
+            originals = {
+                name: (home / name).read_bytes()
+                for name in ("config.toml", "hooks.json", "AGENTS.md")
+            }
+
+            result = self.invoke(
+                "install",
+                "--source-root",
+                str(source),
+                "--codex-home",
+                str(home),
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("plan-review-ladder", (result.stdout + result.stderr).lower())
+            for name, data in originals.items():
+                self.assertEqual((home / name).read_bytes(), data)
+            self.assertFalse((home / "agents" / "sol_reviewer.toml").exists())
+
     def test_install_preserves_current_main_routing_and_adjacent_hooks(self) -> None:
         """The gate must add one identity without rewriting the six-profile router."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -322,6 +569,11 @@ class InstallerTests(unittest.TestCase):
             before = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
             hooks_before = (home / "hooks.json").read_text(encoding="utf-8")
             routing_test = home / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py"
+            adjacent = routing_test.parent / "local-validator-helper.py"
+            adjacent_before = adjacent.read_bytes()
+            plan_root = home / "skills" / "plan-review-ladder"
+            plan_adjacent = plan_root / "scripts" / "local-plan-helper.py"
+            plan_adjacent_before = plan_adjacent.read_bytes()
 
             result = self.install(home)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -351,6 +603,40 @@ class InstallerTests(unittest.TestCase):
                 routing_test.read_bytes(),
                 (ROOT / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py").read_bytes(),
             )
+            validation = subprocess.run(
+                [sys.executable, "-B", str(routing_test)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "CODEX_ROUTING_HOME": str(home)},
+            )
+            self.assertEqual(validation.returncode, 0, validation.stderr)
+            self.assertEqual(adjacent.read_bytes(), adjacent_before)
+            plan_paths = (
+                "SKILL.md",
+                "agents/openai.yaml",
+                "references/review-lenses.md",
+                "scripts/packet_integrity.py",
+                "scripts/test_packet_integrity.py",
+                "scripts/test_plan_routing.py",
+            )
+            for relative in plan_paths:
+                with self.subTest(plan_path=relative):
+                    self.assertEqual(
+                        plan_root.joinpath(*relative.split("/")).read_bytes(),
+                        (ROOT / "skills" / "plan-review-ladder").joinpath(*relative.split("/")).read_bytes(),
+                    )
+            for validator_name in ("test_plan_routing.py", "test_packet_integrity.py"):
+                validator = plan_root / "scripts" / validator_name
+                validation = subprocess.run(
+                    [sys.executable, "-B", str(validator)],
+                    cwd=validator.parent,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(validation.returncode, 0, validation.stderr)
+            self.assertEqual(plan_adjacent.read_bytes(), plan_adjacent_before)
 
             hooks_after = (home / "hooks.json").read_text(encoding="utf-8")
             for marker in ("plan_gap_goal_hook.py", "instruction_learning_hook.py"):
@@ -377,18 +663,26 @@ class InstallerTests(unittest.TestCase):
             expected = set(json.loads(result.stdout)["installed_files"])
             actual = {
                 path.relative_to(home).as_posix()
-                for root in (home / "skills" / "adversarial-code-review", home / "skills" / "delivery-orchestration")
+                for root in (
+                    home / "skills" / "adversarial-code-review",
+                    home / "skills" / "delivery-orchestration",
+                    home / "skills" / "plan-review-ladder",
+                )
                 for path in root.rglob("*")
                 if path.is_file()
             }
-            expected_managed = {path for path in expected if path.startswith("skills/") and "plan-review-ladder" not in path}
+            expected_managed = {path for path in expected if path.startswith("skills/")}
             self.assertEqual(actual, expected_managed)
             self.assertEqual(
-                [path for path in expected if Path(path).name.startswith("test_")],
-                ["skills/delivery-orchestration/scripts/test_routing_policy.py"],
+                sorted(path for path in expected if Path(path).name.startswith("test_")),
+                [
+                    "skills/delivery-orchestration/scripts/test_routing_policy.py",
+                    "skills/plan-review-ladder/scripts/test_packet_integrity.py",
+                    "skills/plan-review-ladder/scripts/test_plan_routing.py",
+                ],
             )
             self.assertEqual(
-                [path for path in expected if path.endswith("packet_integrity.py")],
+                [path for path in expected if Path(path).name == "packet_integrity.py"],
                 ["skills/plan-review-ladder/scripts/packet_integrity.py"],
             )
             self.assertFalse((home / "skills" / "adversarial-code-review" / "scripts" / "packet_integrity.py").exists())

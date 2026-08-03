@@ -125,9 +125,12 @@ def markdown_links(path: Path, text: str, owning_root: Path) -> Tuple[List[str],
             continue
         if "://" in target:
             continue
-        if Path(target).is_absolute():
+        path_target = target.split("#", 1)[0].split("?", 1)[0]
+        if not path_target:
             continue
-        target_path = (base / target).resolve()
+        if Path(path_target).is_absolute():
+            continue
+        target_path = (base / path_target).resolve()
         if not target_path.exists():
             if sparse_tracked_target(path, target_path):
                 sparse.append(target)
