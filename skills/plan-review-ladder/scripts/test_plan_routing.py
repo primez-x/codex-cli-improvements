@@ -20,7 +20,7 @@ class PlanRoutingTests(unittest.TestCase):
 
     def test_root_and_supported_profile_effort_contract(self) -> None:
         for phrase in (
-            "sol medium root",
+            "sol low root",
             "`spark_scanner`, xhigh",
             "`spark_worker`, xhigh",
             "`luna_scanner`, medium",

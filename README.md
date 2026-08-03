@@ -2,7 +2,7 @@
 
 This repository contains a reusable, evidence-driven Codex configuration built
 around six general-purpose terminal routing profiles and one gate-only
-`sol_reviewer` enforcement identity. The Sol Medium root owns routing,
+`sol_reviewer` enforcement identity. The Sol Low root owns routing,
 integration, authorized external actions, and final decisions; bounded leaves
 handle discovery, implementation, and independent challenge.
 
@@ -32,7 +32,7 @@ state, machine-specific paths, or project instructions.
 
 | Role | Model | Effort | Typical use |
 | --- | --- | --- | --- |
-| Root | GPT-5.6 Sol | Medium | Routing, integration, final decisions, external actions |
+| Root | GPT-5.6 Sol | Low | Fast routing, integration, final decisions, external actions |
 | Spark scanner | GPT-5.3 Codex Spark | XHigh | Tiny exact read-only checks |
 | Spark worker | GPT-5.3 Codex Spark | XHigh | Small mechanical edits |
 | Luna scanner | GPT-5.6 Luna | Medium | Broad and context-heavy discovery |
@@ -80,7 +80,7 @@ Selection follows five steps:
 
 | Role | Highest weights | Why |
 | --- | --- | --- |
-| Sol Medium root | Judgment, knowledge reliability, context, integration, then completion time | The root makes routing and final decisions but should not spend Max effort on routine turns |
+| Sol Low root | Completion time, judgment, context, integration, then cost | Most substantial work is delegated, so the root needs fast reliable routing and synthesis more often than extended deliberation |
 | Spark XHigh leaf | Boundedness, instruction following, consumption lane, and startup latency | Tiny exact work benefits from a short packet; broad discovery does not |
 | Luna Medium scanner | Context, latency, evidence coverage, and cost | Broad read-only work needs the 5.6 context, while bounded evidence contracts and root-owned synthesis make Medium the better weighted default |
 | Luna Max worker | Coding reliability, agentic execution, context, and verification | Substantial writes benefit from Luna's highest capability while remaining the default economical tier |
@@ -91,6 +91,18 @@ The Luna Medium scanner collects anchored facts rather than owning architecture,
 product decisions, or consequential interpretation. It reports conflicting
 authority, uncertainty, and unexamined areas to the root, which keeps the
 scanner's lower operational risk from hiding evidence-quality risk.
+
+### Direct root path
+
+The root directly handles a short command only when it covers one concern,
+needs no discovery or conflicting-authority resolution, has no external side
+effect unless that mutation is explicitly authorized, low-impact, reversible,
+and bound to an exact target, has one focused verification, and has a cheap
+lossless rollback. Delegation overhead breaks a tie only after those gates pass.
+Spark remains useful for an isolated fresh packet, parallel tiny work, or
+independent evidence. Material, context-heavy, ambiguous, consequential, or
+external-impact decisions route to bounded leaves or the Sol advisor, with the
+root retaining synthesis, integration, and authorized bounded execution.
 
 ### Benchmark snapshot and evidence limits
 
@@ -112,6 +124,7 @@ Intelligence Index values were marked as provisional estimates.
 | Terra High | 1.3 | 110 | 49 |
 | Terra XHigh | 1.8 | 113 | 52 |
 | Terra Max | 2.7 | 134 | 55 |
+| Sol Low | 0.8 | 60 | 49 |
 | Sol Medium | 1.3 | 61 | 54 |
 | Sol High | 2.1 | 59 | 56 |
 | Sol XHigh | 2.9 | 64 | 58 |
@@ -127,20 +140,35 @@ separate consumption lane; that is an operating assumption, not a general
 model-price claim. TTFT, full end-to-end latency, cache behavior, and actual
 task success still require local measurement.
 
-### Why Sol Medium is the root
+### Why Sol Low is the root
 
-The root is a decision and integration role, not a bulk-output role. In the
-snapshot, Sol Medium scores 54 overall, 57% on AA accuracy, 86% on
-Terminal-Bench, and 76.3 on the Coding Index. Moving to Sol XHigh raises the
-overall score from 54 to 58 but increases weighted decode time from 1.3 to 2.9
-minutes. Sol Medium therefore supplies a stronger reliability floor than the
-routine Luna tier without making every root turn an expensive escalation.
+The root is a routing, decision, and integration role, not a bulk-output role.
+The supplied worksheet puts Sol Low at 0.8 weighted decode minutes, a 49
+Intelligence Index, and $0.3071 per task, versus 1.3 minutes, 54, and $0.5138
+for Sol Medium. Relative to Medium, Low reduces weighted decode time by 38.5%
+and worksheet cost by 40.2%, while retaining about 91% of the reported index
+level. That ratio is not a claim that Low has 91% of Medium's capability; the
+index is only one aggregate signal.
 
-This is a role-weighted compromise, not a universal optimum. Luna Max has much
-higher streaming throughput and, under the worksheet assumptions, lower
-planning cost, while Sol XHigh has higher agentic and difficult-path scores. The
-root routes bulk work to Luna and invokes Sol XHigh or Max only when their
-distinct strengths matter.
+The local administrative command sample supplied during the design discussion also
+finished in about 1.5 minutes on Sol Low versus about 2.5 minutes on Sol Medium.
+That single sample is directional local telemetry, not a universal benchmark.
+[OpenAI's current GPT-5.6 guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.6)
+describes Medium as a balanced starting point, Low as the latency-sensitive
+choice, and recommends comparing efforts on representative workloads. This kit
+chooses Low because the root delegates substantial discovery and implementation
+while retaining the larger Sol context and stronger judgment for routing,
+synthesis, and simple direct commands.
+
+This is a measured operating default, not a universal optimum. Escalate
+difficult implementation to Sol XHigh, use Sol Max for consequential advice,
+and retain the mandatory Sol Max post-verification reviewer for material
+deliveries. Compare Low and Medium on identical representative routing,
+conflicting-evidence, integration, finding-disposition, and authorization
+packets. Keep Low only with zero additional critical/high misses and no increase
+in corrective rework. If Low causes missed delegation, repeated synthesis
+corrections, or reviewer-detected integration gaps, re-evaluate Medium rather
+than hiding the regression behind more leaf effort.
 
 ## Why Terra Is Not Configured
 
@@ -151,7 +179,7 @@ quality and throughput observations come from the later benchmark snapshot.
 | Comparison | Worksheet cost inputs | Cost ratio | Observed tradeoff | Policy decision |
 | --- | ---: | ---: | --- | --- |
 | Luna Medium vs. Terra Medium | $0.0151 / $0.1598 | Terra 10.58x Luna | Terra is eight points higher overall; Luna is 0.3 minutes faster and has 1.46x output speed. | The bounded read-only scanner values context, latency, and cost; root-owned synthesis handles difficult interpretation, so Terra does not earn a separate route. |
-| Luna High vs. Terra Medium | $0.0289 / $0.1598 | Terra 5.53x Luna | Overall score ties at 46. Terra has 0.2-minute lower decode time; Luna has 1.50x output speed. | If Medium scanning is insufficient, the Sol Medium root owns interpretation; neither tied intermediate option needs a permanent profile. |
+| Luna High vs. Terra Medium | $0.0289 / $0.1598 | Terra 5.53x Luna | Overall score ties at 46. Terra has 0.2-minute lower decode time; Luna has 1.50x output speed. | If Medium scanning is insufficient, the Sol Low root owns interpretation or escalates to the configured Sol routes; neither tied intermediate option needs a permanent profile. |
 | Luna XHigh vs. Terra High | $0.0431 / $0.3041 | Terra 7.06x Luna | Overall score and decode time tie at 49 and 1.3 minutes; Luna has 1.49x output speed. | No distinct Terra High region. Luna XHigh is itself consolidated away. |
 | Luna Max vs. Terra XHigh | $0.0658 / $0.4300 | Terra 6.53x Luna | Terra is one point higher and 0.1 minute faster; Luna has 1.58x output speed. | Luna Max remains the default writer because the quality difference is small and the route is simpler. |
 | Terra Max vs. Sol XHigh | $0.7328 / $1.1671 | Sol 1.59x Terra | Terra has 2.09x output speed and slightly lower decode time; Sol is three points higher overall and leads the supplied coding, agentic, accuracy, and difficult-task measures. | Sol XHigh owns rare high-risk implementation where reliability matters more than throughput. |
@@ -185,17 +213,20 @@ local workloads demonstrate a stable, distinct routing region.
   Intelligence Index from 38 to 46, but weighted decode time rises from 0.4 to
   0.9 minutes, output speed is nearly unchanged at 153 versus 157 tokens per
   second, and worksheet cost rises from $0.0151 to $0.0289. Difficult
-  interpretation routes to the Sol Medium root or a risk-triggered advisor, so
+  interpretation routes to the Sol Low root or a risk-triggered advisor, so
   High does not own a separate scanner region.
 - **Luna XHigh:** it sits between the Medium scanner and Max worker but owns no
   separate read/write or risk boundary. It is a reasonable future budget-worker
   candidate if Luna Max cost becomes material.
-- **Sol Low:** it does not provide enough reliability margin for the root and,
-  under the supplied worksheet assumptions, its cost/throughput tradeoff does
-  not justify replacing the routine Luna tier merely for lower decode time.
-- **Sol High:** it improves the overall score from Sol Medium's 54 to 56 while
-  increasing weighted decode time from 1.3 to 2.1 minutes. It does not create a
-  distinct role between the Medium root and XHigh difficult worker.
+- **Sol Medium:** it raises the supplied Intelligence Index from Low's 49 to 54,
+  but weighted decode time rises from 0.8 to 1.3 minutes and worksheet cost from
+  $0.3071 to $0.5138. Because substantial work delegates and Low keeps the same
+  Sol context, Medium does not own a distinct default-root region. It is the
+  first root effort to reconsider if local task success or synthesis quality
+  regresses.
+- **Sol High:** it improves the overall score from Sol Low's 49 to 56 while
+  increasing weighted decode time from 0.8 to 2.1 minutes. It does not create a
+  distinct role between the Low root and XHigh difficult worker.
 - **Sol Ultra:** the supplied benchmark and cost material did not cover it.
   Sol Max already defines the rare advisor ceiling, so an unmeasured higher tier
   is not configured by default.
@@ -231,6 +262,8 @@ Re-run the selection process rather than preserving the matrix by habit when:
 - context windows, effective service limits, prices, or consumption lanes
   change;
 - Luna Max frequently escalates or Sol workers repeatedly handle routine work;
+- the Sol Low root repeatedly misses delegation, needs corrective synthesis,
+  or causes reviewer-detected integration gaps that Sol Medium avoids;
 - Terra Low or Terra Max demonstrates a stable quality, latency, and cost region
   on the actual repository task mix;
 - a previously unused effort level materially changes coding, agentic,
@@ -244,7 +277,7 @@ decision record.
 
 ## Delegation Topology
 
-- Depth 0 is the Sol Medium root.
+- Depth 0 is the Sol Low root.
 - The six general-purpose routing profiles are terminal depth-1 leaves and
   report directly to the root.
 - The gate-only `sol_reviewer` is a depth-1 enforcement identity dispatched

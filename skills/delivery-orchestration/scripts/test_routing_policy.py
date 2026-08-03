@@ -41,7 +41,7 @@ class RoutingPolicyTests(unittest.TestCase):
 
     def test_root_and_untyped_subagent_defaults(self) -> None:
         self.assertEqual(self.config["model"], "gpt-5.6-sol")
-        self.assertEqual(self.config["model_reasoning_effort"], "medium")
+        self.assertEqual(self.config["model_reasoning_effort"], "low")
         self.assertEqual(
             self.agents["default_subagent_model"], "gpt-5.6-luna"
         )
@@ -153,7 +153,9 @@ class RoutingPolicyTests(unittest.TestCase):
         flat_topology = " ".join(topology.split())
 
         for phrase in (
-            "sol medium root",
+            "sol low root",
+            "direct root path",
+            "delegation overhead",
             "spark fast path",
             "luna is the default",
             "escalate the model",
@@ -182,6 +184,26 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertNotIn("depth 3", flat_topology)
         for stale in ("terra", "coordinator", "sol_coordinator"):
             self.assertNotIn(stale, flat_skill + " " + flat_topology)
+
+    def test_direct_root_path_is_bounded_and_gates_external_effects(self) -> None:
+        skill = (
+            CODEX_HOME / "skills" / "delivery-orchestration" / "SKILL.md"
+        ).read_text(encoding="utf-8").lower()
+        normalized = " ".join(skill.split())
+
+        for phrase in (
+            "one concern",
+            "no discovery",
+            "no conflicting authority",
+            "external mutation is explicitly authorized",
+            "exact target",
+            "low-impact",
+            "no unapproved or consequential external side effect",
+            "one focused verification",
+            "lossless rollback",
+            "reclassify immediately",
+        ):
+            self.assertIn(phrase, normalized)
 
     def test_root_owned_advisor_checkpoint_contract(self) -> None:
         agents = (CODEX_HOME / "AGENTS.md").read_text(encoding="utf-8").lower()

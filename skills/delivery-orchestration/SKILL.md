@@ -10,7 +10,7 @@ description: >-
 
 # Delivery Orchestration
 
-Keep the configured Sol Medium root focused on the outcome, routing, decisions,
+Keep the configured Sol Low root focused on the outcome, routing, decisions,
 integration, authorized external actions, and final verification. The root
 directly coordinates terminal depth-1 leaves and chooses the cheapest profile
 that preserves the required context, judgment, ownership, and evidence quality.
@@ -32,6 +32,35 @@ Treat a plan, edit, passing focused test, commit, push, build, or artifact uploa
 as an intermediate state unless it satisfies the complete terminal condition.
 
 ## 2. Route Work By Task Shape
+
+### Direct root path
+
+Handle a short command directly at the root only when every gate passes:
+
+- it covers one concern and the current authoritative evidence is already in
+  root context;
+- it needs no discovery or independent evidence, and there is no conflicting
+  authority;
+- it has no unapproved or consequential external side effect, destructive
+  action, material risk, or ambiguous authorization;
+- one focused verification proves success; and
+- failure has a cheap, lossless rollback.
+
+When external mutation is explicitly authorized, the exact target, expected
+effect, low-impact boundary, rollback, preflight, and postcondition must already
+be known. The root executes that bounded action because leaves cannot mutate
+external systems.
+
+If any gate fails, reclassify immediately and use the appropriate route below.
+Delegation overhead breaks a tie only after these gates pass. Do not delegate
+every trivial command merely because a leaf exists.
+
+Use Spark instead when a tiny exact task benefits from an isolated fresh
+packet, parallel execution, or independent evidence. Once work becomes
+material, context-heavy, ambiguous, or consequential, use the delegated routes
+below; the direct root path is not an exemption from material-delivery gates.
+Conflicting evidence, consequential synthesis, or an external-impact decision
+routes through the risk-triggered Sol advisor checkpoint before root action.
 
 A task is material when it likely changes more than one file or concern, aligns
 code with tests or generated output, crosses layers, requires a build/install or
