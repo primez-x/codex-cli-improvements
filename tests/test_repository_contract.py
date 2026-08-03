@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import subprocess
 import tomllib
 import unittest
 
@@ -275,6 +276,34 @@ class RepositoryContractTests(unittest.TestCase):
         for path in source_paths:
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertFalse(any(path.match(pattern.lstrip("/")) for pattern in expected_patterns))
+
+    def test_digest_bound_evaluation_fixtures_are_checked_out_with_lf_endings(self) -> None:
+        fixture_root = (
+            ROOT
+            / "skills"
+            / "adversarial-code-review"
+            / "references"
+            / "evaluation-inputs"
+        )
+        fixtures = sorted(
+            fixture_root.glob("*.txt")
+        )
+        relative = [path.relative_to(ROOT).as_posix() for path in fixtures]
+
+        result = subprocess.run(
+            ["git", "check-attr", "eol", "--", *relative],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(relative)
+        self.assertEqual(
+            result.stdout.splitlines(),
+            [f"{path}: eol: lf" for path in relative],
+        )
 
     def test_reusable_text_excludes_local_and_project_material(self) -> None:
         forbidden_patterns = (

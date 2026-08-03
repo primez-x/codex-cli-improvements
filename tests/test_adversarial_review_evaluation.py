@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import copy
+import csv
 import hashlib
 import json
+import os
 import runpy
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from tests import test_adversarial_review_hooks as hook_helpers
 
@@ -28,6 +30,42 @@ import evaluate_review_corpus as evaluation_module  # noqa: E402
 import review_contracts  # noqa: E402
 
 
+def remove_hardened_tree(path: Path) -> None:
+    """Restore the test account's delete rights before removing immutable evidence."""
+    physical = hook_helpers.lifecycle_gate._filesystem_path(path)
+    if os.name == "nt":
+        identity = subprocess.run(
+            ["whoami", "/user", "/fo", "csv", "/nh"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if identity.returncode != 0:
+            raise AssertionError(identity.stderr)
+        sid = next(csv.reader([identity.stdout.strip()]))[1]
+        restored = subprocess.run(
+            [
+                "icacls",
+                str(physical),
+                "/grant:r",
+                f"*{sid}:(OI)(CI)(F)",
+                "/T",
+                "/C",
+                "/Q",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if restored.returncode != 0:
+            raise AssertionError(restored.stderr)
+    for directory, _, names in os.walk(physical):
+        os.chmod(directory, 0o700)
+        for name in names:
+            os.chmod(Path(directory) / name, 0o600)
+    shutil.rmtree(physical)
+
+
 class EvaluationTests(unittest.TestCase):
     def invoke(
         self,
@@ -37,6 +75,7 @@ class EvaluationTests(unittest.TestCase):
         *,
         claim_quality: bool = False,
         reviewer_profile: bool = False,
+        lifecycle_state_root: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         command = [sys.executable, "-B", str(EVALUATOR), "--corpus", str(corpus)]
         if results is not None:
@@ -44,6 +83,8 @@ class EvaluationTests(unittest.TestCase):
         command.extend(("--git-identities", str(identities)))
         if reviewer_profile:
             command.extend(("--reviewer-profile", str(PROFILE)))
+        if lifecycle_state_root is not None:
+            command.extend(("--lifecycle-state-root", str(lifecycle_state_root)))
         if claim_quality:
             command.append("--claim-empirical-quality")
         return subprocess.run(command, text=True, capture_output=True, check=False)
@@ -511,6 +552,17 @@ class EvaluationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             state_root, profile, workspace = helper.make_fixture(temporary)
+            long_state_top: Path | None = None
+            if os.name == "nt":
+                long_state_top = root / ("state-a-" + "a" * 110) / ("state-b-" + "b" * 110)
+                state_root = long_state_top / "state"
+                hook_helpers.lifecycle_gate._filesystem_path(state_root).mkdir(parents=True)
+                self.assertGreater(len(str(state_root)), 260)
+            if os.name == "nt":
+                cli_result = self.invoke(CORPUS, lifecycle_state_root=state_root)
+                if cli_result.returncode != 0:
+                    shutil.rmtree(hook_helpers.lifecycle_gate._filesystem_path(long_state_top))
+                self.assertEqual(cli_result.returncode, 0, cli_result.stderr)
             helper.empty_receipt(root, state_root, profile, workspace)
             exported = hook_helpers.run_cli(
                 self,
@@ -564,6 +616,59 @@ class EvaluationTests(unittest.TestCase):
             self.assertTrue(provenance)
             self.assertEqual(loaded["real-gate-case"]["output"], exported["review_output"])
 
+            current_state = state_root.joinpath(*PurePosixPath(exported["state_relative_path"]).parts)
+            legacy_relative = (
+                PurePosixPath("deliveries")
+                / hashlib.sha256(exported["session_id"].encode()).hexdigest()
+                / hashlib.sha256(exported["task_id"].encode()).hexdigest()
+                / hashlib.sha256(exported["delivery_id"].encode()).hexdigest()
+                / f"generation-{exported['generation']}.json"
+            )
+            legacy_state = state_root.joinpath(*legacy_relative.parts)
+            hook_helpers.lifecycle_gate.save(
+                legacy_state,
+                json.loads(
+                    hook_helpers.lifecycle_gate._filesystem_path(current_state).read_text(
+                        encoding="utf-8"
+                    )
+                ),
+            )
+            pointer_path = (
+                state_root
+                / "active"
+                / hashlib.sha256(exported["session_id"].encode()).hexdigest()
+                / f"{hashlib.sha256(exported['turn_id'].encode()).hexdigest()}.json"
+            )
+            pointer_physical = hook_helpers.lifecycle_gate._filesystem_path(pointer_path)
+            pointer = json.loads(pointer_physical.read_text(encoding="utf-8"))
+            pointer["state"] = legacy_relative.as_posix()
+            pointer_physical.write_text(json.dumps(pointer), encoding="utf-8")
+            legacy_replay = copy.deepcopy(replay)
+            legacy_replay["cases"][0]["lifecycle_export"]["state_relative_path"] = legacy_relative.as_posix()
+
+            legacy_loaded, legacy_kind, legacy_provenance = evaluation_module.load_results(
+                legacy_replay,
+                "real-gate-export-test",
+                cases,
+                profile,
+                state_root,
+            )
+            self.assertEqual(legacy_kind, "sol_reviewer_replay")
+            self.assertTrue(legacy_provenance)
+            self.assertEqual(legacy_loaded["real-gate-case"]["output"], exported["review_output"])
+
+            pointer["state"] = exported["state_relative_path"]
+            pointer_physical.write_text(json.dumps(pointer), encoding="utf-8")
+            migrated_loaded, _, migrated_provenance = evaluation_module.load_results(
+                legacy_replay,
+                "real-gate-export-test",
+                cases,
+                profile,
+                state_root,
+            )
+            self.assertTrue(migrated_provenance)
+            self.assertEqual(migrated_loaded["real-gate-case"]["output"], exported["review_output"])
+
             tampered_output = copy.deepcopy(replay)
             tampered_output["cases"][0]["lifecycle_export"]["review_output"]["coverage"][0] += " tampered"
             with self.assertRaisesRegex(ValueError, "output"):
@@ -585,6 +690,8 @@ class EvaluationTests(unittest.TestCase):
                     profile,
                     state_root,
                 )
+            cleanup_root = long_state_top or state_root / "deliveries"
+            remove_hardened_tree(cleanup_root)
 
 
 if __name__ == "__main__":
