@@ -9,7 +9,7 @@ description: >-
 # Plan Review Ladder
 
 Produce a source-grounded implementation plan without changing product code.
-The Sol Medium root owns evidence synthesis, candidate planning, route selection,
+The Sol Low root owns evidence synthesis, candidate planning, route selection,
 finding disposition, residual-risk analysis, and the user-facing plan. Read
 [review-lenses.md](references/review-lenses.md) before dispatch or sign-off.
 

@@ -33,7 +33,7 @@ class RepositoryContractTests(unittest.TestCase):
 
         self.assertEqual(
             (self.config["model"], self.config["model_reasoning_effort"]),
-            ("gpt-5.6-sol", "medium"),
+            ("gpt-5.6-sol", "low"),
         )
         self.assertEqual(agents["max_depth"], 1)
         self.assertEqual(agents["max_concurrent_threads_per_session"], 4)
@@ -170,7 +170,9 @@ class RepositoryContractTests(unittest.TestCase):
             "terra xhigh",
             "terra max",
             "luna medium scanner",
+            "sol low root",
             "root-owned synthesis",
+            "direct root path",
             "luna medium",
             "luna xhigh",
             "sol low",
@@ -185,6 +187,10 @@ class RepositoryContractTests(unittest.TestCase):
             "$0.4300",
             "$0.7328",
             "$1.1671",
+            "38.5%",
+            "40.2%",
+            "measured operating default",
+            "zero additional critical/high misses",
         ):
             self.assertIn(phrase, normalized)
 

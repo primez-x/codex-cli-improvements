@@ -1,6 +1,6 @@
 # Delegation Topology And Cost Ceilings
 
-The Sol Medium root is depth 0. The six general-purpose routing profiles are
+The Sol Low root is depth 0. The six general-purpose routing profiles are
 terminal depth 1 leaves that report directly to the root. The gate-only
 `sol_reviewer` identity is also depth 1 but is dispatched only by the managed
 adversarial gate, not by normal routing. `max_depth = 1` is both the configured
@@ -22,6 +22,14 @@ The six general-purpose routing efforts are fixed per profile. The gate-only
 reviewer is fixed at Sol/max and is not an escalation tier. Route by task shape
 and escalate the model rather than changing effort ad hoc: Spark fast path, Luna
 default, then Sol only for difficulty or consequential risk.
+
+The root directly handles a short, already-contextualized command only when it
+covers one concern, needs no discovery or conflicting-authority resolution, has
+no unapproved or consequential external effect or material risk, has one
+focused verification, and has a cheap lossless rollback. An external mutation
+must be explicitly authorized with an exact target, known effect, preflight,
+postcondition, and rollback. Spark remains the isolated or parallel tiny-task
+lane; material work still requires bounded delegation.
 
 ## Context And Packet Rules
 
