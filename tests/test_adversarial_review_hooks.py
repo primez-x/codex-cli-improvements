@@ -56,7 +56,9 @@ def run_cli(
 ) -> dict[str, object]:
     arguments_list = list(arguments)
     if arguments_list and arguments_list[0] == "freeze" and "--verification-manifest" not in arguments_list:
-        evidence_root = state_root.parent / "test-verification"
+        evidence_root = lifecycle_gate._filesystem_path(
+            state_root.parent / "test-verification"
+        )
         evidence_root.mkdir(exist_ok=True)
         stdout = b"lifecycle fixture verification passed\n"
         stderr = b""
@@ -178,6 +180,24 @@ def run_cli_with_fault(
 
 
 class LifecycleGateTests(unittest.TestCase):
+    def test_delivery_state_address_stays_below_legacy_windows_directory_limit(self) -> None:
+        root = Path("C:/Users/Example/AppData/Local/Temp/tmp12345678/state")
+        state = {
+            "session_id": "session",
+            "task_id": "task",
+            "delivery_id": "delivery",
+            "generation": 0,
+        }
+
+        path = lifecycle_gate.delivery_path(root, state)
+
+        self.assertLess(len(str(path.parent)), 248)
+        self.assertEqual(path.name, "generation-0.json")
+        self.assertNotEqual(
+            path.parent,
+            lifecycle_gate.delivery_path(root, {**state, "task_id": "another-task"}).parent,
+        )
+
     def make_fixture(self, temporary: str) -> tuple[Path, Path, Path]:
         root = Path(temporary)
         state_root = root / "state"
@@ -196,6 +216,37 @@ class LifecycleGateTests(unittest.TestCase):
             result = run_process(command, cwd=workspace)
             self.assertEqual(result.returncode, 0, result.stderr.decode())
         return state_root, profile, workspace
+
+    def rewrite_active_state_as_legacy(
+        self,
+        state_root: Path,
+        state: dict[str, object],
+    ) -> tuple[Path, Path]:
+        current = lifecycle_gate.delivery_path(state_root, state)
+        legacy = (
+            state_root
+            / "deliveries"
+            / lifecycle_gate.digest(str(state["session_id"]))
+            / lifecycle_gate.digest(str(state["task_id"]))
+            / lifecycle_gate.digest(str(state["delivery_id"]))
+            / f"generation-{int(state['generation'])}.json"
+        )
+        lifecycle_gate.save(legacy, state)
+        pointer = lifecycle_gate._pointer(state_root, state, legacy)
+        lifecycle_gate.save(
+            lifecycle_gate.state_path(
+                state_root,
+                str(state["session_id"]),
+                str(state["turn_id"]),
+            ),
+            pointer,
+        )
+        lifecycle_gate.save(
+            lifecycle_gate.session_state_path(state_root, str(state["session_id"])),
+            pointer,
+        )
+        current.unlink()
+        return legacy, current
 
     def payload(self, event: str, workspace: Path, **extra: object) -> dict[str, object]:
         return {
@@ -372,6 +423,81 @@ class LifecycleGateTests(unittest.TestCase):
         self.assertNotIn("decision", accepted)
         self.disposition(root, state_root, profile, {"schema_version": 1, "generation": 0, "dispositions": []})
         return self.status(state_root, profile)
+
+    def test_legacy_delivery_state_migrates_before_status_and_mutation_hooks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            armed = self.arm(state_root, profile, workspace)
+            legacy, current = self.rewrite_active_state_as_legacy(state_root, armed)
+
+            migrated = self.status(state_root, profile)
+
+            self.assertEqual(migrated, armed)
+            self.assertEqual(lifecycle_gate.load(legacy), armed)
+            self.assertTrue(current.is_file())
+            for pointer_path in (
+                lifecycle_gate.state_path(state_root, "session", "turn"),
+                lifecycle_gate.session_state_path(state_root, "session"),
+            ):
+                pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+                self.assertEqual(pointer["state"], current.relative_to(state_root).as_posix())
+
+            reserved = run_hook(
+                self,
+                self.payload(
+                    "PreToolUse",
+                    workspace,
+                    tool_name="apply_patch",
+                    tool_use_id="legacy-mutation",
+                ),
+                state_root,
+                profile,
+            )
+            recorded = run_hook(
+                self,
+                self.payload(
+                    "PostToolUse",
+                    workspace,
+                    tool_name="apply_patch",
+                    tool_use_id="legacy-mutation",
+                ),
+                state_root,
+                profile,
+            )
+            self.assertNotIn("decision", reserved)
+            self.assertNotIn("decision", recorded)
+            self.assertEqual(self.status(state_root, profile)["mutation_epoch"], 1)
+            shutil.rmtree(lifecycle_gate._filesystem_path(state_root / "deliveries"))
+
+    def test_legacy_receipted_state_migrates_before_stop_and_export(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root, profile, workspace = self.make_fixture(temporary)
+            receipted = self.empty_receipt(root, state_root, profile, workspace)
+            legacy, current = self.rewrite_active_state_as_legacy(state_root, receipted)
+
+            exported = run_cli(
+                self,
+                state_root,
+                profile,
+                "export-replay",
+                "--session-id",
+                "session",
+                "--turn-id",
+                "turn",
+            )
+            stopped = run_hook(
+                self,
+                self.payload("Stop", workspace, last_assistant_message="Delivery complete."),
+                state_root,
+                profile,
+            )
+
+            self.assertEqual(exported["state_relative_path"], current.relative_to(state_root).as_posix())
+            self.assertEqual(lifecycle_gate.load(legacy), receipted)
+            self.assertNotIn("decision", stopped)
+            self.assertEqual(self.status(state_root, profile)["status"], "completed")
+            shutil.rmtree(lifecycle_gate._filesystem_path(state_root / "deliveries"))
 
     def test_replay_export_is_lifecycle_generated_and_references_persisted_artifacts(self) -> None:
         """A standalone receipt/output wrapper must not substitute for gate authority."""
@@ -1071,6 +1197,10 @@ class LifecycleGateTests(unittest.TestCase):
                         self.review_output(generation_zero, verdict="fail", findings=[finding]),
                     ),
                 )
+                self.rewrite_active_state_as_legacy(
+                    state_root,
+                    self.status(state_root, profile),
+                )
                 ledger_path = root / "ledger.json"
                 ledger_path.write_text(
                     json.dumps(
@@ -1106,6 +1236,7 @@ class LifecycleGateTests(unittest.TestCase):
                 self.assertEqual(again, recovered)
                 generations = {path.name for path in (state_root / "deliveries").rglob("generation-*.json")}
                 self.assertEqual(generations, {"generation-0.json", "generation-1.json"})
+                shutil.rmtree(lifecycle_gate._filesystem_path(state_root / "deliveries"))
 
     def test_freeze_builds_canonical_reviewable_bundle_and_start_binds_agent(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

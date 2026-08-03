@@ -183,6 +183,25 @@ class AuditTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_markdown_links_accept_existing_relative_targets_with_fragments(self):
+        reference = self.project / "references.md"
+        target = self.project / "scripts" / "validator.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("def validate():\n    return True\n", encoding="utf-8")
+        reference.write_text(
+            "See [validator](./scripts/validator.py#L1-L2).\n",
+            encoding="utf-8",
+        )
+
+        invalid, sparse = audit.markdown_links(
+            reference,
+            reference.read_text(encoding="utf-8"),
+            self.project,
+        )
+
+        self.assertEqual(invalid, [])
+        self.assertEqual(sparse, [])
+
     def _write_fixture(self):
         self.home.mkdir(parents=True)
         (self.home / "AGENTS.md").write_text("global line\n", encoding="utf-8")

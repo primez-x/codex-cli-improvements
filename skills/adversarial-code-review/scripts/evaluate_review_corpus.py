@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import tomllib
@@ -23,6 +24,7 @@ from review_contracts import (  # noqa: E402
     MANDATORY_REVIEW_LENSES,
     canonical_bytes,
     compute_packet_sha256,
+    delivery_address_sha256,
     validate_evidence_selector,
     validate_lens_coverage,
     validate_disposition_ledger,
@@ -244,10 +246,22 @@ def _integer(value: Any, label: str) -> int:
     return value
 
 
+def _filesystem_path(path: Path) -> Path:
+    if os.name != "nt":
+        return path
+    value = str(path)
+    if value.startswith("\\\\?\\"):
+        return path
+    absolute = os.path.abspath(value)
+    if absolute.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + absolute[2:])
+    return Path("\\\\?\\" + absolute)
+
+
 def _path_under(root: Path, relative_value: Any, label: str) -> Path:
     relative = safe_relative(relative_value)
     try:
-        resolved_root = root.resolve(strict=True)
+        resolved_root = _filesystem_path(root).resolve(strict=True)
         lexical = resolved_root
         for part in relative.parts:
             lexical = lexical / part
@@ -452,16 +466,23 @@ def validate_lifecycle_export(
         if HEX64.fullmatch(str(export[field])) is None:
             fail(f"lifecycle export {field} is malformed")
 
-    expected_state_relative = (
+    composite_state_relative = (
+        PurePosixPath("deliveries")
+        / delivery_address_sha256(export["session_id"], export["task_id"], export["delivery_id"])
+        / f"generation-{generation}.json"
+    ).as_posix()
+    legacy_state_relative = (
         PurePosixPath("deliveries")
         / _text_digest(export["session_id"])
         / _text_digest(export["task_id"])
         / _text_digest(export["delivery_id"])
         / f"generation-{generation}.json"
     ).as_posix()
-    if export["state_relative_path"] != expected_state_relative:
+    accepted_state_addresses = {composite_state_relative, legacy_state_relative}
+    exported_state_relative = export["state_relative_path"]
+    if exported_state_relative not in accepted_state_addresses:
         fail("lifecycle export state address is not canonical")
-    state_path = _path_under(state_root, expected_state_relative, "lifecycle delivery state")
+    state_path = _path_under(state_root, exported_state_relative, "lifecycle delivery state")
     state_raw, state_value = _read_json(state_path, "lifecycle delivery state")
     state = strict(state_value, STATE_FIELDS, "lifecycle delivery state")
     if sha(state_raw) != export["state_sha256"]:
@@ -474,13 +495,20 @@ def validate_lifecycle_export(
     ).as_posix()
     _, pointer_value = _read_json(_path_under(state_root, active_relative, "active delivery pointer"), "active delivery pointer")
     pointer = strict(pointer_value, {"schema_version", "state", "delivery_sha256", "generation"}, "active delivery pointer")
-    if pointer != {
-        "schema_version": 1,
-        "state": expected_state_relative,
-        "delivery_sha256": _text_digest(export["delivery_id"]),
-        "generation": generation,
-    }:
+    if (
+        pointer["schema_version"] != 1
+        or pointer["state"] not in accepted_state_addresses
+        or pointer["delivery_sha256"] != _text_digest(export["delivery_id"])
+        or pointer["generation"] != generation
+    ):
         fail("active delivery pointer does not bind the exported lifecycle state")
+    if pointer["state"] != exported_state_relative:
+        pointer_raw, pointer_state_value = _read_json(
+            _path_under(state_root, pointer["state"], "active lifecycle delivery state"),
+            "active lifecycle delivery state",
+        )
+        if pointer_raw != state_raw or pointer_state_value != state_value:
+            fail("migrated active delivery state differs from the lifecycle export")
 
     identities = {
         "session_id": export["session_id"],
@@ -934,7 +962,9 @@ def main() -> int:
             results,
             identities,
             args.reviewer_profile.resolve(strict=True) if args.reviewer_profile else None,
-            args.lifecycle_state_root.resolve(strict=True) if args.lifecycle_state_root else None,
+            _filesystem_path(args.lifecycle_state_root).resolve(strict=True)
+            if args.lifecycle_state_root
+            else None,
             claim_empirical_quality=args.claim_empirical_quality,
         )
         print(json.dumps(report, sort_keys=True))
