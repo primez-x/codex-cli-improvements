@@ -6,6 +6,7 @@ that a running Codex process loaded or trusted the configured handlers.
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
 import hashlib
 import json
@@ -48,9 +49,16 @@ RUNTIME_NAMES = {
     "tmp",
 }
 CREDENTIAL_TOKENS = (".env", "credential", "id_rsa", "private-key", "secret", "token")
+INSTALLABLE_VALIDATORS = {
+    "skills/delivery-orchestration/scripts/test_routing_policy.py",
+    "skills/plan-review-ladder/scripts/test_packet_integrity.py",
+    "skills/plan-review-ladder/scripts/test_plan_routing.py",
+}
 BEGIN = "<!-- BEGIN MANAGED ADVERSARIAL DELIVERY GATE -->"
 END = "<!-- END MANAGED ADVERSARIAL DELIVERY GATE -->"
 TRANSACTION_ID = re.compile(r"[0-9a-f]{32}\Z")
+HEX_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+LIFECYCLE_GATE_PATH = "skills/adversarial-code-review/scripts/lifecycle_gate.py"
 TABLE_HEADER = re.compile(r"(?m)^\s*(\[\[?[^\]\r\n]+\]\]?)\s*(?:\r?\n|$)")
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
@@ -97,6 +105,18 @@ def _lexical_absolute(value: str | os.PathLike[str], label: str) -> Path:
     if path.parent == path:
         die(f"{label} must not be a filesystem root")
     return path
+
+
+def _filesystem_path(path: Path) -> Path:
+    if os.name != "nt":
+        return path
+    value = str(path)
+    if value.startswith("\\\\?\\"):
+        return path
+    absolute = os.path.abspath(value)
+    if absolute.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + absolute[2:])
+    return Path("\\\\?\\" + absolute)
 
 
 def _is_reparse(path: Path) -> bool:
@@ -178,7 +198,7 @@ def validate_source(source: Path) -> None:
             die(f"credential-like source rejected: {relative}")
         if (
             path.name.startswith("test_")
-            and relative != "skills/delivery-orchestration/scripts/test_routing_policy.py"
+            and relative not in INSTALLABLE_VALIDATORS
         ) or _is_runtime_path(PurePosixPath(relative)):
             die(f"non-production source rejected: {relative}")
 
@@ -892,6 +912,82 @@ def _restore_preimage(
         die(f"rollback preimage verification failed: {relative}")
 
 
+def _composite_lifecycle_state_exists(home: Path) -> bool:
+    roots = [home / "hooks" / "state" / "adversarial-review"]
+    override = os.environ.get("CODEX_ADVERSARIAL_STATE")
+    if override:
+        roots.append(_lexical_absolute(override, "adversarial lifecycle state"))
+    seen: set[Path] = set()
+    for root in roots:
+        absolute = _filesystem_path(Path(os.path.abspath(root)))
+        if absolute in seen:
+            continue
+        seen.add(absolute)
+        deliveries = absolute / "deliveries"
+        if not deliveries.exists():
+            continue
+        _reject_reparse_chain(deliveries, "adversarial lifecycle state")
+        for address in deliveries.iterdir():
+            if _is_reparse(address):
+                die(f"adversarial lifecycle state has a symlink or reparse point: {address}")
+            if not address.is_dir() or HEX_SHA256.fullmatch(address.name) is None:
+                continue
+            for generation in address.iterdir():
+                if _is_reparse(generation):
+                    die(f"adversarial lifecycle state has a symlink or reparse point: {generation}")
+                if generation.is_file() and re.fullmatch(r"generation-[0-9]+\.json", generation.name):
+                    return True
+    return False
+
+
+def _rollback_preimage_supports_composite_state(
+    transaction_root: Path,
+    manifest: Mapping[str, Any],
+) -> bool:
+    record = manifest["paths"].get(LIFECYCLE_GATE_PATH)
+    if record is None:
+        return True
+    if record["present"] is not True:
+        return False
+    backup = _contained(
+        transaction_root / "backup",
+        LIFECYCLE_GATE_PATH,
+        existing=True,
+    ).read_bytes()
+    try:
+        tree = ast.parse(backup.decode("utf-8"), filename=LIFECYCLE_GATE_PATH)
+    except (SyntaxError, UnicodeDecodeError):
+        return False
+    declarations = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "DELIVERY_ADDRESSING"
+    ]
+    return (
+        len(declarations) == 1
+        and isinstance(declarations[0].value, ast.Constant)
+        and declarations[0].value.value == "composite-v1"
+    )
+
+
+def _refuse_incompatible_lifecycle_rollback(
+    home: Path,
+    transaction_root: Path,
+    manifest: Mapping[str, Any],
+) -> None:
+    if (
+        not _rollback_preimage_supports_composite_state(transaction_root, manifest)
+        and _composite_lifecycle_state_exists(home)
+    ):
+        die(
+            "rollback refused: composite lifecycle state exists but the authenticated "
+            "preimage lifecycle gate cannot address it"
+        )
+
+
 def _rollback_transaction(home: Path, transaction: str, *, acquire: bool) -> None:
     context = _install_lock(home) if acquire else nullcontext()
     with context:
@@ -902,6 +998,7 @@ def _rollback_transaction(home: Path, transaction: str, *, acquire: bool) -> Non
             # Explicit historical rollback is allowed only for the active head
             # and only while every live target still equals its postimage.
             _require_current_postimage(home, transaction, manifest)
+        _refuse_incompatible_lifecycle_rollback(home, root, manifest)
         candidates = _rollback_candidates(manifest, journal)
         # Authenticate every live path before changing either the journal or a
         # target. Untouched paths must still be preimages; candidates may be a
@@ -1466,6 +1563,7 @@ def verify(
         _profile_exact(home)
         _validate_skill(home / "skills" / "adversarial-code-review", "adversarial-code-review")
         _validate_skill(home / "skills" / "delivery-orchestration", "delivery-orchestration")
+        _validate_skill(home / "skills" / "plan-review-ladder", "plan-review-ladder")
     except ValueError as exc:
         failures.append(f"validator:{exc}")
     try:

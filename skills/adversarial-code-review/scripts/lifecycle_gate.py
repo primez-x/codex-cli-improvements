@@ -26,6 +26,7 @@ from review_contracts import (  # noqa: E402
     SnapshotLimits,
     build_bundle,
     build_git_snapshot,
+    delivery_address_sha256,
     MANDATORY_REVIEW_LENSES,
     validate_disposition_ledger,
     validate_finding_evidence,
@@ -41,6 +42,7 @@ from verification_evidence import build_verification_evidence, load_production_m
 REVIEWER_TYPE = "sol_reviewer"
 REVIEWER_MODEL = "gpt-5.6-sol"
 REVIEWER_EFFORT = "max"
+DELIVERY_ADDRESSING = "composite-v1"
 BLOCKED_MARKER = "[adversarial-review-blocked]"
 MUTATION_COMMAND = re.compile(
     r"(?:"
@@ -93,6 +95,20 @@ def digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _filesystem_path(path: Path) -> Path:
+    """Return a Windows extended-length path without changing logical addresses."""
+
+    if os.name != "nt":
+        return path
+    value = str(path)
+    if value.startswith("\\\\?\\"):
+        return path
+    absolute = os.path.abspath(value)
+    if absolute.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + absolute[2:])
+    return Path("\\\\?\\" + absolute)
+
+
 def default_root() -> Path:
     home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
     return Path(os.environ.get("CODEX_ADVERSARIAL_STATE") or home / "hooks" / "state" / "adversarial-review")
@@ -117,6 +133,17 @@ def pending_path(root: Path, session_id: str, turn_id: str) -> Path:
 
 
 def delivery_path(root: Path, state: Mapping[str, Any]) -> Path:
+    return (
+        root
+        / "deliveries"
+        / delivery_address_sha256(state["session_id"], state["task_id"], state["delivery_id"])
+        / f"generation-{int(state['generation'])}.json"
+    )
+
+
+def legacy_delivery_path(root: Path, state: Mapping[str, Any]) -> Path:
+    """Return the exact V1 address used before composite delivery digests."""
+
     return (
         root
         / "deliveries"
@@ -169,19 +196,21 @@ def lock(path: Path):
 
 
 def load(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
+    physical = _filesystem_path(path)
+    if not physical.exists():
         return None
-    value = json.loads(path.read_text(encoding="utf-8"))
+    value = json.loads(physical.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("gate state must be an object")
     return value
 
 
 def save(path: Path, value: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    physical = _filesystem_path(path)
+    physical.parent.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
-        os.chmod(path.parent, 0o700)
-    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".gate-", text=True)
+        os.chmod(physical.parent, 0o700)
+    descriptor, temporary = tempfile.mkstemp(dir=physical.parent, prefix=".gate-", text=True)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             json.dump(value, stream, sort_keys=True, separators=(",", ":"))
@@ -189,7 +218,7 @@ def save(path: Path, value: Mapping[str, Any]) -> None:
             os.fsync(stream.fileno())
         if os.name != "nt":
             os.chmod(temporary, 0o600)
-        os.replace(temporary, path)
+        os.replace(temporary, physical)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -277,8 +306,9 @@ def _load_pointer(root: Path, pointer_path: Path, session_id: str) -> dict[str, 
     relative = PurePosixPath(str(pointer["state"]))
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError("active delivery pointer escapes state root")
-    target = root.joinpath(*relative.parts).resolve()
-    if root.resolve() not in target.parents:
+    target = _filesystem_path(root.joinpath(*relative.parts)).resolve()
+    resolved_root = _filesystem_path(root).resolve()
+    if resolved_root not in target.parents:
         raise ValueError("active delivery pointer escapes state root")
     state = load(target)
     if state is None:
@@ -288,9 +318,37 @@ def _load_pointer(root: Path, pointer_path: Path, session_id: str) -> dict[str, 
     if pointer["delivery_sha256"] != digest(str(state.get("delivery_id"))) or pointer["generation"] != state.get("generation"):
         raise ValueError("active delivery address mismatch")
     expected = delivery_path(root, state) if state.get("task_id") else pending_path(root, session_id, str(state.get("turn_id")))
-    if target != expected.resolve():
-        raise ValueError("state is not addressed by delivery generation")
-    return state
+    if target == _filesystem_path(expected).resolve():
+        return state
+    if state.get("task_id") and target == _filesystem_path(legacy_delivery_path(root, state)).resolve():
+        _migrate_legacy_delivery(root, state, pointer_path)
+        return state
+    raise ValueError("state is not addressed by delivery generation")
+
+
+def _migrate_legacy_delivery(
+    root: Path,
+    state: dict[str, Any],
+    loaded_pointer_path: Path,
+) -> None:
+    """Copy legacy state and repoint only matching pointers under the caller lock."""
+
+    legacy = legacy_delivery_path(root, state)
+    current = delivery_path(root, state)
+    existing = load(current)
+    if existing is not None and existing != state:
+        raise ValueError("legacy migration conflicts with composite delivery state")
+    save(current, state)
+    old_pointer = _pointer(root, state, legacy)
+    new_pointer = _pointer(root, state, current)
+    candidates = {
+        loaded_pointer_path,
+        state_path(root, str(state["session_id"]), str(state["turn_id"])),
+        session_state_path(root, str(state["session_id"])),
+    }
+    for candidate in candidates:
+        if load(candidate) == old_pointer:
+            save(candidate, new_pointer)
 
 
 def load_active(root: Path, session_id: str, turn_id: str) -> dict[str, Any] | None:
@@ -1177,7 +1235,7 @@ def export_replay(state: Mapping[str, Any], root: Path, profile_path: Path) -> d
         raise ValueError("frozen packet content mismatch")
     manifest_sha = _validated_bundle_manifest(root, state["bundle_sha256"])
     persisted = delivery_path(root, state)
-    state_raw = persisted.read_bytes()
+    state_raw = _filesystem_path(persisted).read_bytes()
     if json.loads(state_raw) != state:
         raise ValueError("persisted lifecycle state differs from active state")
     return {
@@ -1346,9 +1404,10 @@ def main() -> int:
             item.add_argument("--evidence", required=True)
     subparsers.add_parser("health")
     args = parser.parse_args()
+    state_root = _filesystem_path(args.state_root)
     if args.action:
         try:
-            return cli(args, args.state_root, args.profile_path)
+            return cli(args, state_root, args.profile_path)
         except Exception as exc:
             print(json.dumps({"ok": False, "error": "lifecycle gate operational failure", "detail": str(exc)}), file=sys.stderr)
             return 2
@@ -1358,12 +1417,12 @@ def main() -> int:
         return 2
     event = payload.get("hook_event_name")
     handlers = {
-        "UserPromptSubmit": lambda: prompt(payload, args.state_root),
-        "PreToolUse": lambda: pre_tool(payload, args.state_root),
-        "PostToolUse": lambda: post_tool(payload, args.state_root),
-        "SubagentStart": lambda: subagent_start(payload, args.state_root, args.profile_path),
-        "SubagentStop": lambda: subagent_stop(payload, args.state_root, args.profile_path),
-        "Stop": lambda: stop(payload, args.state_root, args.profile_path),
+        "UserPromptSubmit": lambda: prompt(payload, state_root),
+        "PreToolUse": lambda: pre_tool(payload, state_root),
+        "PostToolUse": lambda: post_tool(payload, state_root),
+        "SubagentStart": lambda: subagent_start(payload, state_root, args.profile_path),
+        "SubagentStop": lambda: subagent_stop(payload, state_root, args.profile_path),
+        "Stop": lambda: stop(payload, state_root, args.profile_path),
     }
     if event in handlers:
         try:

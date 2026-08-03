@@ -6,3 +6,4 @@
 *.toml text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
+skills/adversarial-code-review/references/evaluation-inputs/*.txt text eol=lf

@@ -195,7 +195,7 @@ class RoutingPolicyTests(unittest.TestCase):
             "only the depth-0 root dispatches `sol_advisor`",
             "risk-triggered",
             "four or more substantive stages",
-            "localized low-risk work",
+            "localized, low-risk",
             "accepted, rejected, or deferred",
             "user approval gate",
         ):
