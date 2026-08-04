@@ -27,13 +27,13 @@ PLAN_GAP_CODE = _dispatcher_code("hooks", "plan_gap_goal_hook.py")
 LEARNING_CODE = _dispatcher_code(
     "skills", "instruction-learning-loop", "scripts", "instruction_learning_hook.py"
 )
-PLAN_GAP_POSIX = f'python3 -c "{PLAN_GAP_CODE}"'
-PLAN_GAP_WINDOWS = f'python -c "{PLAN_GAP_CODE}"'
-LEARNING_POSIX = f'python3 -c "{LEARNING_CODE}"'
-LEARNING_WINDOWS = f'python -c "{LEARNING_CODE}"'
+PLAN_GAP_POSIX = f'python3 -B -c "{PLAN_GAP_CODE}"'
+PLAN_GAP_WINDOWS = f'python -B -c "{PLAN_GAP_CODE}"'
+LEARNING_POSIX = f'python3 -B -c "{LEARNING_CODE}"'
+LEARNING_WINDOWS = f'python -B -c "{LEARNING_CODE}"'
 REVIEW_CODE = _dispatcher_code("skills", "adversarial-code-review", "scripts", "lifecycle_gate.py")
-REVIEW_POSIX = f'python3 -c "{REVIEW_CODE}"'
-REVIEW_WINDOWS = f'python -c "{REVIEW_CODE}"'
+REVIEW_POSIX = f'python3 -B -c "{REVIEW_CODE}"'
+REVIEW_WINDOWS = f'python -B -c "{REVIEW_CODE}"'
 MUTATION_MATCHER = (
     "^(?:Bash|bash|PowerShell|shell_command|functions[.]shell_command|exec_command|"
     "functions[.]exec_command|apply_patch|functions[.]apply_patch|Edit|Write|"
@@ -179,9 +179,9 @@ class HooksConfigTests(unittest.TestCase):
                             else:
                                 environment["CODEX_HOME"] = str(configured_home)
 
-                            embedded_code = command.split(' -c "', 1)[1][:-1]
+                            embedded_code = command.split(' -B -c "', 1)[1][:-1]
                             result = subprocess.run(
-                                [sys.executable, "-c", embedded_code],
+                                [sys.executable, "-B", "-c", embedded_code],
                                 input=payload,
                                 capture_output=True,
                                 env=environment,

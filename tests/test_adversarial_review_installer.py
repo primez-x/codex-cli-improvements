@@ -371,6 +371,55 @@ class InstallerTests(unittest.TestCase):
             for name, data in original.items():
                 self.assertEqual((home / name).read_bytes(), data)
 
+    def test_installed_hook_command_does_not_recreate_managed_bytecode(self) -> None:
+        """The exact installed hook command must leave managed files immutable."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            installed = self.install(home)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            hooks = json.loads((home / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+            review_hook = next(
+                entry
+                for entry in hooks["PostToolUse"][0]["hooks"]
+                if "lifecycle_gate.py" in entry.get("command", "")
+            )
+            command = review_hook["commandWindows" if os.name == "nt" else "command"]
+            payload = {
+                "hook_event_name": "PostToolUse",
+                "session_id": "bytecode-cleanliness-session",
+                "turn_id": "bytecode-cleanliness-turn",
+                "cwd": str(root),
+                "tool_name": "shell_command",
+                "tool_use_id": "bytecode-cleanliness-tool",
+                "tool_input": {"command": "Get-ChildItem" if os.name == "nt" else "ls"},
+            }
+            environment = {**os.environ, "CODEX_HOME": str(home)}
+
+            invoked = subprocess.run(
+                command,
+                shell=True,
+                input=json.dumps(payload),
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+
+            self.assertEqual(invoked.returncode, 0, invoked.stderr)
+            managed_root = home / "skills" / "adversarial-code-review"
+            runtime_leaves = sorted(
+                path.relative_to(home).as_posix()
+                for path in managed_root.rglob("*")
+                if path.name == "__pycache__" or path.suffix == ".pyc"
+            )
+            self.assertEqual(runtime_leaves, [])
+            verified = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
+            self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+            again = self.install(home)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            self.assertTrue(json.loads(again.stdout)["idempotent"])
+
     def test_config_merge_preserves_header_like_multiline_strings_comments_and_unmanaged_values(self) -> None:
         """Treating header-looking string content as TOML structure must fail."""
         original_text = (
