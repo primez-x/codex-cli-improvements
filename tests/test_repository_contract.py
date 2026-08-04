@@ -222,8 +222,8 @@ class RepositoryContractTests(unittest.TestCase):
         for event in hooks.values():
             for group in event:
                 for entry in group["hooks"]:
-                    self.assertRegex(entry["command"], r'^python3 -c ".+"$')
-                    self.assertRegex(entry["commandWindows"], r'^python -c ".+"$')
+                    self.assertRegex(entry["command"], r'^python3 -B -c ".+"$')
+                    self.assertRegex(entry["commandWindows"], r'^python -B -c ".+"$')
 
     def test_runtime_state_is_ignored_at_repository_boundaries(self) -> None:
         patterns = {
