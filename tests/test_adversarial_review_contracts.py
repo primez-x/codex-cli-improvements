@@ -66,7 +66,9 @@ class AdversarialReviewContractsTests(unittest.TestCase):
             "bundle_sha256": SHA, "snapshot_sha256": SHA, "verdict": "fail",
             "coverage": ["diff"], "residual_risks": ["race"],
             "findings": [{"id": "F-1", "severity": "high", "claim": "unsafe",
-                          "evidence": [{"kind": "bundle", "uri": "bundle://" + SHA + "/review", "sha256": SHA}], "correction": "lock", "verification": "test"}],
+                          "evidence": [{"kind": "bundle", "uri": "bundle://" + SHA + "/review", "sha256": SHA,
+                                        "selector": {"kind": "line_range", "start": 1, "end": 1}}],
+                          "correction": "lock", "verification": "test"}],
         }
         try:
             validated = validate_review_output(output)

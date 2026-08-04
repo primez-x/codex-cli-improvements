@@ -1,11 +1,13 @@
 """Strict, persisted V1 contracts for immutable adversarial-review evidence."""
 from __future__ import annotations
 
+import csv
 import json
 import hashlib
 import math
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -246,6 +248,39 @@ def validate_external_evidence(items: Any) -> list[dict[str, Any]]:
     return valid
 
 
+def validate_finding_code_evidence(items: Any) -> list[dict[str, Any]]:
+    """Validate the exact byte-resolvable evidence shape allowed on findings."""
+    if not isinstance(items, list) or not items:
+        raise ValueError("finding code evidence must be a nonempty list")
+    validated: list[dict[str, Any]] = []
+    for item in items:
+        try:
+            if not isinstance(item, Mapping):
+                raise ValueError("finding code evidence must be a strict record")
+            evidence = dict(item)
+            if evidence.get("kind") == "bundle":
+                if set(evidence) != {"kind", "uri", "sha256", "selector"}:
+                    raise ValueError("finding bundle evidence fields are not exact")
+                _bundle_uri(evidence["uri"])
+                _sha(evidence["sha256"], "finding bundle evidence sha256")
+                validate_evidence_selector(evidence["selector"])
+            elif evidence.get("kind") == "git_commit":
+                if set(evidence) != {
+                    "kind", "repository", "commit", "path", "sha256", "selector",
+                }:
+                    raise ValueError("finding Git evidence fields are not exact")
+                validate_external_evidence([{
+                    key: value for key, value in evidence.items() if key != "sha256"
+                }])
+                _sha(evidence["sha256"], "finding Git evidence sha256")
+            else:
+                raise ValueError("finding evidence must be active-bundle or pinned-Git content")
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"invalid finding code evidence: {exc}") from exc
+        validated.append(evidence)
+    return validated
+
+
 def _validate_selector_content(
     selector: Mapping[str, Any],
     content: bytes,
@@ -289,13 +324,8 @@ def validate_finding_evidence(
     for item in findings:
         if not isinstance(item, Mapping) or not isinstance(item.get("evidence"), list) or not item["evidence"]:
             raise ValueError("every finding requires immutable evidence")
-        for raw_evidence in item["evidence"]:
-            if not isinstance(raw_evidence, Mapping):
-                raise ValueError("finding evidence must be a strict record")
-            evidence = dict(raw_evidence)
+        for evidence in validate_finding_code_evidence(item["evidence"]):
             if evidence.get("kind") == "bundle":
-                if set(evidence) != {"kind", "uri", "sha256", "selector"}:
-                    raise ValueError("finding bundle evidence fields are not exact")
                 digest, path = _bundle_uri_parts(evidence["uri"])
                 if digest != active:
                     raise ValueError("finding evidence does not reference the active bundle")
@@ -304,13 +334,6 @@ def validate_finding_evidence(
                     raise ValueError("finding evidence path or raw digest does not match the active manifest")
                 content = store.read(active, path)
             elif evidence.get("kind") == "git_commit":
-                if set(evidence) != {
-                    "kind", "repository", "commit", "path", "sha256", "selector",
-                }:
-                    raise ValueError("finding Git evidence fields are not exact")
-                validate_external_evidence([
-                    {key: value for key, value in evidence.items() if key != "sha256"}
-                ])
                 raw_sha = _sha(evidence["sha256"], "finding Git evidence sha256")
                 if git_resolver is None:
                     raise ValueError("pinned Git finding evidence has no immutable resolver")
@@ -414,14 +437,41 @@ def build_local_git_resolver(
         if resolved_commit != object_id:
             raise ValueError("pinned Git commit does not resolve exactly")
 
-        specifier = f"{object_id}:{relative}"
+        listing = run(
+            [
+                "--literal-pathspecs", "ls-tree", "-z", "--full-tree",
+                object_id, "--", relative,
+            ],
+            "pinned Git tree entry",
+        )
+        records = listing[:-1].split(b"\0") if listing.endswith(b"\0") else []
+        if len(records) != 1 or b"\t" not in records[0]:
+            raise ValueError("pinned Git evidence path must be a regular Git blob")
+        metadata, entry_path = records[0].split(b"\t", 1)
+        fields = metadata.split()
         try:
-            size = int(run(["cat-file", "-s", specifier], "pinned Git path").decode("ascii", errors="strict").strip())
+            decoded_path = entry_path.decode("utf-8", errors="strict")
+            entry_object_id = fields[2].decode("ascii", errors="strict")
+        except (IndexError, UnicodeDecodeError) as exc:
+            raise ValueError("pinned Git tree entry is malformed") from exc
+        if (
+            len(fields) != 3
+            or fields[0] not in {b"100644", b"100755"}
+            or fields[1] != b"blob"
+            or decoded_path != relative
+        ):
+            raise ValueError("pinned Git evidence path must be a regular Git blob")
+        validate_git_object_id(entry_object_id, "pinned Git tree object")
+        try:
+            size = int(run(
+                ["cat-file", "-s", entry_object_id],
+                "pinned Git path",
+            ).decode("ascii", errors="strict").strip())
         except (UnicodeDecodeError, ValueError) as exc:
             raise ValueError("pinned Git path size is malformed") from exc
         if size < 0 or size > max_bytes:
             raise ValueError("pinned Git evidence exceeds the byte limit")
-        content = run(["show", specifier], "pinned Git path")
+        content = run(["cat-file", "blob", entry_object_id], "pinned Git path")
         if len(content) != size:
             raise ValueError("pinned Git evidence size mismatch")
         return content
@@ -444,7 +494,7 @@ def validate_review_output(record: Mapping[str, Any]) -> dict[str, Any]:
         if identifier in ids or finding["severity"] not in {"critical", "high", "medium", "low", "info"}: raise ValueError("invalid stable finding")
         ids.add(identifier)
         for field in ("claim", "correction", "verification"): _nonempty(finding[field], field)
-        validate_external_evidence(finding["evidence"])
+        validate_finding_code_evidence(finding["evidence"])
     return value
 
 
@@ -1019,6 +1069,208 @@ class BundleStore:
         return data
 
 
+_WINDOWS_SID = re.compile(r"S-\d-(?:\d+-)+\d+\Z", re.IGNORECASE)
+_WINDOWS_ACL_VERIFIER = r"""
+$ErrorActionPreference = 'Stop'
+$root = [IO.Path]::GetFullPath($env:CODEX_BUNDLE_ROOT)
+$userSid = $env:CODEX_BUNDLE_USER_SID
+$required = @($userSid, 'S-1-5-18', 'S-1-5-32-544', 'S-1-3-4')
+$requiredSet = @{}
+foreach ($sid in $required) { $requiredSet[$sid] = $true }
+$items = @((Get-Item -Force -LiteralPath $root))
+$items += @(Get-ChildItem -Force -LiteralPath $root -Recurse)
+foreach ($item in $items) {
+    $acl = Get-Acl -LiteralPath $item.FullName
+    if (-not $acl.AreAccessRulesProtected) { throw "bundle ACL inherits access" }
+    $rights = @{}
+    foreach ($rule in $acl.Access) {
+        if ($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow) {
+            throw "bundle ACL contains a deny rule"
+        }
+        if ($rule.IsInherited) { throw "bundle ACL contains inherited access" }
+        $sid = $rule.IdentityReference.Translate(
+            [Security.Principal.SecurityIdentifier]
+        ).Value
+        if (-not $requiredSet.ContainsKey($sid)) {
+            throw "bundle ACL contains an unexpected identity"
+        }
+        if (-not $rights.ContainsKey($sid)) { $rights[$sid] = [int64]0 }
+        $rights[$sid] = $rights[$sid] -bor [int64]$rule.FileSystemRights
+    }
+    foreach ($sid in $required) {
+        if (-not $rights.ContainsKey($sid)) { throw "bundle ACL omits a required identity" }
+    }
+    $readExecute = [int64][Security.AccessControl.FileSystemRights]::ReadAndExecute
+    $write = [int64][Security.AccessControl.FileSystemRights]::Write
+    $full = [int64][Security.AccessControl.FileSystemRights]::FullControl
+    if (($rights[$userSid] -band $readExecute) -ne $readExecute -or
+        ($rights[$userSid] -band $write) -ne 0) {
+        throw "bundle invoking-account rights are not read/execute only"
+    }
+    foreach ($sid in @('S-1-5-18', 'S-1-5-32-544', 'S-1-3-4')) {
+        if (($rights[$sid] -band $full) -ne $full) {
+            throw "bundle recovery identity lacks full control"
+        }
+    }
+}
+"""
+
+
+def _current_windows_user_sid() -> str:
+    result = subprocess.run(
+        ["whoami", "/user", "/fo", "csv", "/nh"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("could not resolve the invoking Windows account SID")
+    try:
+        row = next(csv.reader([result.stdout.strip()]))
+    except (csv.Error, StopIteration) as exc:
+        raise RuntimeError("could not parse the invoking Windows account SID") from exc
+    if len(row) < 2 or _WINDOWS_SID.fullmatch(row[1]) is None:
+        raise RuntimeError("the invoking Windows account SID is malformed")
+    return row[1]
+
+
+def _verify_bundle_permissions(path: Path, *, user_sid: str | None = None) -> None:
+    root = Path(path)
+    if os.name == "nt":
+        sid = user_sid or _current_windows_user_sid()
+        verified = subprocess.run(
+            [
+                "powershell.exe", "-NoProfile", "-NonInteractive",
+                "-Command", _WINDOWS_ACL_VERIFIER,
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+            env={
+                **os.environ,
+                "CODEX_BUNDLE_ROOT": str(root),
+                "CODEX_BUNDLE_USER_SID": sid,
+            },
+        )
+        if verified.returncode != 0:
+            raise RuntimeError("bundle ACL verification failed")
+        for candidate in root.rglob("*"):
+            if candidate.is_file() and stat.S_IMODE(candidate.stat().st_mode) & stat.S_IWRITE:
+                raise RuntimeError("bundle file permission verification failed")
+        return
+    for directory, _, names in os.walk(root):
+        if stat.S_IMODE(Path(directory).stat().st_mode) != 0o555:
+            raise RuntimeError("bundle directory permission verification failed")
+        for name in names:
+            candidate = Path(directory) / name
+            if stat.S_IMODE(candidate.stat().st_mode) != 0o444:
+                raise RuntimeError("bundle file permission verification failed")
+
+
+def _prepare_staging_root(path: Path, user_sid: str | None) -> None:
+    staged = Path(path)
+    if any(staged.iterdir()):
+        raise RuntimeError("bundle staging root must be empty before privacy hardening")
+    if os.name == "nt":
+        if user_sid is None:
+            raise RuntimeError("bundle staging requires the invoking Windows account SID")
+        hardened = subprocess.run(
+            [
+                "icacls", str(staged),
+                "/inheritance:r",
+                "/grant:r",
+                f"*{user_sid}:(OI)(CI)(RX)",
+                "*S-1-5-18:(OI)(CI)(F)",
+                "*S-1-5-32-544:(OI)(CI)(F)",
+                "*S-1-3-4:(OI)(CI)(F)",
+                "/Q",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if hardened.returncode != 0:
+            raise RuntimeError("could not establish the private Windows staging ACL")
+        _verify_bundle_permissions(staged, user_sid=user_sid)
+        return
+    os.chmod(staged, 0o700)
+    if stat.S_IMODE(staged.stat().st_mode) != 0o700:
+        raise RuntimeError("could not establish the private POSIX staging mode")
+
+
+def _finalize_staging_permissions(path: Path) -> None:
+    staged = Path(path)
+    if os.name == "nt":
+        explicit = subprocess.run(
+            ["icacls", str(staged), "/inheritance:d", "/T", "/C", "/Q"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if explicit.returncode != 0:
+            raise RuntimeError("could not finalize explicit private Windows bundle ACLs")
+    for directory, _, names in os.walk(staged, topdown=False):
+        for name in names:
+            os.chmod(Path(directory) / name, 0o444)
+        if os.name != "nt":
+            os.chmod(directory, 0o555)
+
+
+def _verify_staged_bundle(
+    path: Path,
+    manifest: Mapping[str, str],
+    user_sid: str | None,
+) -> None:
+    staged = Path(path)
+    manifest_path = staged / "manifest.json"
+    if manifest_path.is_symlink() or manifest_path.read_bytes() != canonical_bytes(manifest):
+        raise RuntimeError("bundle staging manifest verification failed")
+    actual: set[str] = set()
+    for candidate in staged.rglob("*"):
+        relative = candidate.relative_to(staged).as_posix()
+        metadata = candidate.lstat()
+        if stat.S_ISLNK(metadata.st_mode):
+            raise RuntimeError("bundle staging tree contains a symbolic link")
+        if stat.S_ISDIR(metadata.st_mode):
+            continue
+        if not stat.S_ISREG(metadata.st_mode):
+            raise RuntimeError("bundle staging tree contains a non-regular file")
+        if relative != "manifest.json":
+            actual.add(relative)
+    if actual != set(manifest):
+        raise RuntimeError("bundle staging file set does not match the manifest")
+    for relative, expected in manifest.items():
+        _sha(expected, "bundle staging content sha256")
+        candidate = staged.joinpath(*PurePosixPath(relative).parts)
+        if compute_raw_sha256(candidate.read_bytes()) != expected:
+            raise RuntimeError("bundle staging content digest mismatch")
+    _verify_bundle_permissions(staged, user_sid=user_sid)
+
+
+def _remove_unpublished_bundle(path: Path, *, user_sid: str | None) -> None:
+    staged = Path(path)
+    if not staged.exists():
+        return
+    if os.name == "nt" and user_sid is not None:
+        restored = subprocess.run(
+            [
+                "icacls", str(staged),
+                "/grant:r", f"*{user_sid}:(OI)(CI)(F)",
+                "/T", "/C", "/Q",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if restored.returncode != 0:
+            raise RuntimeError("could not restore unpublished Windows bundle cleanup rights")
+    for directory, _, names in os.walk(staged):
+        os.chmod(directory, 0o700)
+        for name in names:
+            os.chmod(Path(directory) / name, 0o600)
+    shutil.rmtree(staged)
+
+
 def build_bundle(store: BundleStore, content: Mapping[str, bytes]) -> dict[str, str]:
     if not isinstance(content, Mapping) or not content: raise ValueError("bundle must contain bytes")
     manifest = {}; normalized: list[tuple[PurePosixPath, bytes]] = []
@@ -1028,37 +1280,43 @@ def build_bundle(store: BundleStore, content: Mapping[str, bytes]) -> dict[str, 
             raise ValueError("root manifest.json is reserved for bundle integrity")
         if not isinstance(data, bytes) or path.as_posix() in manifest: raise ValueError("bundle content is invalid")
         manifest[path.as_posix()] = compute_raw_sha256(data); normalized.append((path, data))
-    digest = compute_packet_sha256(manifest); final = store.root / digest
-    if final.exists(): raise FileExistsError("immutable bundle already exists")
+    digest = compute_packet_sha256(manifest)
     store.root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=store.root, prefix=".bundle-") as temporary:
-        staged = Path(temporary)
+    final = store.root / digest
+    if final.exists(): raise FileExistsError("immutable bundle already exists")
+    staged = Path(tempfile.mkdtemp(dir=store.root, prefix=".bundle-"))
+    user_sid: str | None = None
+    try:
+        if os.name == "nt":
+            user_sid = _current_windows_user_sid()
+        _prepare_staging_root(staged, user_sid)
         for path, data in normalized:
-            target = staged.joinpath(*path.parts); target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(data); os.chmod(target, 0o444)
-        (staged / "manifest.json").write_bytes(canonical_bytes(manifest)); os.chmod(staged / "manifest.json", 0o444)
+            target = staged.joinpath(*path.parts)
+            if os.name == "nt":
+                target.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                directory = target.parent
+                while directory != staged:
+                    os.chmod(directory, 0o700)
+                    directory = directory.parent
+            with target.open("xb") as stream:
+                stream.write(data)
+            if os.name != "nt":
+                os.chmod(target, 0o600)
+        manifest_path = staged / "manifest.json"
+        with manifest_path.open("xb") as stream:
+            stream.write(canonical_bytes(manifest))
+        if os.name != "nt":
+            os.chmod(manifest_path, 0o600)
+        _finalize_staging_permissions(staged)
+        _verify_staged_bundle(staged, manifest, user_sid)
+        if final.exists():
+            raise FileExistsError("immutable bundle already exists")
         os.replace(staged, final)
-    if os.name == "nt":
-        user = os.environ.get("USERNAME")
-        hardened = subprocess.run(
-            [
-                "icacls", str(final),
-                "/inheritance:r",
-                "/grant:r",
-                f"{user}:(RX)",
-                "*S-1-5-18:(F)",
-                "*S-1-5-32-544:(F)",
-                "*S-1-3-4:(F)",
-                "/T", "/C", "/Q",
-            ],
-            capture_output=True,
-            check=False,
-        ) if user else None
-        if hardened is None or hardened.returncode != 0:
-            raise RuntimeError("could not finalize private Windows bundle ACL")
-    else:
-        for directory, _, names in os.walk(final):
-            os.chmod(directory, 0o555)
-            for name in names: os.chmod(Path(directory) / name, 0o444)
+    except BaseException:
+        _remove_unpublished_bundle(staged, user_sid=user_sid)
+        raise
     return {"bundle_sha256": digest, "bundle_path": f"bundle://{digest}/"}
 
 

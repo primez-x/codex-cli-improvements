@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import argparse
 import ast
+import copy
 import csv
 import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -59,8 +61,11 @@ END = "<!-- END MANAGED ADVERSARIAL DELIVERY GATE -->"
 TRANSACTION_ID = re.compile(r"[0-9a-f]{32}\Z")
 HEX_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 LIFECYCLE_GATE_PATH = "skills/adversarial-code-review/scripts/lifecycle_gate.py"
-TABLE_HEADER = re.compile(r"(?m)^\s*(\[\[?[^\]\r\n]+\]\]?)\s*(?:\r?\n|$)")
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+MANAGED_SKILL_PATH = "./skills/adversarial-code-review/SKILL.md"
+SEMANTIC_DESTINATIONS = frozenset({"AGENTS.md", "config.toml", "hooks.json"})
+_TABLE_PROBE = "__codex_installer_table_probe_7f44b7a5__"
+_IDENTITY_UNSET = object()
 
 
 # This strict manifest is the sole production-input authority for both install
@@ -119,8 +124,24 @@ def _filesystem_path(path: Path) -> Path:
     return Path("\\\\?\\" + absolute)
 
 
+def _lstat(path: Path) -> os.stat_result | None:
+    try:
+        return os.lstat(path)
+    except FileNotFoundError:
+        return None
+
+
+def _metadata_is_reparse(metadata: os.stat_result) -> bool:
+    attributes = int(getattr(metadata, "st_file_attributes", 0))
+    reparse_attribute = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+    return stat.S_ISLNK(metadata.st_mode) or bool(attributes & reparse_attribute)
+
+
 def _is_reparse(path: Path) -> bool:
-    if path.is_symlink():
+    metadata = _lstat(path)
+    if metadata is None:
+        return False
+    if _metadata_is_reparse(metadata):
         return True
     is_junction = getattr(path, "is_junction", None)
     return bool(is_junction and is_junction())
@@ -129,8 +150,31 @@ def _is_reparse(path: Path) -> bool:
 def _reject_reparse_chain(path: Path, label: str) -> None:
     chain = [path, *path.parents]
     for candidate in reversed(chain):
-        if candidate.exists() and _is_reparse(candidate):
+        if _is_reparse(candidate):
             die(f"{label} has a symlink or reparse-point ancestor: {candidate}")
+
+
+def _leaf_identity(metadata: os.stat_result) -> dict[str, int]:
+    return {
+        "device": int(metadata.st_dev),
+        "inode": int(metadata.st_ino),
+        "mode": int(metadata.st_mode),
+        "file_attributes": int(getattr(metadata, "st_file_attributes", 0)),
+    }
+
+
+def _reject_managed_leaf_reparse(home: Path, relative: str) -> Path:
+    safe = _safe_relative(relative)
+    target = home.joinpath(*safe.parts)
+    _reject_reparse_chain(target.parent, f"path {relative}")
+    if _is_reparse(target):
+        die(f"managed destination leaf is a symlink or reparse point: {relative}")
+    return _contained(home, relative)
+
+
+def _reject_managed_leaf_reparses(home: Path, relatives: Iterable[str]) -> None:
+    for relative in sorted(set(relatives)):
+        _reject_managed_leaf_reparse(home, relative)
 
 
 def _safe_relative(value: str) -> PurePosixPath:
@@ -251,26 +295,219 @@ def source_config(source: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     return dict(agent), dict(desired[0])
 
 
+def _table_header_identity(header: str) -> tuple[tuple[str, ...], bool]:
+    """Return a parsed TOML table path without trusting raw header spelling."""
+    try:
+        parsed = tomllib.loads(f"{header}\n{_TABLE_PROBE} = true\n")
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError("unsupported TOML table header") from exc
+    found: list[tuple[str, ...]] = []
+
+    def visit(value: Any, path: tuple[str, ...]) -> None:
+        if isinstance(value, Mapping):
+            if value.get(_TABLE_PROBE) is True:
+                found.append(path)
+            for key, child in value.items():
+                if key == _TABLE_PROBE:
+                    continue
+                if isinstance(child, list):
+                    for item in child:
+                        visit(item, (*path, str(key)))
+                else:
+                    visit(child, (*path, str(key)))
+
+    visit(parsed, ())
+    if len(found) != 1:
+        die("unsupported TOML table header")
+    return found[0], header.startswith("[[")
+
+
+def _header_at_line_start(line: str) -> str | None:
+    """Recognize one complete table header, excluding comments and value arrays."""
+    body = line.rstrip("\r\n")
+    start = 0
+    while start < len(body) and body[start] in " \t":
+        start += 1
+    if start >= len(body) or body[start] != "[":
+        return None
+    array = body.startswith("[[", start)
+    index = start + (2 if array else 1)
+    quote: str | None = None
+    escaped = False
+    end: int | None = None
+    while index < len(body):
+        character = body[index]
+        if quote == '"':
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                quote = None
+            index += 1
+            continue
+        if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+        if character in {'"', "'"}:
+            quote = character
+            index += 1
+            continue
+        if array and body.startswith("]]", index):
+            end = index + 2
+            break
+        if not array and character == "]":
+            end = index + 1
+            break
+        index += 1
+    if end is None or quote is not None:
+        return None
+    remainder = body[end:].lstrip(" \t")
+    if remainder and not remainder.startswith("#"):
+        return None
+    header = body[start:end]
+    try:
+        _table_header_identity(header)
+    except ValueError:
+        return None
+    return header
+
+
+def _scan_toml_line(
+    line: str,
+    multiline: str | None,
+    square_depth: int,
+    curly_depth: int,
+) -> tuple[str | None, int, int]:
+    """Track TOML string and collection context across physical lines."""
+    index = 0
+    while index < len(line):
+        if multiline is not None:
+            delimiter = '"' if multiline == "basic" else "'"
+            if multiline == "basic" and line[index] == "\\":
+                index += 2
+                continue
+            if line[index] == delimiter:
+                run_end = index
+                while run_end < len(line) and line[run_end] == delimiter:
+                    run_end += 1
+                if run_end - index >= 3:
+                    multiline = None
+                    index = run_end
+                    continue
+                index = run_end
+                continue
+            index += 1
+            continue
+
+        character = line[index]
+        if character == "#":
+            break
+        if line.startswith('\"\"\"', index):
+            multiline = "basic"
+            index += 3
+            continue
+        if line.startswith("'''", index):
+            multiline = "literal"
+            index += 3
+            continue
+        if character == '"':
+            index += 1
+            while index < len(line):
+                if line[index] == "\\":
+                    index += 2
+                elif line[index] == '"':
+                    index += 1
+                    break
+                else:
+                    index += 1
+            continue
+        if character == "'":
+            closing = line.find("'", index + 1)
+            index = len(line) if closing < 0 else closing + 1
+            continue
+        if character == "[":
+            square_depth += 1
+        elif character == "]":
+            square_depth = max(0, square_depth - 1)
+        elif character == "{":
+            curly_depth += 1
+        elif character == "}":
+            curly_depth = max(0, curly_depth - 1)
+        index += 1
+    return multiline, square_depth, curly_depth
+
+
 def _table_segments(text: str) -> tuple[str, list[tuple[str, str]]]:
-    matches = list(TABLE_HEADER.finditer(text))
+    matches: list[tuple[int, str]] = []
+    offset = 0
+    multiline: str | None = None
+    square_depth = 0
+    curly_depth = 0
+    for line in text.splitlines(keepends=True):
+        if multiline is None and square_depth == 0 and curly_depth == 0:
+            header = _header_at_line_start(line)
+            if header is not None:
+                matches.append((offset, header))
+        multiline, square_depth, curly_depth = _scan_toml_line(
+            line,
+            multiline,
+            square_depth,
+            curly_depth,
+        )
+        offset += len(line)
     if not matches:
         return text, []
-    prefix = text[:matches[0].start()]
+    prefix = text[:matches[0][0]]
     segments: list[tuple[str, str]] = []
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        segments.append((match.group(1), text[match.start():end]))
+    for index, (start, header) in enumerate(matches):
+        end = matches[index + 1][0] if index + 1 < len(matches) else len(text)
+        segments.append((header, text[start:end]))
     return prefix, segments
+
+
+def _managed_config_segments(
+    text: str,
+    parsed: Mapping[str, Any],
+) -> tuple[str, list[tuple[str, str, bool]]]:
+    """Bind real lexical AoT spans to their parsed ordinal and path owner."""
+    prefix, segments = _table_segments(text)
+    skills = parsed.get("skills")
+    configured_skills = skills.get("config", []) if isinstance(skills, Mapping) else []
+    if not isinstance(configured_skills, list):
+        configured_skills = []
+    skill_ordinal = 0
+    classified: list[tuple[str, str, bool]] = []
+    for header, segment in segments:
+        identity = _table_header_identity(header)
+        managed = identity == (("agents", "sol_reviewer"), False)
+        if identity == (("skills", "config"), True):
+            if skill_ordinal >= len(configured_skills):
+                die("TOML array-table spans disagree with parsed skills.config")
+            entry = configured_skills[skill_ordinal]
+            managed = isinstance(entry, Mapping) and entry.get("path") == MANAGED_SKILL_PATH
+            skill_ordinal += 1
+        classified.append((header, segment, managed))
+    if skill_ordinal != len(configured_skills):
+        die("TOML array-table spans disagree with parsed skills.config")
+    return prefix, classified
 
 
 def _source_config_segments(source: Path) -> tuple[str, str]:
     text = (source / "config.toml").read_text(encoding="utf-8")
-    _, segments = _table_segments(text)
-    agent = [segment for header, segment in segments if header == "[agents.sol_reviewer]"]
+    parsed = tomllib.loads(text)
+    _, segments = _managed_config_segments(text, parsed)
+    agent = [
+        segment
+        for header, segment, managed in segments
+        if managed and _table_header_identity(header) == (("agents", "sol_reviewer"), False)
+    ]
     skill = [
         segment
-        for header, segment in segments
-        if header == "[[skills.config]]" and "./skills/adversarial-code-review/SKILL.md" in segment
+        for header, segment, managed in segments
+        if managed and _table_header_identity(header) == (("skills", "config"), True)
     ]
     if len(agent) != 1 or len(skill) != 1:
         die("source config managed segments are ambiguous")
@@ -288,6 +525,29 @@ def _config_managed_exact(value: Mapping[str, Any], source: Path) -> bool:
     return actual_agent == agent and actual_skills == [skill]
 
 
+def _unmanaged_config(value: Mapping[str, Any]) -> dict[str, Any]:
+    projected = copy.deepcopy(dict(value))
+    agents = projected.get("agents")
+    if isinstance(agents, dict):
+        agents.pop("sol_reviewer", None)
+        if not agents:
+            projected.pop("agents", None)
+    skills = projected.get("skills")
+    if isinstance(skills, dict):
+        entries = skills.get("config")
+        if isinstance(entries, list):
+            skills["config"] = [
+                entry
+                for entry in entries
+                if not (isinstance(entry, Mapping) and entry.get("path") == MANAGED_SKILL_PATH)
+            ]
+            if not skills["config"]:
+                skills.pop("config", None)
+        if not skills:
+            projected.pop("skills", None)
+    return projected
+
+
 def config_text(existing: bytes, source: Path) -> bytes:
     text = existing.decode("utf-8") if existing else ""
     try:
@@ -296,25 +556,32 @@ def config_text(existing: bytes, source: Path) -> bytes:
         raise ValueError("unsupported destination config format") from exc
     if _config_managed_exact(parsed, source):
         return existing
-    prefix, segments = _table_segments(text)
-    kept: list[str] = []
-    for header, segment in segments:
-        if header == "[agents.sol_reviewer]":
-            continue
-        if header == "[[skills.config]]" and "./skills/adversarial-code-review/SKILL.md" in segment:
-            continue
-        kept.append(segment.rstrip("\r\n"))
+    prefix, segments = _managed_config_segments(text, parsed)
+    kept = [segment for _, segment, managed in segments if not managed]
     newline = "\r\n" if b"\r\n" in existing else "\n"
     agent_segment, skill_segment = _source_config_segments(source)
-    pieces = [prefix.rstrip("\r\n"), *kept, agent_segment, skill_segment]
-    result = (newline + newline).join(piece.replace("\r\n", "\n").replace("\n", newline) for piece in pieces if piece)
-    encoded = (result.rstrip("\r\n") + newline).encode("utf-8")
+    retained = prefix + "".join(kept)
+    if not retained:
+        separator = ""
+    elif retained.endswith(("\r\n\r\n", "\n\n")):
+        separator = ""
+    elif retained.endswith(("\r", "\n")):
+        separator = newline
+    else:
+        separator = newline + newline
+    managed = (newline + newline).join(
+        segment.replace("\r\n", "\n").replace("\n", newline)
+        for segment in (agent_segment, skill_segment)
+    )
+    encoded = (retained + separator + managed.rstrip("\r\n") + newline).encode("utf-8")
     try:
         candidate = tomllib.loads(encoded.decode("utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ValueError("managed config merge produced invalid TOML") from exc
     if not _config_managed_exact(candidate, source):
         die("managed config merge failed semantic equality")
+    if _unmanaged_config(candidate) != _unmanaged_config(parsed):
+        die("managed config merge changed unmanaged values")
     return encoded
 
 
@@ -435,6 +702,9 @@ def _managed_extras(home: Path) -> set[str]:
             continue
         _reject_reparse_chain(root, f"managed destination {root_relative}")
         for item in root.rglob("*"):
+            if _is_reparse(item):
+                relative = item.relative_to(home).as_posix()
+                die(f"managed destination has a symlink or reparse point: {relative}")
             if not item.is_file():
                 continue
             relative = item.relative_to(home).as_posix()
@@ -449,9 +719,12 @@ def _managed_extras(home: Path) -> set[str]:
 
 
 def planned(source: Path, home: Path) -> tuple[dict[str, bytes], dict[str, bytes], set[str]]:
+    managed_paths = set(COPY_MANIFEST) | set(SEMANTIC_DESTINATIONS) | set(STALE_MANAGED_FILES)
+    _reject_managed_leaf_reparses(home, managed_paths)
     copied = source_files(source)
     semantic = _semantic_plan(source, home)
     deletions = _managed_extras(home) | {path for path in STALE_MANAGED_FILES if (home / path).is_file()}
+    _reject_managed_leaf_reparses(home, deletions)
     return copied, semantic, deletions
 
 
@@ -648,6 +921,47 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def _regular_leaf_snapshot(home: Path, relative: str) -> tuple[bytes | None, dict[str, int] | None]:
+    """Read one regular managed leaf while authenticating its non-following identity."""
+    target = _reject_managed_leaf_reparse(home, relative)
+    before = _lstat(target)
+    if before is None:
+        return None, None
+    if not stat.S_ISREG(before.st_mode):
+        die(f"managed target is not a regular file: {relative}")
+    identity = _leaf_identity(before)
+    data = target.read_bytes()
+    after = _lstat(target)
+    if after is None or _metadata_is_reparse(after) or _leaf_identity(after) != identity:
+        die(f"managed target identity changed while reading: {relative}")
+    return data, identity
+
+
+def _valid_leaf_identity(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == {"device", "inode", "mode", "file_attributes"}
+        and all(isinstance(item, int) and not isinstance(item, bool) and item >= 0 for item in value.values())
+    )
+
+
+def _require_prepared_leaf(
+    home: Path,
+    manifest: Mapping[str, Any],
+    relative: str,
+) -> None:
+    data, identity = _regular_leaf_snapshot(home, relative)
+    record = manifest["paths"][relative]
+    if record["present"] is False:
+        if data is not None:
+            die(f"managed target appeared after transaction preparation: {relative}")
+        return
+    if manifest["schema_version"] >= 2 and identity != record["identity"]:
+        die(f"managed target identity changed after transaction preparation: {relative}")
+    if data is None or len(data) != record["size"] or sha(data) != record["sha256"]:
+        die(f"managed target content changed after transaction preparation: {relative}")
+
+
 def _prepare_transaction(
     home: Path,
     transaction: str,
@@ -655,24 +969,36 @@ def _prepare_transaction(
     deletions: set[str],
 ) -> Path:
     root = _transaction_root(home, transaction)
+    tracked = sorted(set(writes) | deletions)
+    _reject_managed_leaf_reparses(home, tracked)
+    preimages = {
+        relative: _regular_leaf_snapshot(home, relative)
+        for relative in tracked
+    }
     predecessor = _active_completed_head(home)
     _private_directory(root)
     _harden_private_tree(root)
     _private_directory(root / "backup")
     _private_directory(root / "staging")
-    tracked = sorted(set(writes) | deletions)
     path_records: dict[str, Any] = {}
     for relative in tracked:
-        target = _contained(home, relative)
-        if target.exists() and not target.is_file():
-            die(f"managed target is not a file: {relative}")
-        if target.is_file():
-            data = target.read_bytes()
+        data, identity = preimages[relative]
+        if data is not None:
             backup = _contained(root / "backup", relative)
             _atomic_write(backup, data)
-            path_records[relative] = {"present": True, "sha256": sha(data), "size": len(data)}
+            path_records[relative] = {
+                "present": True,
+                "sha256": sha(data),
+                "size": len(data),
+                "identity": identity,
+            }
         else:
-            path_records[relative] = {"present": False, "sha256": None, "size": 0}
+            path_records[relative] = {
+                "present": False,
+                "sha256": None,
+                "size": 0,
+                "identity": None,
+            }
     staged_hashes: dict[str, str] = {}
     for relative, data in writes.items():
         stage = _contained(root / "staging", relative)
@@ -681,7 +1007,7 @@ def _prepare_transaction(
             die(f"staged equality failed: {relative}")
         staged_hashes[relative] = sha(data)
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "home_sha256": sha(str(home.resolve()).encode("utf-8")),
         "predecessor_transaction_id": predecessor,
         "paths": path_records,
@@ -691,12 +1017,13 @@ def _prepare_transaction(
     manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
     _atomic_write(root / "manifest.json", manifest_bytes)
     journal = {
-        "schema_version": 1,
+        "schema_version": 2,
         "transaction_id": transaction,
         "manifest_sha256": sha(manifest_bytes),
         "status": "prepared",
         "next_path": None,
         "applied": [],
+        "postimage_identities": {},
     }
     _atomic_json(root / "journal.json", journal)
     _harden_private_tree(root)
@@ -710,11 +1037,26 @@ def _validated_transaction(home: Path, transaction: str) -> tuple[Path, dict[str
     manifest_path = root / "manifest.json"
     manifest_bytes = manifest_path.read_bytes()
     manifest = _read_json(manifest_path, "transaction manifest")
-    if set(journal) != {"schema_version", "transaction_id", "manifest_sha256", "status", "next_path", "applied"}:
+    journal_version = journal.get("schema_version")
+    expected_journal_fields = {
+        "schema_version",
+        "transaction_id",
+        "manifest_sha256",
+        "status",
+        "next_path",
+        "applied",
+    }
+    if journal_version == 2:
+        expected_journal_fields.add("postimage_identities")
+    if journal_version not in {1, 2} or set(journal) != expected_journal_fields:
         die("transaction journal fields are not exact")
-    if journal["schema_version"] != 1 or journal["transaction_id"] != transaction or journal["manifest_sha256"] != sha(manifest_bytes):
+    if journal["transaction_id"] != transaction or journal["manifest_sha256"] != sha(manifest_bytes):
         die("transaction journal identity mismatch")
-    if set(manifest) != {"schema_version", "home_sha256", "predecessor_transaction_id", "paths", "writes", "deletions"} or manifest["schema_version"] != 1:
+    if (
+        set(manifest) != {"schema_version", "home_sha256", "predecessor_transaction_id", "paths", "writes", "deletions"}
+        or manifest.get("schema_version") not in {1, 2}
+        or manifest["schema_version"] != journal_version
+    ):
         die("transaction manifest fields are not exact")
     if manifest["home_sha256"] != sha(str(home.resolve()).encode("utf-8")):
         die("transaction belongs to another Codex home")
@@ -735,17 +1077,41 @@ def _validated_transaction(home: Path, transaction: str) -> tuple[Path, dict[str
         die("transaction manifest has duplicate deletions")
     if set(manifest["paths"]) != set(manifest["writes"]) | set(manifest["deletions"]):
         die("transaction manifest path sets disagree")
+    postimage_identities = journal.get("postimage_identities", {})
+    if journal_version == 2:
+        if not isinstance(postimage_identities, dict) or not set(postimage_identities).issubset(journal["applied"]):
+            die("transaction postimage identities disagree with applied paths")
+        if journal["status"] in {"prepared", "applying", "validating", "completed"} and set(
+            postimage_identities
+        ) != set(journal["applied"]):
+            die("transaction postimage identities are incomplete")
+        for relative, identity in postimage_identities.items():
+            if (
+                relative not in manifest["paths"]
+                or (relative in manifest["writes"] and not _valid_leaf_identity(identity))
+                or (relative in manifest["deletions"] and identity is not None)
+            ):
+                die("transaction postimage identity is malformed")
     for relative, record in manifest["paths"].items():
         _safe_relative(relative)
-        if not isinstance(record, dict) or set(record) != {"present", "sha256", "size"}:
+        expected_record_fields = {"present", "sha256", "size"}
+        if manifest["schema_version"] == 2:
+            expected_record_fields.add("identity")
+        if not isinstance(record, dict) or set(record) != expected_record_fields:
             die("transaction backup record is malformed")
         if record["present"] is True:
+            if manifest["schema_version"] == 2 and not _valid_leaf_identity(record["identity"]):
+                die("transaction backup identity is malformed")
             backup = _contained(root / "backup", relative, existing=True)
             data = backup.read_bytes()
             if record["sha256"] != sha(data) or record["size"] != len(data):
                 die(f"backup authentication failed: {relative}")
-        elif record != {"present": False, "sha256": None, "size": 0}:
-            die("absent backup record is malformed")
+        else:
+            expected_absent = {"present": False, "sha256": None, "size": 0}
+            if manifest["schema_version"] == 2:
+                expected_absent["identity"] = None
+            if record != expected_absent:
+                die("absent backup record is malformed")
     for relative, expected in manifest["writes"].items():
         _safe_relative(relative)
         if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
@@ -814,17 +1180,33 @@ def _active_completed_head(home: Path) -> str | None:
     return head
 
 
-def _require_current_postimage(home: Path, transaction: str, manifest: Mapping[str, Any]) -> None:
+def _journal_postimage_identity(journal: Mapping[str, Any], relative: str) -> Any:
+    identities = journal.get("postimage_identities")
+    if isinstance(identities, Mapping) and relative in identities:
+        return identities[relative]
+    return _IDENTITY_UNSET
+
+
+def _require_current_postimage(
+    home: Path,
+    transaction: str,
+    manifest: Mapping[str, Any],
+    journal: Mapping[str, Any],
+) -> None:
     head = _active_completed_head(home)
     if head != transaction:
         die("rollback refused: a later completed install supersedes this transaction")
     drift: list[str] = []
     for relative in sorted(manifest["paths"]):
-        target = _contained(home, relative)
+        data, current_identity = _regular_leaf_snapshot(home, relative)
+        expected_identity = _journal_postimage_identity(journal, relative)
         if relative in manifest["writes"]:
-            if not target.is_file() or sha(target.read_bytes()) != manifest["writes"][relative]:
+            if data is None or sha(data) != manifest["writes"][relative] or (
+                expected_identity is not _IDENTITY_UNSET
+                and current_identity != expected_identity
+            ):
                 drift.append(relative)
-        elif target.exists():
+        elif data is not None:
             drift.append(relative)
     if drift:
         die(f"rollback refused: live postimage drift at {', '.join(drift)}")
@@ -834,18 +1216,14 @@ def _live_image_matches(
     home: Path,
     manifest: Mapping[str, Any],
     relative: str,
+    *,
+    postimage_identity: Any = _IDENTITY_UNSET,
 ) -> tuple[bool, bool]:
     """Return whether a live path equals the authenticated preimage/postimage."""
-    target = _contained(home, relative)
-    if os.path.lexists(target) and (_is_reparse(target) or not target.is_file()):
-        return False, False
-    present = target.is_file()
-    digest: str | None = None
-    size = 0
-    if present:
-        data = target.read_bytes()
-        digest = sha(data)
-        size = len(data)
+    data, current_identity = _regular_leaf_snapshot(home, relative)
+    present = data is not None
+    digest = sha(data) if data is not None else None
+    size = len(data) if data is not None else 0
     record = manifest["paths"][relative]
     preimage = (
         present and record["present"] is True
@@ -855,6 +1233,8 @@ def _live_image_matches(
         present and relative in manifest["writes"]
         and digest == manifest["writes"][relative]
     ) or (not present and relative in manifest["deletions"])
+    if postimage and postimage_identity is not _IDENTITY_UNSET:
+        postimage = current_identity == postimage_identity
     return preimage, postimage
 
 
@@ -871,13 +1251,19 @@ def _rollback_candidates(manifest: Mapping[str, Any], journal: Mapping[str, Any]
 def _preflight_incomplete_rollback(
     home: Path,
     manifest: Mapping[str, Any],
+    journal: Mapping[str, Any],
     candidates: list[str],
 ) -> None:
     """Reject every non-authenticated live state before changing journal or files."""
     candidate_set = set(candidates)
     drift: list[str] = []
     for relative in sorted(manifest["paths"]):
-        preimage, postimage = _live_image_matches(home, manifest, relative)
+        preimage, postimage = _live_image_matches(
+            home,
+            manifest,
+            relative,
+            postimage_identity=_journal_postimage_identity(journal, relative),
+        )
         if relative in candidate_set:
             if not (preimage or postimage):
                 drift.append(relative)
@@ -891,15 +1277,21 @@ def _restore_preimage(
     home: Path,
     root: Path,
     manifest: Mapping[str, Any],
+    journal: Mapping[str, Any],
     relative: str,
 ) -> None:
     """Restore one candidate only while it remains an authenticated postimage."""
-    preimage, postimage = _live_image_matches(home, manifest, relative)
+    preimage, postimage = _live_image_matches(
+        home,
+        manifest,
+        relative,
+        postimage_identity=_journal_postimage_identity(journal, relative),
+    )
     if preimage:
         return
     if not postimage:
         die(f"rollback refused: live transaction drift at {relative}")
-    target = _contained(home, relative)
+    target = _reject_managed_leaf_reparse(home, relative)
     record = manifest["paths"][relative]
     if record["present"]:
         _atomic_write(target, _contained(root / "backup", relative, existing=True).read_bytes())
@@ -997,13 +1389,13 @@ def _rollback_transaction(home: Path, transaction: str, *, acquire: bool) -> Non
         if journal["status"] == "completed":
             # Explicit historical rollback is allowed only for the active head
             # and only while every live target still equals its postimage.
-            _require_current_postimage(home, transaction, manifest)
+            _require_current_postimage(home, transaction, manifest, journal)
         _refuse_incompatible_lifecycle_rollback(home, root, manifest)
         candidates = _rollback_candidates(manifest, journal)
         # Authenticate every live path before changing either the journal or a
         # target. Untouched paths must still be preimages; candidates may be a
         # preimage (before replace or already rolled back) or a postimage.
-        _preflight_incomplete_rollback(home, manifest, candidates)
+        _preflight_incomplete_rollback(home, manifest, journal, candidates)
         if journal["status"] != "rolling_back":
             journal.update({"status": "rolling_back", "applied": candidates, "next_path": None})
             _atomic_json(root / "journal.json", journal)
@@ -1012,13 +1404,15 @@ def _rollback_transaction(home: Path, transaction: str, *, acquire: bool) -> Non
             if journal["next_path"] != relative:
                 journal["next_path"] = relative
                 _atomic_json(root / "journal.json", journal)
-            _restore_preimage(home, root, manifest, relative)
+            _restore_preimage(home, root, manifest, journal, relative)
             journal["applied"].pop()
+            if journal["schema_version"] >= 2:
+                journal["postimage_identities"].pop(relative, None)
             journal["next_path"] = None
             _atomic_json(root / "journal.json", journal)
         # Catch drift in both originally untouched and already-restored paths
         # before declaring the rollback complete.
-        _preflight_incomplete_rollback(home, manifest, [])
+        _preflight_incomplete_rollback(home, manifest, journal, [])
         journal.update({"status": "rolled_back", "next_path": None, "applied": []})
         _atomic_json(root / "journal.json", journal)
 
@@ -1468,13 +1862,16 @@ def smoke(source: Path, home: Path) -> dict[str, Any]:
             {**common, "hook_event_name": "SubagentStop", "agent_type": "sol_reviewer", "model": "gpt-5.6-sol", "agent_id": "reviewer-agent", "last_assistant_message": json.dumps(output)},
             environment,
         )
-        ledger = root / "ledger.json"
-        ledger.write_text(json.dumps({"schema_version": 1, "generation": 0, "dispositions": []}), encoding="utf-8")
+        ledger = json.dumps(
+            {"schema_version": 1, "generation": 0, "dispositions": []},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         _run_lifecycle_cli(
             gate,
             state,
             profile,
-            ["disposition", "--session-id", session, "--turn-id", turn, "--file", str(ledger)],
+            ["disposition", "--session-id", session, "--turn-id", turn, "--json", ledger],
             environment,
         )
         final_stop = _run_gate(
@@ -1539,6 +1936,10 @@ def verify(
     ignore_transactions: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     failures: list[str] = []
+    _reject_managed_leaf_reparses(
+        home,
+        set(COPY_MANIFEST) | set(SEMANTIC_DESTINATIONS) | set(STALE_MANAGED_FILES),
+    )
     failures.extend(
         f"recovery-journal:{transaction}"
         for transaction in _incomplete_transactions(home)
@@ -1587,6 +1988,12 @@ def verify(
 
 
 def install(source: Path, home: Path) -> dict[str, Any]:
+    # Refuse unsafe topology before even creating the installer lock/state.
+    _reject_managed_leaf_reparses(
+        home,
+        set(COPY_MANIFEST) | set(SEMANTIC_DESTINATIONS) | set(STALE_MANAGED_FILES),
+    )
+    _managed_extras(home)
     with _install_lock(home):
         recovered = _recover_incomplete(home)
         outcome = preview(source, home)
@@ -1608,16 +2015,30 @@ def install(source: Path, home: Path) -> dict[str, Any]:
             raise
         failure = os.environ.get("CODEX_ADVERSARIAL_INSTALL_FAIL_STEP", "")
         try:
+            # Authenticate the whole preimage immediately before the apply
+            # phase, then authenticate each leaf again at its write boundary.
+            for relative in sorted(manifest["paths"]):
+                _require_prepared_leaf(home, manifest, relative)
             for index, relative in enumerate(sorted(manifest["paths"]), start=1):
                 journal.update({"status": "applying", "next_path": relative})
                 _atomic_json(root / "journal.json", journal)
-                target = _contained(home, relative)
+                _require_prepared_leaf(home, manifest, relative)
+                target = _reject_managed_leaf_reparse(home, relative)
+                installed_identity: dict[str, int] | None = None
                 if relative in manifest["writes"]:
                     staged = _contained(root / "staging", relative, existing=True).read_bytes()
                     _atomic_write(target, staged)
-                elif target.exists():
+                    installed_data, installed_identity = _regular_leaf_snapshot(home, relative)
+                    if installed_data is None or sha(installed_data) != manifest["writes"][relative]:
+                        die(f"managed postimage verification failed: {relative}")
+                elif _lstat(target) is not None:
                     target.unlink()
+                    if _lstat(target) is not None:
+                        die(f"managed deletion verification failed: {relative}")
+                    installed_identity = None
                 journal["applied"].append(relative)
+                if journal["schema_version"] >= 2:
+                    journal["postimage_identities"][relative] = installed_identity
                 journal["next_path"] = None
                 _atomic_json(root / "journal.json", journal)
                 if failure == f"replace:{index}":

@@ -39,6 +39,7 @@
                 "repository": "https://github.com/primez-x/windhawk-mods",
                 "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
                 "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "sha256": "f0311a36a5f08dff1ed49b59c1b31102f2278882216dc248b17fd7e0b19f47c8",
                 "selector": {
                   "kind": "symbol",
                   "value": "WindhawkModReadme"
@@ -58,6 +59,7 @@
                 "repository": "https://github.com/primez-x/windhawk-mods",
                 "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
                 "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "sha256": "f0311a36a5f08dff1ed49b59c1b31102f2278882216dc248b17fd7e0b19f47c8",
                 "selector": {
                   "kind": "symbol",
                   "value": "g_regionMutationDepth"
@@ -77,6 +79,7 @@
                 "repository": "https://github.com/primez-x/windhawk-mods",
                 "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
                 "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "sha256": "f0311a36a5f08dff1ed49b59c1b31102f2278882216dc248b17fd7e0b19f47c8",
                 "selector": {
                   "kind": "symbol",
                   "value": "DockExitHideTimerProc"
@@ -96,6 +99,7 @@
                 "repository": "https://github.com/primez-x/windhawk-mods",
                 "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
                 "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "sha256": "f0311a36a5f08dff1ed49b59c1b31102f2278882216dc248b17fd7e0b19f47c8",
                 "selector": {
                   "kind": "symbol",
                   "value": "RemoveAllTaskbarSubclasses"
@@ -115,6 +119,7 @@
                 "repository": "https://github.com/primez-x/windhawk-mods",
                 "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
                 "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "sha256": "f0311a36a5f08dff1ed49b59c1b31102f2278882216dc248b17fd7e0b19f47c8",
                 "selector": {
                   "kind": "symbol",
                   "value": "QueryViaVtable"
@@ -134,6 +139,7 @@
                 "repository": "https://github.com/primez-x/windhawk-mods",
                 "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
                 "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "sha256": "f0311a36a5f08dff1ed49b59c1b31102f2278882216dc248b17fd7e0b19f47c8",
                 "selector": {
                   "kind": "symbol",
                   "value": "GeometryWinEventProc"
@@ -153,6 +159,7 @@
                 "repository": "https://github.com/primez-x/windhawk-mods",
                 "commit": "5d853c8d318ad5ed3beb9f82e58c4392ac37c000",
                 "path": "mods/taskbar-dock-click-through.wh.cpp",
+                "sha256": "f0311a36a5f08dff1ed49b59c1b31102f2278882216dc248b17fd7e0b19f47c8",
                 "selector": {
                   "kind": "symbol",
                   "value": "InstallSubclassHookProc"
@@ -199,6 +206,7 @@
                 "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
                 "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
                 "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "sha256": "1bd90301ecc5c976f4ba7a1d536dcc4a2c4ac5c083a2ffeefce1236e6f5600d9",
                 "selector": {
                   "kind": "symbol",
                   "value": "CreateProcessInternalW_hook"
@@ -218,6 +226,7 @@
                 "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
                 "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
                 "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "sha256": "1bd90301ecc5c976f4ba7a1d536dcc4a2c4ac5c083a2ffeefce1236e6f5600d9",
                 "selector": {
                   "kind": "symbol",
                   "value": "ShellExecuteExW_hook"
@@ -237,6 +246,7 @@
                 "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
                 "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
                 "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "sha256": "1bd90301ecc5c976f4ba7a1d536dcc4a2c4ac5c083a2ffeefce1236e6f5600d9",
                 "selector": {
                   "kind": "symbol",
                   "value": "memcpy"
@@ -256,6 +266,7 @@
                 "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
                 "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
                 "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "sha256": "1bd90301ecc5c976f4ba7a1d536dcc4a2c4ac5c083a2ffeefce1236e6f5600d9",
                 "selector": {
                   "kind": "symbol",
                   "value": "ExtractUrl"
@@ -275,6 +286,7 @@
                 "repository": "https://github.com/somebudyelse-ka/windhawk-mods",
                 "commit": "3650aa2e064fb04bd2adab4dcae02a97b5deb085",
                 "path": "mods/outlook-msedge-redirect.wh.cpp",
+                "sha256": "1bd90301ecc5c976f4ba7a1d536dcc4a2c4ac5c083a2ffeefce1236e6f5600d9",
                 "selector": {
                   "kind": "symbol",
                   "value": "Wh_ModInit"
@@ -321,6 +333,7 @@
                 "repository": "https://github.com/crazyboyybs/windhawk-mods",
                 "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
                 "path": "mods/win32-ui-modernizer.wh.cpp",
+                "sha256": "5b74274c8f601ad837fd04d8c580287760f3595deba5aa4a9db6d9f74d169cfd",
                 "selector": {
                   "kind": "symbol",
                   "value": "g_lvSelectFadeAnims"
@@ -340,6 +353,7 @@
                 "repository": "https://github.com/crazyboyybs/windhawk-mods",
                 "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
                 "path": "mods/win32-ui-modernizer.wh.cpp",
+                "sha256": "5b74274c8f601ad837fd04d8c580287760f3595deba5aa4a9db6d9f74d169cfd",
                 "selector": {
                   "kind": "symbol",
                   "value": "HdrDarkPaintSubclassProc"
@@ -359,6 +373,7 @@
                 "repository": "https://github.com/crazyboyybs/windhawk-mods",
                 "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
                 "path": "mods/win32-ui-modernizer.wh.cpp",
+                "sha256": "5b74274c8f601ad837fd04d8c580287760f3595deba5aa4a9db6d9f74d169cfd",
                 "selector": {
                   "kind": "symbol",
                   "value": "ListSelectFadeCleanup"
@@ -378,6 +393,7 @@
                 "repository": "https://github.com/crazyboyybs/windhawk-mods",
                 "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
                 "path": "mods/win32-ui-modernizer.wh.cpp",
+                "sha256": "5b74274c8f601ad837fd04d8c580287760f3595deba5aa4a9db6d9f74d169cfd",
                 "selector": {
                   "kind": "symbol",
                   "value": "g_progressMarqueeMaskLayer"
@@ -397,6 +413,7 @@
                 "repository": "https://github.com/crazyboyybs/windhawk-mods",
                 "commit": "0c6c60443ecd6bd12fa0654df49053981b1df4cb",
                 "path": "mods/win32-ui-modernizer.wh.cpp",
+                "sha256": "5b74274c8f601ad837fd04d8c580287760f3595deba5aa4a9db6d9f74d169cfd",
                 "selector": {
                   "kind": "symbol",
                   "value": "ListSelectFadeResyncWindow"
@@ -443,6 +460,7 @@
                 "repository": "https://github.com/umnik1/windhawk-mods",
                 "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
                 "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "sha256": "b99e73f525cbf2ef209f2533024426e5adca9af7ba13d779270789abbdcdd603",
                 "selector": {
                   "kind": "symbol",
                   "value": "WM_DPICHANGED"
@@ -462,6 +480,7 @@
                 "repository": "https://github.com/umnik1/windhawk-mods",
                 "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
                 "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "sha256": "b99e73f525cbf2ef209f2533024426e5adca9af7ba13d779270789abbdcdd603",
                 "selector": {
                   "kind": "symbol",
                   "value": "WindowProc"
@@ -481,6 +500,7 @@
                 "repository": "https://github.com/umnik1/windhawk-mods",
                 "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
                 "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "sha256": "b99e73f525cbf2ef209f2533024426e5adca9af7ba13d779270789abbdcdd603",
                 "selector": {
                   "kind": "symbol",
                   "value": "ShellExecuteW"
@@ -500,6 +520,7 @@
                 "repository": "https://github.com/umnik1/windhawk-mods",
                 "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
                 "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "sha256": "b99e73f525cbf2ef209f2533024426e5adca9af7ba13d779270789abbdcdd603",
                 "selector": {
                   "kind": "symbol",
                   "value": "GetTrayIconSize"
@@ -519,6 +540,7 @@
                 "repository": "https://github.com/umnik1/windhawk-mods",
                 "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
                 "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "sha256": "b99e73f525cbf2ef209f2533024426e5adca9af7ba13d779270789abbdcdd603",
                 "selector": {
                   "kind": "symbol",
                   "value": "IsExcluded"
@@ -538,6 +560,7 @@
                 "repository": "https://github.com/umnik1/windhawk-mods",
                 "commit": "f66c7c2c6e9f6e38e56752acfa9d8bf008a45ee4",
                 "path": "mods/taskbar-audio-device-switcher.wh.cpp",
+                "sha256": "b99e73f525cbf2ef209f2533024426e5adca9af7ba13d779270789abbdcdd603",
                 "selector": {
                   "kind": "symbol",
                   "value": "architecture"
@@ -584,6 +607,7 @@
                 "repository": "https://github.com/Valer100/windhawk-mods",
                 "commit": "ff07922ef586237cec12e348cb4b3b721a6ba81e",
                 "path": "mods/disk-usage-bar-customizer.wh.cpp",
+                "sha256": "917d440bd0c16706ee3fdfd54dd3183acc797c16be4c7ff70996ad38adf9615f",
                 "selector": {
                   "kind": "symbol",
                   "value": "GdiplusStartup"
@@ -603,6 +627,7 @@
                 "repository": "https://github.com/Valer100/windhawk-mods",
                 "commit": "ff07922ef586237cec12e348cb4b3b721a6ba81e",
                 "path": "mods/disk-usage-bar-customizer.wh.cpp",
+                "sha256": "917d440bd0c16706ee3fdfd54dd3183acc797c16be4c7ff70996ad38adf9615f",
                 "selector": {
                   "kind": "symbol",
                   "value": "DrawPercentageLabel"
@@ -622,6 +647,7 @@
                 "repository": "https://github.com/Valer100/windhawk-mods",
                 "commit": "ff07922ef586237cec12e348cb4b3b721a6ba81e",
                 "path": "mods/disk-usage-bar-customizer.wh.cpp",
+                "sha256": "917d440bd0c16706ee3fdfd54dd3183acc797c16be4c7ff70996ad38adf9615f",
                 "selector": {
                   "kind": "symbol",
                   "value": "Wh_GetStringSetting"

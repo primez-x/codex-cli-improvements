@@ -15,6 +15,7 @@ import time
 import tomllib
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
@@ -45,18 +46,8 @@ REVIEWER_MODEL = "gpt-5.6-sol"
 REVIEWER_EFFORT = "max"
 DELIVERY_ADDRESSING = "composite-v1"
 BLOCKED_MARKER = "[adversarial-review-blocked]"
-MUTATION_COMMAND = re.compile(
-    r"(?:"
-    r"\b(?:apply_patch|cp|mv|rm|del|mkdir|rmdir|touch|tee|truncate)\b|"
-    r"\b(?:set|add)-content\b|\bout-file\b|\b(?:new|remove|move|copy|rename)-item\b|"
-    r"\bsed\s+-i\b|\bgit\s+(?:add|am|apply|checkout|cherry-pick|clean|commit|merge|mv|rebase|reset|restore|rm|switch)\b|"
-    r"\b(?:npm|pnpm|yarn)\s+(?:install|add|remove|run\s+(?:build|generate))\b|"
-    r"\b(?:dotnet|msbuild|cargo|go)\s+(?:build|publish|install|generate)\b|"
-    r"\[system\.io\.file\]::(?:write|append|create)|"
-    r"(?:^|\s)(?:>>?|2>>?)\s*[^&|]"
-    r")",
-    re.IGNORECASE,
-)
+MAX_DISPOSITION_BYTES = 1_048_576
+MAX_SHELL_COMMAND_CHARS = 262_144
 LIKELY_MUTATION = re.compile(
     r"\b(?:implement|fix|build|add|change|update|create|remove|refactor|remed(?:y|iate)|apply|ship)\b",
     re.IGNORECASE,
@@ -90,6 +81,128 @@ SHELL_TOOLS = {
     "shell_command",
 }
 SUCCESS_WORDS = re.compile(r"\b(?:complete|completed|delivered|done|fixed|pass(?:ed)?|success(?:ful|fully)?)\b", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class ShellToken:
+    kind: str
+    value: str
+    quoted: bool = False
+    dynamic: bool = False
+    substitutions_active: bool = True
+
+
+_SHELL_SEPARATORS = {";", "&&", "||", "|", "|&", "\n", "(", ")", "{", "}"}
+_SHELL_OPERATORS = (
+    "&>>",
+    "2>>",
+    "1>>",
+    "*>>",
+    "<<<",
+    ">>",
+    "2>",
+    "1>",
+    "*>",
+    "&>",
+    "<<",
+    "&&",
+    "||",
+    "|&",
+    ";",
+    "|",
+    "&",
+    ">",
+    "<",
+    "(",
+    ")",
+    "{",
+    "}",
+)
+_DIRECT_COMMAND_MUTATIONS = {
+    "add-content",
+    "apply_patch",
+    "copy-item",
+    "cp",
+    "cpi",
+    "del",
+    "erase",
+    "install",
+    "md",
+    "mkdir",
+    "move",
+    "move-item",
+    "mv",
+    "new-item",
+    "ni",
+    "out-file",
+    "rd",
+    "remove-item",
+    "rename",
+    "rename-item",
+    "ren",
+    "ri",
+    "rmdir",
+    "rm",
+    "set-content",
+    "touch",
+    "truncate",
+}
+_POWERSHELL_MUTATION_ALIASES = {"ac", "mi", "rni", "sc"}
+_GIT_MUTATIONS = {
+    "add",
+    "am",
+    "apply",
+    "checkout",
+    "cherry-pick",
+    "clean",
+    "commit",
+    "merge",
+    "mv",
+    "rebase",
+    "reset",
+    "restore",
+    "rm",
+    "switch",
+}
+_PYTHON_WRITER_SCRIPTS = {
+    "evaluate_review_corpus.py",
+    "install_review_gate.py",
+}
+_PYTHON_WRITER_MODULES = {
+    "build",
+    "compileall",
+    "ensurepip",
+    "pip",
+    "py_compile",
+    "venv",
+    "wheel",
+    "zipapp",
+}
+_UNITTEST_FLAGS = {
+    "-b",
+    "--buffer",
+    "-c",
+    "--catch",
+    "-f",
+    "--failfast",
+    "--locals",
+    "-q",
+    "--quiet",
+    "-v",
+    "--verbose",
+}
+_UNITTEST_VALUE_OPTIONS = {
+    "-k",
+    "--durations",
+}
+_UNITTEST_DISCOVERY_VALUE_OPTIONS = {
+    "-s",
+    "--start-directory",
+    "-p",
+    "--pattern",
+    "-t",
+    "--top-level-directory",
+}
 
 
 def digest(value: str) -> str:
@@ -473,17 +586,768 @@ def prompt(payload: dict[str, Any], root: Path) -> dict[str, Any]:
     )
 
 
-def is_mutation(payload: Mapping[str, Any]) -> bool:
+def _shell_operator(text: str, index: int) -> str | None:
+    return next((item for item in _SHELL_OPERATORS if text.startswith(item, index)), None)
+
+
+def _dynamic_shell_value(value: str) -> bool:
+    return bool(re.search(r"\$\(|\$\{|(?<!\\)\$[A-Za-z_]|%[^%\r\n]+%", value))
+
+
+def _read_shell_word(text: str, index: int) -> tuple[ShellToken, int]:
+    value: list[str] = []
+    quoted = False
+    substitutions_active = False
+    while index < len(text):
+        character = text[index]
+        if character.isspace() or _shell_operator(text, index):
+            break
+        if character in {"'", '"'}:
+            quoted = True
+            quote = character
+            if quote == '"':
+                substitutions_active = True
+            index += 1
+            closed = False
+            while index < len(text):
+                character = text[index]
+                if character == quote:
+                    if index + 1 < len(text) and text[index + 1] == quote:
+                        value.append(quote)
+                        index += 2
+                        continue
+                    index += 1
+                    closed = True
+                    break
+                if quote == '"' and character == "`" and index + 1 < len(text):
+                    value.append(text[index + 1])
+                    index += 2
+                    continue
+                if (
+                    quote == '"'
+                    and character == "\\"
+                    and index + 1 < len(text)
+                    and text[index + 1] in {'"', "\\", "$", "`"}
+                ):
+                    value.append(text[index + 1])
+                    index += 2
+                    continue
+                value.append(character)
+                index += 1
+            if not closed:
+                raise ValueError("unterminated shell quote")
+            continue
+        if character in {"\\", "`"} and index + 1 < len(text):
+            following = text[index + 1]
+            if following.isspace() or following in "'\"`\\#;&|<>(){}":
+                value.append(following)
+                index += 2
+                continue
+        substitutions_active = True
+        value.append(character)
+        index += 1
+    rendered = "".join(value)
+    if not rendered and not quoted:
+        raise ValueError("empty shell token")
+    return ShellToken(
+        "word",
+        rendered,
+        quoted=quoted,
+        dynamic=substitutions_active and _dynamic_shell_value(rendered),
+        substitutions_active=substitutions_active,
+    ), index
+
+
+def _read_powershell_here_string(text: str, index: int) -> tuple[ShellToken, int] | None:
+    marker = next((item for item in ("@'", '@"') if text.startswith(item, index)), None)
+    if marker is None:
+        return None
+    content_start = index + len(marker)
+    if text.startswith("\r\n", content_start):
+        content_start += 2
+    elif text.startswith("\n", content_start):
+        content_start += 1
+    else:
+        return None
+    terminator = "'@" if marker == "@'" else '"@'
+    match = re.search(rf"(?m)^{re.escape(terminator)}(?=\r?$)", text[content_start:])
+    if match is None:
+        raise ValueError("unterminated PowerShell here-string")
+    body_start = content_start
+    body_end = content_start + match.start()
+    end = content_start + match.end()
+    substitutions_active = marker == '@"'
+    body = text[body_start:body_end]
+    return (
+        ShellToken(
+            "word",
+            body,
+            quoted=True,
+            dynamic=substitutions_active and _dynamic_shell_value(body),
+            substitutions_active=substitutions_active,
+        ),
+        end,
+    )
+
+
+def _skip_heredoc_bodies(text: str, index: int, delimiters: list[str]) -> int:
+    for delimiter in delimiters:
+        found = False
+        while index <= len(text):
+            end = text.find("\n", index)
+            if end < 0:
+                end = len(text)
+            line = text[index:end].rstrip("\r")
+            index = end + (end < len(text))
+            if line == delimiter:
+                found = True
+                break
+        if not found:
+            raise ValueError("unterminated shell here-document")
+    return index
+
+
+def _shell_tokens(text: str) -> list[ShellToken]:
+    tokens: list[ShellToken] = []
+    heredoc_delimiters: list[str] = []
+    expect_heredoc_delimiter = False
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character in " \t\r":
+            index += 1
+            continue
+        if character == "\n":
+            tokens.append(ShellToken("operator", "\n"))
+            index += 1
+            if heredoc_delimiters:
+                index = _skip_heredoc_bodies(text, index, heredoc_delimiters)
+                heredoc_delimiters.clear()
+            continue
+        if character == "#":
+            newline = text.find("\n", index)
+            index = len(text) if newline < 0 else newline
+            continue
+        here_string = _read_powershell_here_string(text, index)
+        if here_string is not None:
+            token, index = here_string
+            tokens.append(token)
+            continue
+        operator = _shell_operator(text, index)
+        if operator is not None:
+            kind = "redirection" if "<" in operator or ">" in operator else "operator"
+            tokens.append(ShellToken(kind, operator))
+            expect_heredoc_delimiter = operator == "<<"
+            index += len(operator)
+            continue
+        token, index = _read_shell_word(text, index)
+        tokens.append(token)
+        if expect_heredoc_delimiter:
+            if token.dynamic or not token.value:
+                raise ValueError("dynamic shell here-document delimiter")
+            heredoc_delimiters.append(token.value)
+            expect_heredoc_delimiter = False
+    if expect_heredoc_delimiter or heredoc_delimiters:
+        raise ValueError("unterminated shell here-document")
+    return tokens
+
+
+def _command_name(value: str) -> str:
+    name = re.split(r"[\\/]", value)[-1].casefold()
+    for suffix in (".exe", ".cmd", ".bat", ".ps1"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _next_non_option(values: list[str], start: int = 0) -> str | None:
+    index = start
+    while index < len(values):
+        value = values[index]
+        if value in {"-c", "-C", "--git-dir", "--work-tree", "--config-env"}:
+            index += 2
+            continue
+        if value.startswith("-"):
+            index += 1
+            continue
+        return value.casefold()
+    return None
+
+
+def _path_is_within(candidate: Path, parent: Path) -> bool:
+    try:
+        candidate.resolve().relative_to(parent.resolve())
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _parse_lifecycle_options(
+    action: str,
+    arguments: list[str],
+) -> bool:
+    specs: dict[str, tuple[set[str], set[str], dict[str, int]]] = {
+        "classify": (
+            {"--session-id", "--turn-id", "--classification"},
+            {"--session-id", "--turn-id", "--classification", "--task-id", "--reason"},
+            {"--paths": 0},
+        ),
+        "freeze": (
+            {"--session-id", "--turn-id", "--cwd", "--verification-manifest"},
+            {
+                "--session-id",
+                "--turn-id",
+                "--cwd",
+                "--verification-manifest",
+                "--production-manifest",
+                "--max-freeze-seconds",
+            },
+            {"--paths": 1},
+        ),
+        "disposition": (
+            {"--session-id", "--turn-id"},
+            {"--session-id", "--turn-id", "--file", "--json"},
+            {"--stdin": 0},
+        ),
+        "status": ({"--session-id", "--turn-id"}, {"--session-id", "--turn-id"}, {}),
+        "block": (
+            {"--session-id", "--turn-id", "--evidence"},
+            {"--session-id", "--turn-id", "--evidence"},
+            {},
+        ),
+        "reconcile": (
+            {"--session-id", "--turn-id", "--tool-use-id", "--evidence"},
+            {"--session-id", "--turn-id", "--tool-use-id", "--evidence"},
+            {},
+        ),
+        "abort": (
+            {"--session-id", "--turn-id", "--scope", "--evidence"},
+            {"--session-id", "--turn-id", "--scope", "--attempt-id", "--evidence"},
+            {},
+        ),
+        "export-replay": (
+            {"--session-id", "--turn-id"},
+            {"--session-id", "--turn-id"},
+            {},
+        ),
+        "health": (set(), set(), {}),
+    }
+    if action not in specs:
+        return False
+    required, valued, list_options = specs[action]
+    seen: set[str] = set()
+    parsed: dict[str, list[str]] = {}
+    index = 0
+    while index < len(arguments):
+        option = arguments[index]
+        if option in seen:
+            return False
+        if option in valued:
+            if index + 1 >= len(arguments) or arguments[index + 1].startswith("--"):
+                return False
+            seen.add(option)
+            parsed[option] = [arguments[index + 1]]
+            index += 2
+            continue
+        if option in list_options:
+            minimum = list_options[option]
+            index += 1
+            start = index
+            while index < len(arguments) and not arguments[index].startswith("--"):
+                index += 1
+            if index - start < minimum:
+                return False
+            seen.add(option)
+            parsed[option] = arguments[start:index]
+            continue
+        return False
+    if not required.issubset(seen):
+        return False
+    if action == "disposition":
+        sources = seen & {"--file", "--json", "--stdin"}
+        if len(sources) != 1:
+            return False
+    if action == "classify" and parsed["--classification"][0] not in {"exempt", "material"}:
+        return False
+    if action == "abort" and parsed["--scope"][0] not in {"reviewer", "delivery"}:
+        return False
+    return True
+
+
+def _exact_lifecycle_cli(
+    values: list[str],
+    *,
+    cwd: Path,
+) -> tuple[bool, str | None, bool]:
+    """Return exact-script match, authenticated action, and state-root-in-cwd."""
+
+    if not values:
+        return False, None, False
+    script = Path(values[0])
+    if not script.is_absolute():
+        script = cwd / script
+    try:
+        if os.path.normcase(str(script.resolve())) != os.path.normcase(str(Path(__file__).resolve())):
+            return False, None, False
+    except OSError:
+        return False, None, False
+    arguments = values[1:]
+    index = 0
+    state_root: Path | None = None
+    seen_globals: set[str] = set()
+    while index < len(arguments) and arguments[index] in {"--state-root", "--profile-path"}:
+        option = arguments[index]
+        if option in seen_globals or index + 1 >= len(arguments) or arguments[index + 1].startswith("--"):
+            return True, None, False
+        seen_globals.add(option)
+        if option == "--state-root":
+            state_root = Path(arguments[index + 1])
+        index += 2
+    if index >= len(arguments):
+        return True, None, False
+    action = arguments[index]
+    if not _parse_lifecycle_options(action, arguments[index + 1 :]):
+        return True, None, False
+    effective_root = state_root or default_root()
+    if not effective_root.is_absolute():
+        effective_root = cwd / effective_root
+    return True, action, _path_is_within(effective_root, cwd)
+
+
+def _shell_substitutions(value: str) -> list[str]:
+    substitutions: list[str] = []
+    search = 0
+    while True:
+        start = value.find("$(", search)
+        if start < 0:
+            return substitutions
+        depth = 1
+        index = start + 2
+        while index < len(value) and depth:
+            if value.startswith("$(", index):
+                depth += 1
+                index += 2
+                continue
+            if value[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    substitutions.append(value[start + 2 : index])
+                    search = index + 1
+                    break
+            index += 1
+        if depth:
+            raise ValueError("unterminated shell command substitution")
+
+
+def _classify_lifecycle_values(
+    values: list[str],
+    *,
+    cwd: Path,
+) -> tuple[str, str] | None:
+    exact_script, action, writes_inside_cwd = _exact_lifecycle_cli(values, cwd=cwd)
+    if action is not None:
+        if action in {"classify", "freeze", "disposition", "block", "reconcile", "abort"}:
+            if writes_inside_cwd:
+                return "mutation", "lifecycle state root is inside the task workspace"
+            return "state_control", f"authenticated lifecycle {action} state-control"
+        return "read_only", f"authenticated lifecycle {action} read-only action"
+    if exact_script:
+        return "ambiguous", "lifecycle CLI action grammar is not authenticated"
+    if values and _command_name(values[0]) == "lifecycle_gate.py":
+        return "ambiguous", "lifecycle CLI script identity is not authenticated"
+    return None
+
+
+def _authenticated_unittest(arguments: list[str], cwd: Path) -> bool:
+    if (cwd / "unittest.py").exists() or (cwd / "unittest" / "__init__.py").exists():
+        return False
+    discovery = False
+    saw_target = False
+    index = 0
+    while index < len(arguments):
+        value = arguments[index]
+        lowered = value.casefold()
+        if lowered in _UNITTEST_FLAGS:
+            index += 1
+            continue
+        value_options = set(_UNITTEST_VALUE_OPTIONS)
+        if discovery:
+            value_options.update(_UNITTEST_DISCOVERY_VALUE_OPTIONS)
+        if lowered in value_options:
+            if index + 1 >= len(arguments):
+                return False
+            option_value = arguments[index + 1]
+            if not option_value or option_value.startswith("-") or _dynamic_shell_value(option_value):
+                return False
+            index += 2
+            continue
+        if lowered == "discover" and not discovery and not saw_target:
+            discovery = True
+            index += 1
+            continue
+        if value.startswith("-") or discovery or _dynamic_shell_value(value):
+            return False
+        normalized = value.replace("\\", "/")
+        if (
+            normalized.startswith("/")
+            or re.match(r"^[A-Za-z]:/", normalized)
+            or ".." in normalized.split("/")
+            or not (
+                normalized == "tests"
+                or normalized.startswith(("tests/", "tests.", "test_"))
+            )
+        ):
+            return False
+        saw_target = True
+        index += 1
+    return True
+
+
+def _resolved_python_script(value: str, cwd: Path) -> Path | None:
+    if not value or value == "-" or _dynamic_shell_value(value):
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        path = cwd / path
+    try:
+        return path.resolve()
+    except OSError:
+        return None
+
+
+def _classify_python_module(
+    module: str,
+    arguments: list[str],
+    *,
+    cwd: Path,
+) -> tuple[str, str]:
+    normalized = module.casefold()
+    if not module or _dynamic_shell_value(module):
+        return "ambiguous", "Python module position is dynamic or missing"
+    if normalized == "unittest":
+        if _authenticated_unittest(arguments, cwd):
+            return "mutation", "authenticated unittest execution may write project fixtures"
+        return "ambiguous", "Python unittest invocation grammar is not authenticated"
+    if normalized in _PYTHON_WRITER_MODULES:
+        return "mutation", f"recognized Python writer module {normalized}"
+    return "ambiguous", f"Python module {module} has unknown file effects"
+
+
+def _classify_python_script(
+    arguments: list[str],
+    *,
+    cwd: Path,
+) -> tuple[str, str]:
+    if not arguments:
+        return "ambiguous", "interactive Python execution has unknown file effects"
+    lifecycle = _classify_lifecycle_values(arguments, cwd=cwd)
+    if lifecycle is not None:
+        return lifecycle
+    script = arguments[0]
+    if script == "-" or _dynamic_shell_value(script):
+        return "ambiguous", "Python stdin or dynamic script execution has unknown file effects"
+    name = _command_name(script)
+    if name in _PYTHON_WRITER_SCRIPTS:
+        return "mutation", f"recognized Python writer script {name}"
+    resolved = _resolved_python_script(script, cwd)
+    routing_test = (
+        HERE.parent.parent
+        / "delivery-orchestration"
+        / "scripts"
+        / "test_routing_policy.py"
+    ).resolve()
+    if resolved == routing_test and len(arguments) == 1:
+        return "read_only", "authenticated read-only routing-policy verifier"
+    return "ambiguous", f"Python script {script} has unknown file effects"
+
+
+def _classify_shell_segment(
+    segment: list[ShellToken],
+    *,
+    dialect: str,
+    cwd: Path,
+    depth: int,
+) -> tuple[str, str]:
+    values: list[str] = []
+    index = 0
+    while index < len(segment):
+        token = segment[index]
+        if token.kind == "word":
+            substitutions: list[str] = []
+            if token.substitutions_active:
+                try:
+                    substitutions = _shell_substitutions(token.value)
+                except ValueError as exc:
+                    return "ambiguous", str(exc)
+            for substitution in substitutions:
+                nested = _classify_shell_command(
+                    substitution,
+                    dialect=dialect,
+                    cwd=cwd,
+                    depth=depth + 1,
+                )
+                if nested[0] in {"mutation", "ambiguous"}:
+                    return nested
+            values.append(token.value)
+            index += 1
+            continue
+        if token.kind != "redirection":
+            if token.value == "&":
+                values.append(token.value)
+            index += 1
+            continue
+        output = ">" in token.value
+        index += 1
+        if index >= len(segment):
+            return "ambiguous", "redirection target is missing"
+        target = segment[index]
+        if target.value == "&" and index + 1 < len(segment) and segment[index + 1].value.isdigit():
+            index += 2
+            continue
+        if target.kind != "word":
+            return "ambiguous", "redirection target is dynamic or malformed"
+        if output:
+            sink = target.value.casefold()
+            if sink in {"$null", "nul", "nul:", "&1", "&2", "/dev/null", "/dev/stdout", "/dev/stderr"}:
+                index += 1
+                continue
+            if target.dynamic:
+                return "ambiguous", "output redirection target is dynamic"
+            if sink:
+                return "mutation", "shell output redirection writes bytes"
+        index += 1
+
+    while values and re.fullmatch(r"(?:\$?(?:env:)?[A-Za-z_][\w:]*)=.*", values[0]):
+        values.pop(0)
+    while values and values[0].casefold() in {"&", "command", "builtin", "call"}:
+        values.pop(0)
+    if not values:
+        return "read_only", "shell segment has no executable command"
+    if _dynamic_shell_value(values[0]):
+        return "ambiguous", "shell executable position is dynamic"
+
+    command = _command_name(values[0])
+    arguments = values[1:]
+    direct_lifecycle = _classify_lifecycle_values(values, cwd=cwd)
+    if direct_lifecycle is not None:
+        return direct_lifecycle
+    if command in {"rem", "::"}:
+        return "read_only", "shell comment command is inert"
+    if command in _DIRECT_COMMAND_MUTATIONS or (
+        dialect == "powershell" and command in _POWERSHELL_MUTATION_ALIASES
+    ):
+        return "mutation", f"recognized mutation command {command}"
+    if command in {"tee", "tee-object"}:
+        lowered = [value.casefold() for value in arguments]
+        if command == "tee-object":
+            file_argument = any(
+                value in {"-filepath", "-literalpath"}
+                or value.startswith(("-filepath:", "-literalpath:"))
+                for value in lowered
+            )
+            if not file_argument and "-variable" not in lowered:
+                file_argument = any(not value.startswith("-") for value in arguments)
+        else:
+            file_argument = any(not value.startswith("-") for value in arguments)
+        return (
+            ("mutation", "tee command has a file target")
+            if file_argument
+            else ("read_only", "tee command has no file target")
+        )
+    if command == "git":
+        subcommand = _next_non_option(arguments)
+        return (
+            ("mutation", f"recognized git mutation {subcommand}")
+            if subcommand in _GIT_MUTATIONS
+            else ("read_only", "git subcommand is read-only")
+        )
+    if command == "sed" and any(
+        value == "--in-place" or re.fullmatch(r"-[A-Za-z]*i[A-Za-z]*(?:=.*)?", value)
+        for value in arguments
+    ):
+        return "mutation", "sed in-place mode writes files"
+    if command in {"npm", "pnpm", "yarn"}:
+        action = _next_non_option(arguments)
+        if action in {"install", "add", "remove"}:
+            return "mutation", f"recognized package mutation {action}"
+        if action == "run" and any(value.casefold() in {"build", "generate"} for value in arguments):
+            return "mutation", "package build or generation writes output"
+    if command in {"dotnet", "msbuild", "cargo", "go"} and _next_non_option(arguments) in {
+        "build",
+        "publish",
+        "install",
+        "generate",
+    }:
+        return "mutation", f"recognized build mutation {command}"
+    if re.fullmatch(r"\[(?:system\.)?io\.file\]::(?:write\w*|append\w*|create\w*|openwrite)", command):
+        return "mutation", "System.IO.File command writes files"
+
+    if command in {"bash", "sh", "zsh", "dash", "ksh"}:
+        flags = {"-c", "--command"}
+    elif command in {"powershell", "pwsh"}:
+        flags = {"-c", "-command", "--command"}
+    elif command == "cmd":
+        flags = {"/c", "/k"}
+    else:
+        flags = set()
+    if flags:
+        nested_index = next(
+            (
+                i
+                for i, value in enumerate(arguments)
+                if value.casefold() in flags
+                or (
+                    command in {"bash", "sh", "zsh", "dash", "ksh"}
+                    and re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", value)
+                )
+            ),
+            None,
+        )
+        if nested_index is None or nested_index + 1 >= len(arguments):
+            return "ambiguous", f"nested {command} invocation has no literal command argument"
+        nested = arguments[nested_index + 1]
+        if _dynamic_shell_value(nested):
+            return "ambiguous", f"nested {command} command argument is dynamic"
+        return _classify_shell_command(
+            nested,
+            dialect=command,
+            cwd=cwd,
+            depth=depth + 1,
+        )
+    if command in {"eval", "iex", "invoke-expression"}:
+        if not arguments or any(_dynamic_shell_value(value) for value in arguments):
+            return "ambiguous", f"dynamic {command} invocation cannot be resolved"
+        return _classify_shell_command(
+            " ".join(arguments),
+            dialect=dialect,
+            cwd=cwd,
+            depth=depth + 1,
+        )
+
+    python_command = command == "py" or command.startswith("python")
+    if python_command:
+        if len(arguments) == 1 and arguments[0] in {"-h", "--help", "-V", "-VV", "--version"}:
+            return "read_only", "authenticated Python interpreter information command"
+        script_index = 0
+        while script_index < len(arguments) and arguments[script_index].startswith("-"):
+            option = arguments[script_index]
+            if option == "-c":
+                return "ambiguous", "inline Python execution has unknown file effects"
+            if option == "-m":
+                if script_index + 1 >= len(arguments):
+                    return "ambiguous", "Python module position is missing"
+                return _classify_python_module(
+                    arguments[script_index + 1],
+                    arguments[script_index + 2 :],
+                    cwd=cwd,
+                )
+            if option in {"-W", "-X"}:
+                if script_index + 1 >= len(arguments):
+                    return "ambiguous", f"Python option {option} is missing its value"
+                script_index += 2
+                continue
+            if option == "--":
+                script_index += 1
+                break
+            if not re.fullmatch(
+                r"(?:-[bBdEhiIOPqRsSuvVx]|-OO?|-[23](?:\.\d+)?)",
+                option,
+            ):
+                return "ambiguous", f"Python option {option} is not authenticated"
+            script_index += 1
+        return _classify_python_script(arguments[script_index:], cwd=cwd)
+    if command in {"start-process", "start"} or command.endswith((".ps1", ".sh", ".bat", ".cmd")):
+        return "ambiguous", "indirect executable invocation cannot be resolved"
+    return "read_only", "command and arguments have no recognized delivery mutation"
+
+
+def _classify_shell_command(
+    command: str,
+    *,
+    dialect: str,
+    cwd: Path,
+    depth: int = 0,
+) -> tuple[str, str]:
+    if depth > 4:
+        return "ambiguous", "nested shell depth exceeds the classifier bound"
+    if len(command) > MAX_SHELL_COMMAND_CHARS:
+        return "ambiguous", "shell command exceeds the classifier bound"
+    try:
+        tokens = _shell_tokens(command)
+    except ValueError as exc:
+        return "ambiguous", str(exc)
+    segments: list[list[ShellToken]] = [[]]
+    for token_index, token in enumerate(tokens):
+        if token.kind == "operator" and token.value in _SHELL_SEPARATORS:
+            segments.append([])
+        elif token.kind == "operator" and token.value == "&":
+            previous = tokens[token_index - 1] if token_index else None
+            following = tokens[token_index + 1] if token_index + 1 < len(tokens) else None
+            stream_duplication = bool(
+                previous
+                and previous.kind == "redirection"
+                and following
+                and following.kind == "word"
+                and following.value.isdigit()
+            )
+            if stream_duplication:
+                segments[-1].append(token)
+            elif segments[-1]:
+                segments.append([])
+            else:
+                segments[-1].append(token)
+        else:
+            segments[-1].append(token)
+    strongest = ("read_only", "shell command has no recognized delivery mutation")
+    for segment in segments:
+        if not segment:
+            continue
+        result = _classify_shell_segment(
+            segment,
+            dialect=dialect,
+            cwd=cwd,
+            depth=depth,
+        )
+        if result[0] == "mutation":
+            return result
+        if result[0] == "ambiguous":
+            strongest = result
+        elif result[0] == "state_control" and strongest[0] == "read_only":
+            strongest = result
+    return strongest
+
+
+def classify_tool_mutation(payload: Mapping[str, Any]) -> tuple[str, str]:
     name = str(payload.get("tool_name", "")).casefold()
     if name in DIRECT_MUTATION_TOOLS:
-        return True
+        return "mutation", f"direct mutation tool {name}"
     if name not in SHELL_TOOLS:
-        return False
+        return "read_only", "tool is outside the supported mutation set"
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, Mapping):
-        return False
-    command = next((tool_input.get(key) for key in ("command", "cmd", "script") if isinstance(tool_input.get(key), str)), "")
-    return bool(MUTATION_COMMAND.search(str(command)))
+        return "ambiguous", "shell tool input is missing"
+    commands = [
+        tool_input.get(key)
+        for key in ("command", "cmd", "script")
+        if key in tool_input
+    ]
+    if len(commands) != 1 or not isinstance(commands[0], str):
+        return "ambiguous", "shell command input is missing or not uniquely structured"
+    command = commands[0]
+    if not command.strip():
+        return "read_only", "empty shell command is inert"
+    cwd_value = payload.get("cwd")
+    cwd = Path(cwd_value) if isinstance(cwd_value, str) and cwd_value else Path.cwd()
+    dialect = (
+        "powershell"
+        if name in {"powershell", "shell_command", "functions.shell_command"}
+        else name
+    )
+    return _classify_shell_command(command, dialect=dialect, cwd=cwd)
+
+
+def is_mutation(payload: Mapping[str, Any]) -> bool:
+    return classify_tool_mutation(payload)[0] == "mutation"
 
 
 def _pending_for_mutation(payload: Mapping[str, Any], state: dict[str, Any] | None) -> dict[str, Any]:
@@ -505,8 +1369,20 @@ def _pending_for_mutation(payload: Mapping[str, Any], state: dict[str, Any] | No
 
 
 def pre_tool(payload: dict[str, Any], root: Path) -> dict[str, Any]:
-    if not is_mutation(payload):
+    mutation_kind, mutation_detail = classify_tool_mutation(payload)
+    if mutation_kind == "read_only":
         return response("PreToolUse", "Read-only tool path observed; no mutation epoch is reserved.")
+    if mutation_kind == "state_control":
+        return response(
+            "PreToolUse",
+            f"Lifecycle state-control observed; no delivery mutation epoch is reserved: {mutation_detail}.",
+        )
+    if mutation_kind == "ambiguous":
+        return response(
+            "PreToolUse",
+            f"Ambiguous shell command is blocked before execution: {mutation_detail}.",
+            block=True,
+        )
     tool_id = payload.get("tool_use_id")
     if not isinstance(tool_id, str) or not tool_id:
         return response("PreToolUse", "Mutation-capable tool lacks a stable tool_use_id; gate fails closed.", block=True)
@@ -529,8 +1405,29 @@ def pre_tool(payload: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def post_tool(payload: dict[str, Any], root: Path) -> dict[str, Any]:
-    if not is_mutation(payload):
+    mutation_kind, mutation_detail = classify_tool_mutation(payload)
+    if mutation_kind == "read_only":
         return response("PostToolUse", "Read-only tool path did not change the mutation epoch.")
+    if mutation_kind == "state_control":
+        return response(
+            "PostToolUse",
+            f"Lifecycle state-control did not change the delivery mutation epoch: {mutation_detail}.",
+        )
+    if mutation_kind == "ambiguous":
+        with lock(session_lock(root, payload["session_id"], payload["turn_id"])):
+            state = load_active(root, payload["session_id"], payload["turn_id"])
+            state = _pending_for_mutation(payload, state)
+            if state["classification"] == "material" and state.get("bundle_sha256"):
+                state["status"] = "stale"
+                state["stale_reason"] = f"ambiguous shell outcome: {mutation_detail}"
+                state["receipt"] = None
+            save_active(root, state)
+        return response(
+            "PostToolUse",
+            "Ambiguous shell outcome is blocked without recording a successful mutation; "
+            f"fresh verification is required: {mutation_detail}.",
+            block=True,
+        )
     tool_id = payload.get("tool_use_id")
     if not isinstance(tool_id, str) or not tool_id:
         return response("PostToolUse", "Mutation-capable tool lacks a stable tool_use_id; gate fails closed.", block=True)
@@ -1310,11 +2207,78 @@ def export_replay(state: Mapping[str, Any], root: Path, profile_path: Path) -> d
     }
 
 
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+
+def _reject_nonfinite_json(value: str) -> None:
+    raise ValueError(f"non-finite JSON value is not allowed: {value}")
+
+
+def _parse_disposition_bytes(raw: bytes, source: str) -> Mapping[str, Any]:
+    if len(raw) > MAX_DISPOSITION_BYTES:
+        raise ValueError(
+            f"DispositionLedgerV1 {source} exceeds the maximum of {MAX_DISPOSITION_BYTES} bytes"
+        )
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"DispositionLedgerV1 {source} is not UTF-8") from exc
+    try:
+        value = json.loads(
+            text,
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_nonfinite_json,
+        )
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"DispositionLedgerV1 {source} is malformed JSON") from exc
+    if not isinstance(value, Mapping):
+        raise ValueError("DispositionLedgerV1 must be a JSON object")
+    return value
+
+
+def _read_disposition_file(path: Path) -> bytes:
+    resolved = _filesystem_path(path)
+    with open(resolved, "rb") as handle:
+        before = os.fstat(handle.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("DispositionLedgerV1 --file must identify a regular file")
+        if before.st_size > MAX_DISPOSITION_BYTES:
+            raise ValueError(
+                f"DispositionLedgerV1 file exceeds the maximum of {MAX_DISPOSITION_BYTES} bytes"
+            )
+        raw = handle.read(MAX_DISPOSITION_BYTES + 1)
+        after = os.fstat(handle.fileno())
+    identity = ("st_dev", "st_ino", "st_size", "st_mtime_ns")
+    if any(getattr(before, field) != getattr(after, field) for field in identity):
+        raise ValueError("DispositionLedgerV1 file changed while it was read")
+    return raw
+
+
+def _load_disposition_input(args: argparse.Namespace) -> Mapping[str, Any]:
+    if args.file is not None:
+        return _parse_disposition_bytes(_read_disposition_file(args.file), "file")
+    if args.json is not None:
+        return _parse_disposition_bytes(args.json.encode("utf-8"), "inline JSON")
+    if args.stdin:
+        return _parse_disposition_bytes(
+            sys.stdin.buffer.read(MAX_DISPOSITION_BYTES + 1),
+            "stdin",
+        )
+    raise ValueError("DispositionLedgerV1 input source is required")
+
+
 def cli(args: argparse.Namespace, root: Path, profile_path: Path) -> int:
     if args.action == "health":
         profile_sha = profile_digest(profile_path)
         print(json.dumps({"ok": True, "profile_sha256": profile_sha, "state_addressing": "session/task/delivery/generation"}, sort_keys=True))
         return 0
+    disposition_input = _load_disposition_input(args) if args.action == "disposition" else None
     with lock(session_lock(root, args.session_id, args.turn_id)):
         state = load_active(root, args.session_id, args.turn_id)
         if args.action == "classify":
@@ -1347,7 +2311,7 @@ def cli(args: argparse.Namespace, root: Path, profile_path: Path) -> int:
         elif args.action == "disposition":
             if not state or state["status"] != "receipted" or not state["review_output"] or not state["receipt"]:
                 raise ValueError("current review output and local receipt are required")
-            ledger = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            ledger = disposition_input
             store, git_resolver = _immutable_evidence_context(state, root)
             ledger = validate_disposition_ledger(
                 ledger,
@@ -1453,7 +2417,10 @@ def main() -> int:
             item.add_argument("--production-manifest")
             item.add_argument("--max-freeze-seconds", type=float, default=180.0)
         if action == "disposition":
-            item.add_argument("--file", required=True)
+            source = item.add_mutually_exclusive_group(required=True)
+            source.add_argument("--file", type=Path)
+            source.add_argument("--json")
+            source.add_argument("--stdin", action="store_true")
         if action == "block":
             item.add_argument("--evidence", required=True)
         if action == "reconcile":
