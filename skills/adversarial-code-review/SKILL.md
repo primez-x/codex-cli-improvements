@@ -38,6 +38,9 @@ Authenticated `classify`, `freeze`, `disposition`, `block`, `reconcile`, and
 `status`, `export-replay`, and `health` are read-only. Chained workspace writes
 still reserve and advance the delivery mutation epoch, while dynamic or
 malformed shell invocations fail closed before execution.
+Every Git shell invocation is conservatively tracked as a delivery mutation.
+Leading environment assignments and unsupported dialect-specific escapes or
+substitutions fail closed rather than inheriting a read-only classification.
 Arbitrary Python scripts, modules, stdin, and interactive execution are likewise
 ambiguous by default. Exact lifecycle actions remain state-control; the exact
 read-only routing verifier is read-only, while bounded standard-library
