@@ -10,7 +10,7 @@ nonempty `packet_id`, the same `request`, `evidence`, and `candidate` for every
 reviewer, the reviewer's lens only, the required `reviewer_profile`, and integer
 `deadline_minutes`, `grace_minutes`, and `descendant_budget` exactly `0`.
 
-The gate-only `sol_reviewer` enforcement identity is not a plan-review route;
+The on-demand `sol_reviewer` delivery-review identity is not a plan-review route;
 packet validation must reject it before dispatch.
 
 Canonical bytes are UTF-8 JSON with recursively sorted keys,

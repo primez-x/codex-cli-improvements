@@ -1,10 +1,10 @@
 # Delegation Topology And Cost Ceilings
 
 The Sol Low root is depth 0. The six general-purpose routing profiles are
-terminal depth 1 leaves that report directly to the root. The gate-only
-`sol_reviewer` identity is also depth 1 but is dispatched only by the managed
-adversarial gate, not by normal routing. `max_depth = 1` is both the configured
-and behavioral boundary: leaves do not spawn.
+terminal depth 1 leaves that report directly to the root. The on-demand
+`sol_reviewer` identity is also depth 1 and is dispatched by the root only for
+explicit or consequential review, not normal routing. `max_depth = 1` is both
+the configured and behavioral boundary: leaves do not spawn.
 
 ## Model And Effort Matrix
 
@@ -16,9 +16,9 @@ and behavioral boundary: leaves do not spawn.
 | Luna worker | max | 1 | Default substantial implementation and verification |
 | Sol worker | xhigh | 1 | Rare genuinely difficult implementation or diagnosis |
 | Sol advisor | max | 1 | Rare consequential adversarial challenge and sign-off |
-| Gate-only `sol_reviewer` | max | 1 | Mandatory post-verification review; not a routing profile |
+| On-demand `sol_reviewer` | max | 1 | Rare consequential post-verification review; not a routing profile |
 
-The six general-purpose routing efforts are fixed per profile. The gate-only
+The six general-purpose routing efforts are fixed per profile. The on-demand
 reviewer is fixed at Sol/max and is not an escalation tier. Route by task shape
 and escalate the model rather than changing effort ad hoc: Spark fast path, Luna
 default, then Sol only for difficulty or consequential risk.
@@ -52,9 +52,13 @@ bounded packet containing:
 Use Luna Medium scanning for broad read-only discovery and Luna Max for default
 delivery. The root retains conflicting-evidence and consequential synthesis.
 Use Sol XHigh work only after Luna is genuinely insufficient; use Sol Max advice
-only for a named consequential risk or checkpoint. The gate-only `sol_reviewer`
-is invoked after fresh verification for material deliveries and emits only
-`ReviewOutputV1`; the gate creates the local receipt.
+only for a named consequential risk or checkpoint. Dispatch the read-only
+`sol_reviewer` after fresh verification only for an explicit request or a
+consequential security, authentication, credentials, privacy, destructive or
+irreversible action, migration, persistence, data-integrity, concurrency,
+production or external impact, major architecture, compatibility,
+public-contract change, conflicting evidence, stuck approach, or repeated
+failed verification risk.
 
 ## Concurrency And Ownership
 

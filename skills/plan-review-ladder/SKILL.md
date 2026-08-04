@@ -19,7 +19,7 @@ finding disposition, residual-risk analysis, and the user-facing plan. Read
   `spark_worker`, xhigh; `luna_scanner`, medium; `luna_worker`, max;
   `sol_worker`, xhigh; and `sol_advisor`, max. Plan review dispatches only the
   read-only `spark_scanner`, `luna_scanner`, and `sol_advisor` profiles.
-- The gate-only `sol_reviewer` enforcement identity is not a plan-review
+- The on-demand `sol_reviewer` delivery-review identity is not a plan-review
   routing profile; packet validation must reject it for this ladder.
 - All descendants remain read-only, operate at depth 1, report directly to the
   root, and do not spawn.

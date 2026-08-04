@@ -1,7 +1,7 @@
-"""Transactional, one-way installer for the adversarial review gate.
+"""Transactional, one-way installer for the adversarial review package.
 
-The handler-contract smoke exercises the installed scripts. It cannot prove
-that a running Codex process loaded or trusted the configured handlers.
+The explicit handler-contract smoke exercises legacy lifecycle scripts. It is
+optional and cannot prove that a running Codex process loaded or trusted hooks.
 """
 from __future__ import annotations
 
@@ -216,10 +216,16 @@ def roots(args: argparse.Namespace) -> tuple[Path, Path]:
 
 def _is_runtime_path(relative: PurePosixPath) -> bool:
     folded = [part.casefold() for part in relative.parts]
-    if "__pycache__" in folded:
+    if _is_generated_cache_path(relative):
         return False  # Generated locally and explicitly omitted, never copied.
     joined = "/".join(folded)
     return any(name == joined or name in folded for name in RUNTIME_NAMES)
+
+
+def _is_generated_cache_path(relative: str | PurePosixPath) -> bool:
+    path = PurePosixPath(relative)
+    folded = [part.casefold() for part in path.parts]
+    return "__pycache__" in folded or path.name.casefold().endswith((".pyc", ".pyo"))
 
 
 def validate_source(source: Path) -> None:
@@ -288,7 +294,7 @@ def source_config(source: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     }:
         die("source config has no exact adversarial skill registration")
     if agent != {
-        "description": "Gate-only terminal Sol reviewer that returns only a strict evidence-bound ReviewOutputV1 object.",
+        "description": "On-demand read-only Sol reviewer for root-prepared consequential delivery evidence packets.",
         "config_file": "./agents/sol_reviewer.toml",
     }:
         die("source config has no exact sol_reviewer registration")
@@ -606,12 +612,14 @@ def managed_hook_contracts(source: Path) -> dict[str, dict[str, Any]]:
         die("unsupported source hooks format")
     result: dict[str, dict[str, Any]] = {}
     for event in MANAGED_EVENTS:
-        entries = hooks.get(event)
+        entries = hooks.get(event, [])
         if not isinstance(entries, list):
-            die(f"source hooks event is missing: {event}")
+            die(f"source hooks event is malformed: {event}")
         matched = [entry for entry in entries if isinstance(entry, dict) and _contains_gate(entry)]
-        if len(matched) != 1:
+        if len(matched) > 1:
             die(f"source hooks event has ambiguous review-gate registrations: {event}")
+        if not matched:
+            continue
         contract = json.loads(json.dumps(matched[0]))
         handlers = contract.get("hooks")
         if not isinstance(handlers, list):
@@ -650,12 +658,19 @@ def hooks_text(existing: bytes, source: Path) -> bytes:
         die("unsupported destination hooks format")
     target = value.setdefault("hooks", {})
     contracts = managed_hook_contracts(source)
-    for event, contract in contracts.items():
+    for event in MANAGED_EVENTS:
         current = target.get(event, [])
         if not isinstance(current, list):
             die(f"unsupported destination hook event format: {event}")
         preserved = [_remove_gate_handlers(entry) for entry in current]
-        target[event] = [entry for entry in preserved if entry is not None] + [contract]
+        updated = [entry for entry in preserved if entry is not None]
+        contract = contracts.get(event)
+        if contract is not None:
+            updated.append(contract)
+        if updated:
+            target[event] = updated
+        else:
+            target.pop(event, None)
     newline = "\r\n" if b"\r\n" in existing else "\n"
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").replace("\n", newline).encode("utf-8")
 
@@ -711,7 +726,9 @@ def _managed_extras(home: Path) -> set[str]:
             if relative in allowed:
                 continue
             name = item.name.casefold()
-            if relative in STALE_MANAGED_FILES or "__pycache__" in item.parts or name.endswith(".pyc") or name.startswith("test_"):
+            if _is_generated_cache_path(relative):
+                continue
+            if relative in STALE_MANAGED_FILES or name.startswith("test_"):
                 extras.add(relative)
             else:
                 die(f"unowned file exists inside managed destination: {relative}")
@@ -1030,7 +1047,12 @@ def _prepare_transaction(
     return root
 
 
-def _validated_transaction(home: Path, transaction: str) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+def _validated_transaction(
+    home: Path,
+    transaction: str,
+    *,
+    allow_generated_cache_drift: bool = False,
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     root = _transaction_root(home, transaction)
     _reject_reparse_chain(root, "transaction")
     journal = _read_json(root / "journal.json", "transaction journal")
@@ -1102,9 +1124,16 @@ def _validated_transaction(home: Path, transaction: str) -> tuple[Path, dict[str
         if record["present"] is True:
             if manifest["schema_version"] == 2 and not _valid_leaf_identity(record["identity"]):
                 die("transaction backup identity is malformed")
-            backup = _contained(root / "backup", relative, existing=True)
-            data = backup.read_bytes()
-            if record["sha256"] != sha(data) or record["size"] != len(data):
+            generated_deletion = (
+                allow_generated_cache_drift
+                and relative in manifest["deletions"]
+                and _is_generated_cache_path(relative)
+            )
+            backup = _contained(root / "backup", relative, existing=not generated_deletion)
+            data = backup.read_bytes() if backup.is_file() else None
+            if data is None or record["sha256"] != sha(data) or record["size"] != len(data):
+                if generated_deletion:
+                    continue
                 die(f"backup authentication failed: {relative}")
         else:
             expected_absent = {"present": False, "sha256": None, "size": 0}
@@ -1155,7 +1184,11 @@ def _active_completed_head(home: Path) -> str | None:
         manifest = candidate / "manifest.json"
         if not journal.is_file() or not manifest.is_file():
             continue
-        _, record, status = _validated_transaction(home, candidate.name)
+        _, record, status = _validated_transaction(
+            home,
+            candidate.name,
+            allow_generated_cache_drift=True,
+        )
         if status["status"] == "completed":
             completed[candidate.name] = record
     if not completed:
@@ -1509,7 +1542,9 @@ def _profile_exact(home: Path) -> None:
     for phrase in (
         "depth 1",
         "do not spawn",
-        "review only the frozen bundle",
+        "root-prepared evidence packet",
+        "evidence anchors",
+        "verdict",
         "review-lenses.md",
         "every mandatory lens",
         "strict `reviewoutputv1` json",
@@ -1537,12 +1572,13 @@ def _hooks_exact(home: Path, source: Path) -> bool:
     except (KeyError, OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
         return False
     expected = managed_hook_contracts(source)
-    for event, contract in expected.items():
-        entries = hooks.get(event)
+    for event in MANAGED_EVENTS:
+        entries = hooks.get(event, [])
         if not isinstance(entries, list):
             return False
         managed = [entry for entry in entries if _contains_gate(entry)]
-        if managed != [contract]:
+        contract = expected.get(event)
+        if managed != ([] if contract is None else [contract]):
             return False
     return True
 
@@ -1932,7 +1968,6 @@ def verify(
     source: Path,
     home: Path,
     *,
-    run_smoke: bool = True,
     ignore_transactions: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     failures: list[str] = []
@@ -1976,15 +2011,7 @@ def verify(
     wrong_packet = home / "skills" / "adversarial-code-review" / "scripts" / "packet_integrity.py"
     if wrong_packet.exists():
         failures.append("canonical-packet-helper:duplicate")
-    smoke_result: dict[str, Any] | None = None
-    if run_smoke and not failures:
-        try:
-            smoke_result = smoke(source, home)
-            if not smoke_result["ok"]:
-                failures.append("handler-contract-smoke")
-        except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError) as exc:
-            failures.append(f"handler-contract-smoke:{exc}")
-    return {"ok": not failures, "failures": failures, "handler_contract_smoke": smoke_result}
+    return {"ok": not failures, "failures": failures, "handler_contract_smoke": None}
 
 
 def install(source: Path, home: Path) -> dict[str, Any]:
@@ -2050,16 +2077,10 @@ def install(source: Path, home: Path) -> dict[str, Any]:
             verification = verify(
                 source,
                 home,
-                run_smoke=False,
                 ignore_transactions=frozenset({transaction}),
             )
             if not verification["ok"]:
                 die(f"post-install verification failed: {verification['failures']}")
-            if failure == "smoke":
-                raise RuntimeError("injected smoke failure")
-            smoke_result = smoke(source, home)
-            if not smoke_result["ok"]:
-                die("post-install handler-contract smoke failed")
             journal.update({"status": "completed", "next_path": None})
             _atomic_json(root / "journal.json", journal)
         except Exception:
@@ -2069,10 +2090,10 @@ def install(source: Path, home: Path) -> dict[str, Any]:
             "transaction_id": transaction,
             "idempotent": False,
             "installed_files": sorted(COPY_MANIFEST),
-            "handler_contract_smoke": smoke_result,
+            "handler_contract_smoke": None,
             "recovered": recovered,
             **outcome,
-            "next": "Restart Codex, open a new task, approve changed handlers in /hooks, then run the live provenance smoke. This installer never writes trusted hashes or bypasses trust.",
+            "next": "Restart Codex and open a new task to reload the root model, profiles, skills, and remaining user-level hooks. No adversarial lifecycle hooks are registered; /hooks should show only preserved non-review hooks.",
         }
 
 

@@ -32,7 +32,7 @@ description = "Max-effort terminal adversarial advisor for rare consequential ar
 config_file = "./agents/sol_advisor.toml"
 
 [agents.sol_reviewer]
-description = "Gate-only terminal Sol reviewer that returns only a strict evidence-bound ReviewOutputV1 object."
+description = "On-demand read-only Sol reviewer for root-prepared consequential delivery evidence packets."
 config_file = "./agents/sol_reviewer.toml"
 
 [features]

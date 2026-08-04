@@ -1,8 +1,8 @@
 # Codex Orchestration Kit
 
 This repository contains a reusable, evidence-driven Codex configuration built
-around six general-purpose terminal routing profiles and one gate-only
-`sol_reviewer` enforcement identity. The Sol Low root owns routing,
+around six general-purpose terminal routing profiles and one on-demand
+`sol_reviewer` identity. The Sol Low root owns routing,
 integration, authorized external actions, and final decisions; bounded leaves
 handle discovery, implementation, and independent challenge.
 
@@ -12,11 +12,11 @@ state, machine-specific paths, or project instructions.
 ## Included
 
 - `config.toml`: the portable root, six-profile routing projection, and
-  gate-only reviewer registration.
+  on-demand reviewer registration.
 - `agents/`: two Spark, two Luna, and two Sol general-purpose routing profiles,
-  plus the gate-only `sol_reviewer` enforcement identity.
-- `skills/adversarial-code-review/`: immutable evidence contracts and the
-  mandatory post-verification lifecycle review gate.
+  plus the read-only `sol_reviewer` identity.
+- `skills/adversarial-code-review/`: risk-triggered independent review with a
+  lightweight evidence-packet workflow and optional immutable replay tooling.
 - `skills/delivery-orchestration/`: adaptive implementation routing, ownership,
   Git completion, and terminal gates.
 - `skills/plan-review-ladder/`: independent plan validation with frozen packet
@@ -39,12 +39,12 @@ state, machine-specific paths, or project instructions.
 | Luna worker | GPT-5.6 Luna | Max | Default substantial implementation |
 | Sol worker | GPT-5.6 Sol | XHigh | Rare genuinely difficult implementation |
 | Sol advisor | GPT-5.6 Sol | Max | Rare consequential adversarial review |
-| Gate-only `sol_reviewer` | GPT-5.6 Sol | Max | Mandatory post-verification review gate; not a routing profile |
+| On-demand `sol_reviewer` | GPT-5.6 Sol | Max | Rare consequential post-verification review; not a routing profile |
 
 This matrix is a routing policy, not a claim that one model is universally
 best. Each of the six general-purpose routing profiles must own a distinct
 routing region that cannot be served just as well by an adjacent profile. The
-gate-only `sol_reviewer` is an enforcement identity, not a seventh routing
+on-demand `sol_reviewer` is a review identity, not a seventh routing
 region or a general-purpose delegation choice. The configured effort is fixed
 per profile, and routing escalates the model instead of changing effort ad hoc.
 
@@ -162,7 +162,7 @@ synthesis, and simple direct commands.
 
 This is a measured operating default, not a universal optimum. Escalate
 difficult implementation to Sol XHigh, use Sol Max for consequential advice,
-and retain the mandatory Sol Max post-verification reviewer for material
+and reserve the on-demand Sol Max reviewer for explicit requests or high-risk
 deliveries. Compare Low and Medium on identical representative routing,
 conflicting-evidence, integration, finding-disposition, and authorization
 packets. Keep Low only with zero additional critical/high misses and no increase
@@ -280,9 +280,9 @@ decision record.
 - Depth 0 is the Sol Low root.
 - The six general-purpose routing profiles are terminal depth-1 leaves and
   report directly to the root.
-- The gate-only `sol_reviewer` is a depth-1 enforcement identity dispatched
-  only by the managed adversarial gate; it is not a routing profile or a
-  general-purpose delegation choice.
+- The on-demand `sol_reviewer` is a read-only depth-1 identity dispatched by the
+  root only for explicit or consequential review; it is not a routing profile
+  or a general-purpose delegation choice.
 - Leaves never spawn. The configured depth is `1`.
 - Normal work uses one to three concurrent leaves. The ceiling of four applies
   to spawned threads and does not count the root.
@@ -301,9 +301,9 @@ All reviewers receive a frozen request, evidence bundle, candidate, and
 reviewer-specific lens. Review packets have identity hashes, deadlines, zero
 descendant budget, timeout handling, and evidence-limited telemetry.
 
-Plan-review routes remain optional planning checks. They do not replace the
-mandatory post-verification `sol_reviewer` gate for material deliveries, and
-the risk-triggered `sol_advisor` remains a separate optional challenge.
+Plan-review routes remain optional planning checks. The risk-triggered
+`sol_advisor` remains a separate architecture or plan challenge, while
+`sol_reviewer` is reserved for explicit or consequential delivery review.
 
 ## Install
 
@@ -331,27 +331,32 @@ python -B .\skills\adversarial-code-review\scripts\install_review_gate.py verify
 python -B .\skills\adversarial-code-review\scripts\install_review_gate.py smoke --source-root . --codex-home $env:CODEX_HOME
 ```
 
-`install` and `verify` run both installed skill validators plus a stateful
-handler-contract smoke. The smoke creates a temporary Git delivery and derives
-wrong-profile, copied-output, replay, correct-profile, and final-Stop outcomes
-from the real lifecycle handler. It is not proof that a running Codex app loaded
-or trusted handlers. Restart Codex, open a new task, use `/hooks` to review and
-approve all six registered managed events, then run the live provenance smoke. The
-installer never writes trusted hashes or bypasses trust controls.
+`install` and `verify` run installed skill validators plus static and semantic
+configuration checks; they do not depend on retired lifecycle behavior. The
+explicit `smoke` action remains an optional legacy lifecycle-contract diagnostic.
+It creates a temporary Git delivery and derives wrong-profile, copied-output,
+replay, correct-profile, and final-Stop outcomes from the optional lifecycle
+handler. It is not proof that a running Codex app loaded or trusted handlers,
+and its result does not gate routine installation or verification. No
+adversarial lifecycle hooks are registered.
+Restart Codex, open a new task, and use `/hooks` to confirm that no adversarial
+lifecycle hooks remain. The plan-gap and instruction-learning hooks plus any
+preserved unrelated hooks may remain. The installer never writes trusted hashes
+or bypasses trust controls.
 
 If installing manually instead of using the transactional installer:
 
 1. Back up the current Codex configuration.
 2. Copy the six general-purpose routing profiles under `agents/` plus the
-   gate-only `sol_reviewer.toml` into the matching `CODEX_HOME/agents` directory;
+   on-demand `sol_reviewer.toml` into the matching `CODEX_HOME/agents` directory;
    remove retired custom-profile files from earlier versions.
 3. Copy the four managed skill directories under `skills/` into `CODEX_HOME/skills`.
 4. Semantically merge the root model/effort, `[agents]`, `[agents.*]`,
    `[features]`, and `[[skills.config]]` entries from `config.toml`; preserve
    machine-local plugin, MCP, trust, notification, and runtime settings.
-5. Merge `hooks.json` with existing registrations and copy
-   `hooks/plan_gap_goal_hook.py`. The commands honor `CODEX_HOME` and otherwise
-   resolve `~/.codex`.
+5. Merge `hooks.json` with existing registrations, remove legacy adversarial
+   lifecycle handlers, and copy `hooks/plan_gap_goal_hook.py`. The remaining
+   commands honor `CODEX_HOME` and otherwise resolve `~/.codex`.
 6. Restart Codex and begin a new task so the root model, profiles, skills, and
    hooks reload. Review and approve user-level hooks through `/hooks`; do not
    bypass trust controls.
@@ -384,36 +389,38 @@ python -B -m unittest discover -s .\tests -v
 
 After installation, run the installed skill-script suites against `CODEX_HOME`,
 confirm the parsed TOML projection, restart Codex, and use `/hooks` to confirm
-all six registered managed events and their handlers are enabled. Start a new task
-for the effective runtime smoke check, then run the unit-test commands above as
-a positive source-checkout smoke check. Repository unit tests are not copied
-into `CODEX_HOME`.
+that no adversarial lifecycle handlers are registered. Start a new task for the
+effective runtime smoke check, then run the unit-test commands above as a
+positive source-checkout smoke check. Repository unit tests are not copied into
+`CODEX_HOME`.
 
-For every material delivery, after fresh applicable verification, the mandatory
-gate classifies exact owned paths and freezes one canonical bundle containing the
-snapshot, contract, packet, and reviewable source bytes. The bundle digest-binds
-the versioned review-lens checklist, and the output must disposition every
-mandatory lens. The gate dispatches only the gate-only `sol_reviewer` Sol/max
-identity, binding its agent/model/profile to a single attempt and generation.
-The reviewer emits only a strict `ReviewOutputV1`; the lifecycle gate creates
-the `ReviewReceiptV1` locally from the validated output and disposition ledger.
-Accepted findings invalidate that receipt and require a new generation, freeze,
-and review. Read-only, plan-only, and genuinely localized mechanical work may
-be exempt only with an exact recorded reason. The pinned corpus evaluator checks
-strict `ReviewOutputV1` records,
-known-category recall, authenticated Git identities, immutable local inputs,
-curated evaluator self-test outputs, and corrected-control false positives.
-The curated file tests scoring mechanics only. Reviewer-quality evaluation
-requires a fresh provenance-bound `sol_reviewer`/Sol/max replay created through
-the documented freeze/dispatch/lifecycle-export workflow. Empirical evaluation
-requires both `--lifecycle-state-root` and `--claim-empirical-quality`, and the
-evaluator revalidates the retained state, active pointer, profile, bundle bytes,
-output, disposition, and receipt. Standalone self-consistent JSON is rejected.
-Even a passing replay is empirical regression evidence, not
-proof of complete defect detection. A persisted
-infrastructure or reviewer blocker can exit only as
-`[adversarial-review-blocked] Incomplete: ...`; it is never a successful
-delivery.
+## Delivery Review Routing
+
+Root-routed independent review is not universal. Dispatch the read-only
+`sol_reviewer` at Sol/max when the user explicitly asks or when security,
+authentication, credentials, or privacy; destructive or irreversible actions;
+migrations, persistence, data integrity, or concurrency; production or external
+impact; major architecture, compatibility, or public-contract changes; or
+conflicting evidence, a stuck approach, or repeated failed verification makes
+an independent final challenge consequential.
+
+Use root verification alone for documentation or `AGENTS.md` wording,
+formatting and renames, localized deterministic configuration, small mechanical
+changes, and reversible startup-setting changes unless one of those high-risk
+triggers applies. A startup registry toggle such as disabling OneNote is a
+direct, reversible task when exact read-back verification is available.
+
+When review is selected, the root prepares one task-local packet containing the
+request, acceptance criteria, final diff or bounded source snapshot, exact test
+or read-back evidence, known risks, and unverified areas. The reviewer returns a
+verdict and evidence-anchored findings; the root dispositions them as accepted,
+rejected, or deferred and reruns affected checks. If optional review
+infrastructure fails, report the limitation without blocking a verified
+low-risk delivery. Only a required high-risk review failure blocks delivery.
+
+The immutable lifecycle, strict `ReviewOutputV1`, and replay evaluator remain
+available only for explicit auditable replay or reviewer-quality evaluation.
+They are not registered as runtime hooks and are not part of routine delivery.
 
 The repository contract tests also reject machine-specific absolute paths and
 project-specific material in the reusable package.
