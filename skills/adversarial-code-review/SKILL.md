@@ -20,9 +20,29 @@ Use the CLI only for root-owned lifecycle decisions (add `--state-root` and
 lifecycle_gate.py classify --session-id S --turn-id T --classification material --task-id TASK --paths path/to/file
 lifecycle_gate.py classify --session-id S --turn-id T --classification exempt --reason "localized mechanical edit: ..."
 lifecycle_gate.py freeze --session-id S --turn-id T --cwd REPO --paths path/to/file --verification-manifest verification.json [--max-freeze-seconds 180]
-lifecycle_gate.py disposition --session-id S --turn-id T --file ledger.json
+lifecycle_gate.py disposition --session-id S --turn-id T --json '{"schema_version":1,"generation":0,"dispositions":[]}'
+# Or pipe the same JSON bytes to `disposition ... --stdin`; `--file ledger.json` remains compatible.
 lifecycle_gate.py status --session-id S --turn-id T
 ```
+
+Disposition input is a strict, duplicate-key-rejecting `DispositionLedgerV1`
+JSON object capped at 1 MiB. Prefer `--json` or `--stdin` so root-owned review
+decisions do not need a task-workspace file. The gate parses the complete bounded
+input before taking the session lock, then preserves the same immutable
+counterevidence resolution, acceptance-generation rollover, receipt, export,
+and final-Stop validation for every input source.
+
+Hooks recognize the resolved installed `lifecycle_gate.py` and exact CLI grammar.
+Authenticated `classify`, `freeze`, `disposition`, `block`, `reconcile`, and
+`abort` calls are lifecycle state-control, not delivery-artifact mutations;
+`status`, `export-replay`, and `health` are read-only. Chained workspace writes
+still reserve and advance the delivery mutation epoch, while dynamic or
+malformed shell invocations fail closed before execution.
+Arbitrary Python scripts, modules, stdin, and interactive execution are likewise
+ambiguous by default. Exact lifecycle actions remain state-control; the exact
+read-only routing verifier is read-only, while bounded standard-library
+`unittest`, the review evaluator, installer, and known writer modules are
+tracked as delivery mutations.
 
 Hooks own `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SubagentStart`,
 `SubagentStop`, and final `Stop`; do not synthesize those events during a normal

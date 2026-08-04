@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,7 @@ def run_cli(
     profile: Path,
     *arguments: str,
     expected: int = 0,
+    input_bytes: bytes | None = None,
 ) -> dict[str, object]:
     arguments_list = list(arguments)
     if arguments_list and arguments_list[0] == "freeze" and "--verification-manifest" not in arguments_list:
@@ -148,7 +150,8 @@ def run_cli(
             "--profile-path",
             str(profile),
             *arguments_list,
-        ]
+        ],
+        input=input_bytes,
     )
     testcase.assertEqual(result.returncode, expected, result.stderr.decode())
     stream = result.stdout if expected == 0 else result.stderr
@@ -414,6 +417,40 @@ class LifecycleGateTests(unittest.TestCase):
             "--file",
             str(path),
             expected=expected,
+        )
+
+    def disposition_inline(
+        self,
+        state_root: Path,
+        profile: Path,
+        ledger: dict[str, object],
+        *,
+        source: str = "json",
+        expected: int = 0,
+    ) -> dict[str, object]:
+        arguments = [
+            "disposition",
+            "--session-id",
+            "session",
+            "--turn-id",
+            "turn",
+        ]
+        encoded = json.dumps(ledger, separators=(",", ":")).encode("utf-8")
+        input_bytes = None
+        if source == "json":
+            arguments.extend(("--json", encoded.decode("utf-8")))
+        elif source == "stdin":
+            arguments.append("--stdin")
+            input_bytes = encoded
+        else:
+            self.fail(f"unsupported disposition source {source}")
+        return run_cli(
+            self,
+            state_root,
+            profile,
+            *arguments,
+            expected=expected,
+            input_bytes=input_bytes,
         )
 
     def empty_receipt(self, root: Path, state_root: Path, profile: Path, workspace: Path) -> dict[str, object]:
@@ -1020,6 +1057,347 @@ class LifecycleGateTests(unittest.TestCase):
             self.assertEqual(state["mutation_epoch"], 300)
             self.assertEqual(len(state["seen_tool_use_ids"]), 300)
 
+    def test_shell_mutation_classification_honors_structure_aliases_and_nested_commands(self) -> None:
+        read_only = (
+            ("shell_command", "rg -n 'Set-Content|git apply|> owned.txt' lifecycle_gate.py"),
+            ("powershell", "Get-Content '.\\rm\\git apply.patch' # Remove-Item owned.txt"),
+            ("powershell", 'Write-Output "literal > path and rm file"'),
+            ("bash", "echo '$(rm owned.txt)'"),
+            ("powershell", "Write-Output @'\nRemove-Item owned.txt\n'@"),
+            ("bash", "cat <<'EOF'\nrm owned.txt\ngit apply change.patch\nEOF\n"),
+            ("bash", "git status -- 'rm' '> owned.txt'"),
+            ("powershell", "Write-Output changed 2>&1"),
+            ("powershell", "Write-Output changed > $null"),
+            ("powershell", "Write-Output changed | Tee-Object -Variable captured"),
+        )
+        for name, command in read_only:
+            with self.subTest(kind="read-only", command=command):
+                self.assertFalse(
+                    lifecycle_gate.is_mutation(
+                        {"tool_name": name, "tool_input": {"command": command}}
+                    )
+                )
+
+        mutations = (
+            ("powershell", "Set-Content -LiteralPath owned.txt -Value changed"),
+            ("powershell", "sc -LiteralPath owned.txt -Value changed"),
+            ("shell_command", "git apply change.patch"),
+            ("powershell", 'pwsh -NoProfile -Command "Set-Content owned.txt changed"'),
+            ("shell_command", 'cmd /c "echo changed > owned.txt"'),
+            ("bash", "bash -c 'rm -- owned.txt'"),
+            ("bash", 'echo "$(rm owned.txt)"'),
+            ("powershell", 'Write-Output @"\n$(Remove-Item owned.txt)\n"@'),
+            ("powershell", "& { Remove-Item owned.txt }"),
+            ("powershell", "Write-Output changed | Tee-Object -FilePath owned.txt"),
+            ("powershell", "[IO.File]::WriteAllText('owned.txt', 'changed')"),
+            ("shell_command", "echo changed > owned.txt"),
+        )
+        for name, command in mutations:
+            with self.subTest(kind="mutation", command=command):
+                self.assertTrue(
+                    lifecycle_gate.is_mutation(
+                        {"tool_name": name, "tool_input": {"command": command}}
+                    )
+                )
+
+    def test_python_invocations_fail_closed_and_track_unittest_and_known_writers(self) -> None:
+        evaluator = ROOT / "skills" / "adversarial-code-review" / "scripts" / "evaluate_review_corpus.py"
+        installer = ROOT / "skills" / "adversarial-code-review" / "scripts" / "install_review_gate.py"
+        routing_test = ROOT / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py"
+        read_only = (
+            "python --version",
+            f'python -B "{routing_test}"',
+        )
+        mutations = (
+            "python -B -m unittest tests.test_adversarial_review_hooks -v",
+            'python -B -m unittest discover -s tests -p "test_*.py" -v',
+            f'python -B "{evaluator}" --corpus corpus.json --results generated.json',
+            f'python -B "{installer}" install --source-root . --codex-home installed',
+            "python -m compileall .",
+            "python -m py_compile owned.py",
+            "python -m pip install example-package",
+            "python -m venv .venv",
+        )
+        ambiguous = (
+            "python unknown.py",
+            "python -m unknown.module",
+            "python -",
+            "python",
+            "py -3.14 unknown.py",
+            "python -m unittest --result-file generated.xml",
+        )
+        for command in read_only:
+            with self.subTest(kind="read-only", command=command):
+                self.assertEqual(
+                    lifecycle_gate.classify_tool_mutation(
+                        {
+                            "tool_name": "shell_command",
+                            "cwd": str(ROOT),
+                            "tool_input": {"command": command},
+                        }
+                    )[0],
+                    "read_only",
+                )
+        for command in mutations:
+            with self.subTest(kind="mutation", command=command):
+                self.assertEqual(
+                    lifecycle_gate.classify_tool_mutation(
+                        {
+                            "tool_name": "shell_command",
+                            "cwd": str(ROOT),
+                            "tool_input": {"command": command},
+                        }
+                    )[0],
+                    "mutation",
+                )
+        for command in ambiguous:
+            with self.subTest(kind="ambiguous", command=command):
+                self.assertEqual(
+                    lifecycle_gate.classify_tool_mutation(
+                        {
+                            "tool_name": "shell_command",
+                            "cwd": str(ROOT),
+                            "tool_input": {"command": command},
+                        }
+                    )[0],
+                    "ambiguous",
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            unknown = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="unknown-python",
+                tool_input={"command": "python unknown.py"},
+            )
+            blocked = run_hook(self, unknown, state_root, profile)
+            self.assertEqual(blocked["decision"], "block")
+            self.assertIn("ambiguous", blocked["reason"].casefold())
+
+            self.arm(state_root, profile, workspace)
+            writer = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="evaluator-writer",
+                tool_input={
+                    "command": (
+                        f'python -B "{evaluator}" --corpus corpus.json '
+                        "--results generated.json"
+                    )
+                },
+            )
+            self.assertNotIn("decision", run_hook(self, writer, state_root, profile))
+            self.assertEqual(
+                self.status(state_root, profile)["inflight_tool_use_ids"],
+                ["evaluator-writer"],
+            )
+            verification = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="unittest-verification",
+                tool_input={
+                    "command": "python -B -m unittest tests.test_example -v"
+                },
+            )
+            self.assertNotIn(
+                "decision",
+                run_hook(self, verification, state_root, profile),
+            )
+            self.assertEqual(
+                self.status(state_root, profile)["inflight_tool_use_ids"],
+                ["evaluator-writer", "unittest-verification"],
+            )
+
+    def test_ambiguous_shell_hooks_fail_closed_without_recording_a_successful_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root, profile, workspace = self.make_fixture(temporary)
+            receipt = self.empty_receipt(root, state_root, profile, workspace)
+            self.assertEqual(receipt["mutation_epoch"], 0)
+            ambiguous = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="powershell",
+                tool_use_id="dynamic-command",
+                tool_input={"command": "& $operation owned.txt"},
+            )
+
+            before = run_hook(self, ambiguous, state_root, profile)
+            self.assertEqual(before["decision"], "block")
+            self.assertIn("ambiguous", before["reason"].casefold())
+            self.assertEqual(self.status(state_root, profile)["inflight_tool_use_ids"], [])
+
+            after = run_hook(
+                self,
+                {**ambiguous, "hook_event_name": "PostToolUse"},
+                state_root,
+                profile,
+            )
+            self.assertEqual(after["decision"], "block")
+            self.assertIn("ambiguous", after["reason"].casefold())
+            state = self.status(state_root, profile)
+            self.assertEqual(state["mutation_epoch"], 0)
+            self.assertEqual(state["seen_tool_use_ids"], [])
+            self.assertEqual(state["status"], "stale")
+            self.assertIsNone(state["receipt"])
+
+    def test_lifecycle_cli_actions_require_exact_identity_and_grammar(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            prefix = f'"{sys.executable}" -B "{HOOK}" --state-root "{state_root}"'
+            state_control = {
+                "classify": "classify --session-id s --turn-id t --classification exempt --reason bounded",
+                "freeze": (
+                    f'freeze --session-id s --turn-id t --cwd "{workspace}" '
+                    "--paths owned.txt --verification-manifest verification.json"
+                ),
+                "disposition": (
+                    "disposition --session-id s --turn-id t --json "
+                    "'{\"schema_version\":1,\"generation\":0,\"dispositions\":[]}'"
+                ),
+                "disposition-stdin": (
+                    "disposition --session-id s --turn-id t --stdin < ledger.json"
+                ),
+                "block": "block --session-id s --turn-id t --evidence bounded",
+                "reconcile": (
+                    "reconcile --session-id s --turn-id t --tool-use-id tool-1 "
+                    "--evidence bounded"
+                ),
+                "abort": (
+                    "abort --session-id s --turn-id t --scope delivery --evidence bounded"
+                ),
+            }
+            for action, suffix in state_control.items():
+                with self.subTest(kind="state-control", action=action):
+                    payload = self.payload(
+                        "PreToolUse",
+                        workspace,
+                        tool_name="shell_command",
+                        tool_use_id=f"lifecycle-{action}",
+                        tool_input={"command": f"{prefix} {suffix}"},
+                    )
+                    self.assertEqual(
+                        lifecycle_gate.classify_tool_mutation(payload)[0],
+                        "state_control",
+                    )
+                    result = run_hook(self, payload, state_root, profile)
+                    self.assertNotIn("decision", result)
+                    self.assertIn(
+                        "state-control",
+                        result["hookSpecificOutput"]["additionalContext"].casefold(),
+                    )
+
+            direct = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="direct-lifecycle",
+                tool_input={
+                    "command": (
+                        f'"{HOOK}" --state-root "{state_root}" disposition '
+                        "--session-id s --turn-id t --stdin"
+                    )
+                },
+            )
+            self.assertEqual(
+                lifecycle_gate.classify_tool_mutation(direct)[0],
+                "state_control",
+            )
+
+            for action in (
+                "status --session-id s --turn-id t",
+                "export-replay --session-id s --turn-id t",
+                "health",
+            ):
+                with self.subTest(kind="read-only", action=action):
+                    payload = self.payload(
+                        "PreToolUse",
+                        workspace,
+                        tool_name="shell_command",
+                        tool_use_id="lifecycle-read",
+                        tool_input={"command": f"{prefix} {action}"},
+                    )
+                    self.assertEqual(
+                        lifecycle_gate.classify_tool_mutation(payload)[0],
+                        "read_only",
+                    )
+
+            malformed = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="malformed-lifecycle",
+                tool_input={
+                    "command": f"{prefix} disposition --session-id s --turn-id t"
+                },
+            )
+            self.assertEqual(
+                lifecycle_gate.classify_tool_mutation(malformed)[0],
+                "ambiguous",
+            )
+            self.assertEqual(
+                run_hook(self, malformed, state_root, profile)["decision"],
+                "block",
+            )
+
+            impersonator = workspace / "lifecycle_gate.py"
+            impersonated = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="impersonated-lifecycle",
+                tool_input={
+                    "command": (
+                        f'"{sys.executable}" "{impersonator}" disposition '
+                        "--session-id s --turn-id t --stdin"
+                    )
+                },
+            )
+            self.assertEqual(
+                lifecycle_gate.classify_tool_mutation(impersonated)[0],
+                "ambiguous",
+            )
+
+            in_workspace = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="workspace-lifecycle-state",
+                tool_input={
+                    "command": (
+                        f'"{sys.executable}" -B "{HOOK}" --state-root "{workspace / "state"}" '
+                        "classify --session-id s --turn-id t --classification exempt --reason bounded"
+                    )
+                },
+            )
+            self.assertEqual(
+                lifecycle_gate.classify_tool_mutation(in_workspace)[0],
+                "mutation",
+            )
+
+            chained = {
+                **self.payload(
+                    "PreToolUse",
+                    workspace,
+                    tool_name="shell_command",
+                    tool_use_id="lifecycle-chained-write",
+                    tool_input={
+                        "command": (
+                            f"{prefix} status --session-id s --turn-id t; "
+                            "Set-Content owned.txt changed"
+                        )
+                    },
+                )
+            }
+            self.assertEqual(
+                lifecycle_gate.classify_tool_mutation(chained)[0],
+                "mutation",
+            )
+
     def test_mutation_hooks_fail_closed_until_material_classification_and_late_post_arms(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             state_root, profile, workspace = self.make_fixture(temporary)
@@ -1396,6 +1774,317 @@ class LifecycleGateTests(unittest.TestCase):
             )
             self.assertNotIn("decision", second)
 
+    def test_disposition_accepts_strict_bounded_inline_and_stdin_ledgers(self) -> None:
+        empty = {"schema_version": 1, "generation": 0, "dispositions": []}
+        for source in ("json", "stdin"):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
+                state_root, profile, workspace = self.make_fixture(temporary)
+                self.arm(state_root, profile, workspace)
+                self.freeze(state_root, profile, workspace)
+                review = self.start_reviewer(state_root, profile, workspace)
+                self.assertNotIn(
+                    "decision",
+                    self.stop_reviewer(
+                        state_root,
+                        profile,
+                        workspace,
+                        self.review_output(review),
+                    ),
+                )
+                state = self.disposition_inline(
+                    state_root,
+                    profile,
+                    empty,
+                    source=source,
+                )
+                self.assertEqual(state["ledger"], empty)
+                self.assertEqual(
+                    state["receipt"]["disposition_sha256"],
+                    hashlib.sha256(lifecycle_gate.canonical_bytes(empty)).hexdigest(),
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            self.arm(state_root, profile, workspace)
+            self.freeze(state_root, profile, workspace)
+            review = self.start_reviewer(state_root, profile, workspace)
+            self.stop_reviewer(state_root, profile, workspace, self.review_output(review))
+            oversized = run_cli(
+                self,
+                state_root,
+                profile,
+                "disposition",
+                "--session-id",
+                "session",
+                "--turn-id",
+                "turn",
+                "--stdin",
+                expected=2,
+                input_bytes=b"x" * 1_048_577,
+            )
+            self.assertIn("1048576", oversized["detail"])
+            self.assertIsNone(self.status(state_root, profile)["ledger"])
+
+            duplicate = run_cli(
+                self,
+                state_root,
+                profile,
+                "disposition",
+                "--session-id",
+                "session",
+                "--turn-id",
+                "turn",
+                "--json",
+                '{"schema_version":1,"schema_version":1,"generation":0,"dispositions":[]}',
+                expected=2,
+            )
+            self.assertIn("duplicate", duplicate["detail"].casefold())
+            self.assertIsNone(self.status(state_root, profile)["ledger"])
+
+    def test_disposition_input_is_bounded_and_parsed_before_the_session_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            self.arm(state_root, profile, workspace)
+            started = time.monotonic()
+            with lifecycle_gate.lock(
+                lifecycle_gate.session_lock(state_root, "session", "turn")
+            ):
+                rejected = run_cli(
+                    self,
+                    state_root,
+                    profile,
+                    "disposition",
+                    "--session-id",
+                    "session",
+                    "--turn-id",
+                    "turn",
+                    "--stdin",
+                    expected=2,
+                    input_bytes=b"x" * 1_048_577,
+                )
+            elapsed = time.monotonic() - started
+            self.assertIn("1048576", rejected["detail"])
+            self.assertLess(elapsed, 4.0)
+
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(HOOK),
+                    "--state-root",
+                    str(state_root),
+                    "--profile-path",
+                    str(profile),
+                    "disposition",
+                    "--session-id",
+                    "session",
+                    "--turn-id",
+                    "turn",
+                    "--stdin",
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            try:
+                time.sleep(0.25)
+                self.assertIsNone(process.poll())
+                status_started = time.monotonic()
+                current = self.status(state_root, profile)
+                self.assertLess(time.monotonic() - status_started, 4.0)
+                self.assertEqual(current["status"], "armed")
+                stdout, stderr = process.communicate(
+                    json.dumps(
+                        {
+                            "schema_version": 1,
+                            "generation": 0,
+                            "dispositions": [],
+                        }
+                    ).encode("utf-8"),
+                    timeout=10,
+                )
+                self.assertEqual(process.returncode, 2, stdout.decode())
+                self.assertIn("current review output", stderr.decode().casefold())
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate(timeout=10)
+
+    def test_inline_dispositions_preserve_accept_reject_defer_and_completion_semantics(self) -> None:
+        with self.subTest(decision="accepted"), tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            self.arm(state_root, profile, workspace)
+            self.freeze(state_root, profile, workspace)
+            review = self.start_reviewer(state_root, profile, workspace)
+            finding = {
+                "id": "F-1",
+                "severity": "medium",
+                "claim": "A defect remains.",
+                "evidence": [],
+                "correction": "Correct it.",
+                "verification": "Run the focused test.",
+            }
+            self.stop_reviewer(
+                state_root,
+                profile,
+                workspace,
+                self.review_output(review, verdict="fail", findings=[finding]),
+            )
+            accepted = self.disposition_inline(
+                state_root,
+                profile,
+                {
+                    "schema_version": 1,
+                    "generation": 0,
+                    "dispositions": [
+                        {"finding_id": "F-1", "decision": "accepted", "new_generation": 1}
+                    ],
+                },
+            )
+            self.assertEqual(accepted["generation"], 1)
+            self.assertEqual(accepted["status"], "stale")
+            self.assertIsNone(accepted["receipt"])
+
+        with self.subTest(decision="rejected"), tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            _, evidence = self.blocking_review(state_root, profile, workspace)
+            rejected = self.disposition_inline(
+                state_root,
+                profile,
+                self.rejection_ledger(evidence),
+            )
+            self.assertEqual(rejected["ledger"], self.rejection_ledger(evidence))
+            self.assertNotIn(
+                "decision",
+                run_hook(
+                    self,
+                    self.payload("Stop", workspace, last_assistant_message="Delivered."),
+                    state_root,
+                    profile,
+                ),
+            )
+            exported = run_cli(
+                self,
+                state_root,
+                profile,
+                "export-replay",
+                "--session-id",
+                "session",
+                "--turn-id",
+                "turn",
+            )
+            self.assertEqual(exported["receipt"], rejected["receipt"])
+
+        with self.subTest(decision="deferred"), tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            self.blocking_review(state_root, profile, workspace, severity="low")
+            ledger = {
+                "schema_version": 1,
+                "generation": 0,
+                "dispositions": [
+                    {
+                        "finding_id": "F-1",
+                        "decision": "deferred",
+                        "owner": "task-owner",
+                        "follow_up": "Track the low-risk follow-up in the next delivery.",
+                    }
+                ],
+            }
+            deferred = self.disposition_inline(state_root, profile, ledger)
+            self.assertEqual(deferred["ledger"], ledger)
+            self.assertNotIn(
+                "decision",
+                run_hook(
+                    self,
+                    self.payload("Stop", workspace, last_assistant_message="Delivered."),
+                    state_root,
+                    profile,
+                ),
+            )
+
+    def test_disposition_state_control_is_not_a_delivery_mutation_but_workspace_write_is(self) -> None:
+        ledger = {"schema_version": 1, "generation": 0, "dispositions": []}
+        inline = json.dumps(ledger, separators=(",", ":"))
+
+        with self.subTest(command="state-control"), tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            command = (
+                f'"{sys.executable}" -B "{HOOK}" --state-root "{state_root}" '
+                f'--profile-path "{profile}" disposition --session-id session '
+                f'--turn-id turn --json \'{inline}\''
+            )
+            self.arm(state_root, profile, workspace)
+            self.freeze(state_root, profile, workspace)
+            review = self.start_reviewer(state_root, profile, workspace)
+            self.stop_reviewer(state_root, profile, workspace, self.review_output(review))
+            payload = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="disposition-only",
+                tool_input={"command": command},
+            )
+            before = run_hook(self, payload, state_root, profile)
+            self.assertNotIn("decision", before)
+            self.assertIn(
+                "state-control",
+                before["hookSpecificOutput"]["additionalContext"].casefold(),
+            )
+            dispositioned = self.disposition_inline(state_root, profile, ledger)
+            after = run_hook(
+                self,
+                {**payload, "hook_event_name": "PostToolUse"},
+                state_root,
+                profile,
+            )
+            self.assertNotIn("decision", after)
+            current = self.status(state_root, profile)
+            self.assertEqual(current["mutation_epoch"], 0)
+            self.assertEqual(current["receipt"], dispositioned["receipt"])
+            self.assertNotIn(
+                "decision",
+                run_hook(
+                    self,
+                    self.payload("Stop", workspace, last_assistant_message="Delivered."),
+                    state_root,
+                    profile,
+                ),
+            )
+
+        with self.subTest(command="state-control-and-write"), tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            command = (
+                f'"{sys.executable}" -B "{HOOK}" --state-root "{state_root}" '
+                f'--profile-path "{profile}" disposition --session-id session '
+                f'--turn-id turn --json \'{inline}\''
+            )
+            self.arm(state_root, profile, workspace)
+            self.freeze(state_root, profile, workspace)
+            review = self.start_reviewer(state_root, profile, workspace)
+            self.stop_reviewer(state_root, profile, workspace, self.review_output(review))
+            payload = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="disposition-and-write",
+                tool_input={"command": command + "; Set-Content owned.txt changed"},
+            )
+            self.assertNotIn("decision", run_hook(self, payload, state_root, profile))
+            self.disposition_inline(state_root, profile, ledger)
+            (workspace / "owned.txt").write_text("changed\n", encoding="utf-8")
+            self.assertNotIn(
+                "decision",
+                run_hook(
+                    self,
+                    {**payload, "hook_event_name": "PostToolUse"},
+                    state_root,
+                    profile,
+                ),
+            )
+            stale = self.status(state_root, profile)
+            self.assertEqual(stale["mutation_epoch"], 1)
+            self.assertEqual(stale["status"], "stale")
+            self.assertIsNone(stale["receipt"])
+
     def test_replay_across_agent_attempt_and_generation_is_rejected_and_acceptance_refreezes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1613,6 +2302,75 @@ class LifecycleGateTests(unittest.TestCase):
                 "turn",
             )
             self.assertEqual(exported["receipt"], persisted["receipt"])
+
+    def test_pinned_git_review_finding_resolves_through_disposition_stop_and_export(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            repository = "https://example.com/acme/review-fixture.git"
+            configured = run_process(
+                ["git", "remote", "add", "origin", repository],
+                cwd=workspace,
+            )
+            self.assertEqual(configured.returncode, 0, configured.stderr.decode())
+            commit = run_process(["git", "rev-parse", "HEAD"], cwd=workspace)
+            self.assertEqual(commit.returncode, 0, commit.stderr.decode())
+            commit_id = commit.stdout.decode("ascii").strip()
+
+            self.arm(state_root, profile, workspace)
+            self.freeze(state_root, profile, workspace)
+            review = self.start_reviewer(state_root, profile, workspace)
+            finding = {
+                "id": "F-GIT",
+                "severity": "medium",
+                "claim": "The pinned base line needs an explicit review decision.",
+                "evidence": [
+                    {
+                        "kind": "git_commit",
+                        "repository": repository,
+                        "commit": commit_id,
+                        "path": "owned.txt",
+                        "sha256": hashlib.sha256(b"base\n").hexdigest(),
+                        "selector": {"kind": "line_range", "start": 1, "end": 1},
+                    }
+                ],
+                "correction": "Record the evidence-backed decision.",
+                "verification": "Resolve the pinned Git bytes through final lifecycle validation.",
+            }
+            output = self.review_output(review, verdict="fail", findings=[finding])
+            self.assertNotIn(
+                "decision",
+                self.stop_reviewer(state_root, profile, workspace, output),
+            )
+            ledger = {
+                "schema_version": 1,
+                "generation": 0,
+                "dispositions": [
+                    {"finding_id": "F-GIT", "decision": "rejected"}
+                ],
+            }
+            dispositioned = self.disposition_inline(state_root, profile, ledger)
+            self.assertEqual(dispositioned["review_output"], output)
+            self.assertNotIn(
+                "decision",
+                run_hook(
+                    self,
+                    self.payload("Stop", workspace, last_assistant_message="Delivered."),
+                    state_root,
+                    profile,
+                ),
+            )
+            exported = run_cli(
+                self,
+                state_root,
+                profile,
+                "export-replay",
+                "--session-id",
+                "session",
+                "--turn-id",
+                "turn",
+            )
+            self.assertEqual(exported["review_output"], output)
+            self.assertEqual(exported["receipt"], dispositioned["receipt"])
 
     def test_final_stop_revalidates_tampered_persisted_counterevidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

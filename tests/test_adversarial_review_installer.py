@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -148,6 +149,13 @@ class InstallerTests(unittest.TestCase):
         journal_path = transaction / "journal.json"
         journal = json.loads(journal_path.read_text(encoding="utf-8"))
         journal.update(updates)
+        if journal.get("schema_version") == 2:
+            home = transaction.parents[1]
+            identities: dict[str, object] = {}
+            for relative in journal.get("applied", []):
+                metadata = installer_module._lstat(home / relative)
+                identities[relative] = installer_module._leaf_identity(metadata) if metadata is not None else None
+            journal["postimage_identities"] = identities
         installer_module._atomic_json(journal_path, journal)
         return journal
 
@@ -171,6 +179,33 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(journal["status"], "rolled_back")
             self.assertEqual(journal["applied"], [])
             self.assertIsNone(journal["next_path"])
+
+    def test_schema_v1_prepared_journal_remains_recoverable(self) -> None:
+        """Bumping leaf-identity metadata must not strand predecessor journals."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home, transaction_id, transaction, _ = self.recovery_fixture(Path(temporary))
+            manifest_path = transaction / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["schema_version"] = 1
+            for record in manifest["paths"].values():
+                record.pop("identity")
+            manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+            installer_module._atomic_write(manifest_path, manifest_bytes)
+            journal_path = transaction / "journal.json"
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            journal["schema_version"] = 1
+            journal["manifest_sha256"] = installer_module.sha(manifest_bytes)
+            journal.pop("postimage_identities")
+            installer_module._atomic_json(journal_path, journal)
+
+            with installer_module._install_lock(home):
+                recovered = installer_module._recover_incomplete(home)
+
+            self.assertEqual(recovered, [transaction_id])
+            self.assertEqual(
+                json.loads(journal_path.read_text(encoding="utf-8"))["status"],
+                "rolled_back",
+            )
 
     def test_recovery_accepts_before_and_after_replace_next_path_states(self) -> None:
         for replaced in (False, True):
@@ -335,6 +370,393 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(rolled_back.returncode, 0, rolled_back.stderr)
             for name, data in original.items():
                 self.assertEqual((home / name).read_bytes(), data)
+
+    def test_config_merge_preserves_header_like_multiline_strings_comments_and_unmanaged_values(self) -> None:
+        """Treating header-looking string content as TOML structure must fail."""
+        original_text = (
+            'model = "x"\r\n'
+            'description = """Structural-looking basic string lines:\r\n'
+            'escaped delimiter \\""" remains part of the value\r\n'
+            '[agents.sol_reviewer]\r\n'
+            'description = "not a table"\r\n'
+            '[[skills.config]]\r\n'
+            'path = "./skills/adversarial-code-review/SKILL.md"\r\n'
+            '"""\r\n'
+            "literal = '''Structural-looking literal string lines:\r\n"
+            "[agents.sol_reviewer]\r\n"
+            "[[skills.config]]\r\n"
+            "path = './skills/adversarial-code-review/SKILL.md'\r\n"
+            "'''\r\n"
+            'same_line_basic = """same-line close before a real header"""\r\n'
+            "same_line_literal = '''same-line literal close before a real header'''\r\n"
+            '# [agents.sol_reviewer]\r\n'
+            '# [[skills.config]]\r\n'
+            '[agents]\r\n'
+            'max_depth = 2\r\n'
+            '[agents.sol_reviewer]\r\n'
+            'description = "stale reviewer"\r\n'
+            'config_file = "./agents/stale.toml"\r\n'
+            '[[skills.config]]\r\n'
+            'path = "./skills/unrelated/SKILL.md"\r\n'
+            'description = "Mentions ./skills/adversarial-code-review/SKILL.md as inert text"\r\n'
+            '# ./skills/adversarial-code-review/SKILL.md is not this entry path\r\n'
+            '[[skills.config]]\r\n'
+            'path = "./skills/adversarial-code-review/SKILL.md"\r\n'
+            'enabled = false\r\n'
+            '[unmanaged] # preserve trailing header comment\r\n'
+            'answer = 42\r\n'
+            '# [agents.sol_reviewer]\r\n'
+            '# [[skills.config]]\r\n'
+        )
+        preserved_prefix = original_text.split('[agents]\r\n', 1)[0]
+        preserved_suffix = (
+            '[unmanaged] # preserve trailing header comment\r\n'
+            'answer = 42\r\n'
+            '# [agents.sol_reviewer]\r\n'
+            '# [[skills.config]]\r\n'
+        )
+        before = tomllib.loads(original_text)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            (home / "config.toml").write_bytes(original_text.encode("utf-8"))
+
+            result = self.install(home)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            installed_bytes = (home / "config.toml").read_bytes()
+            installed_text = installed_bytes.decode("utf-8")
+            after = tomllib.loads(installed_text)
+            self.assertTrue(installed_text.startswith(preserved_prefix))
+            self.assertIn(preserved_suffix, installed_text)
+            self.assertEqual(after["description"], before["description"])
+            self.assertEqual(after["literal"], before["literal"])
+            self.assertEqual(after["same_line_basic"], before["same_line_basic"])
+            self.assertEqual(after["same_line_literal"], before["same_line_literal"])
+            self.assertEqual(after["agents"]["max_depth"], before["agents"]["max_depth"])
+            self.assertEqual(after["unmanaged"], before["unmanaged"])
+            self.assertEqual(after["agents"]["sol_reviewer"]["config_file"], "./agents/sol_reviewer.toml")
+            self.assertIn(
+                {
+                    "path": "./skills/unrelated/SKILL.md",
+                    "description": "Mentions ./skills/adversarial-code-review/SKILL.md as inert text",
+                },
+                after["skills"]["config"],
+            )
+            self.assertEqual(
+                [entry for entry in after["skills"]["config"] if entry.get("path") == "./skills/adversarial-code-review/SKILL.md"],
+                [{"path": "./skills/adversarial-code-review/SKILL.md", "enabled": True}],
+            )
+
+            again = self.install(home)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            self.assertTrue(json.loads(again.stdout)["idempotent"])
+            self.assertEqual((home / "config.toml").read_bytes(), installed_bytes)
+
+            transaction_id = json.loads(result.stdout)["transaction_id"]
+            rolled_back = self.invoke(
+                "rollback", "--codex-home", str(home), "--transaction-id", transaction_id
+            )
+            self.assertEqual(rolled_back.returncode, 0, rolled_back.stderr)
+            self.assertEqual((home / "config.toml").read_bytes(), original_text.encode("utf-8"))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            (home / "config.toml").write_bytes(original_text.encode("utf-8"))
+
+            failed = self.install(home, env={"CODEX_ADVERSARIAL_INSTALL_FAIL_STEP": "validators"})
+
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertEqual((home / "config.toml").read_bytes(), original_text.encode("utf-8"))
+
+    def test_apply_rejects_a_same_content_leaf_identity_swap_before_live_writes(self) -> None:
+        """Digest-only preparation must not overwrite a replaced managed leaf."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            originals = {name: (home / name).read_bytes() for name in ("config.toml", "hooks.json", "AGENTS.md")}
+            target = home / "config.toml"
+            original_identity = (target.stat().st_dev, target.stat().st_ino)
+            original_validated_transaction = installer_module._validated_transaction
+            swapped = False
+
+            def swap_after_preparation(
+                candidate_home: Path,
+                transaction_id: str,
+            ) -> tuple[Path, dict[str, object], dict[str, object]]:
+                nonlocal swapped
+                transaction, manifest, journal = original_validated_transaction(candidate_home, transaction_id)
+                if not swapped and journal["status"] == "prepared":
+                    replacement = root / "same-content-config.toml"
+                    replacement.write_bytes(target.read_bytes())
+                    os.replace(replacement, target)
+                    swapped = True
+                return transaction, manifest, journal
+
+            installer_module._validated_transaction = swap_after_preparation
+            try:
+                with self.assertRaisesRegex(ValueError, "identity changed"):
+                    installer_module.install(ROOT, home)
+            finally:
+                installer_module._validated_transaction = original_validated_transaction
+
+            self.assertTrue(swapped)
+            self.assertNotEqual((target.stat().st_dev, target.stat().st_ino), original_identity)
+            for name, data in originals.items():
+                self.assertEqual((home / name).read_bytes(), data)
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink behavior")
+    def test_preview_and_install_reject_managed_leaf_symlinks_before_creating_state(self) -> None:
+        """Following existing or broken managed leaf symlinks must fail."""
+        for case in ("semantic", "copied", "broken"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                home = self.make_home(root)
+                if case == "semantic":
+                    target = home / "config.toml"
+                    outside = root / "outside-config.toml"
+                    outside.write_bytes(target.read_bytes())
+                    target.unlink()
+                    target.symlink_to(outside)
+                else:
+                    target = home / "agents" / "sol_reviewer.toml"
+                    target.parent.mkdir()
+                    outside = root / ("missing-profile.toml" if case == "broken" else "outside-profile.toml")
+                    if case == "copied":
+                        outside.write_text("outside profile\n", encoding="utf-8")
+                    target.symlink_to(outside)
+                outside_before = outside.read_bytes() if outside.exists() else None
+
+                preview = self.invoke("preview", "--source-root", str(ROOT), "--codex-home", str(home))
+                installed = self.install(home)
+
+                for result in (preview, installed):
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("symlink or reparse", (result.stdout + result.stderr).lower())
+                self.assertFalse((home / ".adversarial-review-install").exists())
+                self.assertTrue(target.is_symlink())
+                self.assertEqual(outside.read_bytes() if outside.exists() else None, outside_before)
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink behavior")
+    def test_apply_revalidates_leaf_topology_and_rollback_refuses_a_reparse_postimage(self) -> None:
+        """A link swap after preparation or before rollback must never be replaced."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            originals = {name: (home / name).read_bytes() for name in ("config.toml", "hooks.json", "AGENTS.md")}
+            target = home / "agents" / "sol_reviewer.toml"
+            outside = root / "outside-profile.toml"
+            outside.write_text("outside profile\n", encoding="utf-8")
+            original_validated_transaction = installer_module._validated_transaction
+            swapped = False
+
+            def swap_after_preparation(
+                candidate_home: Path,
+                transaction_id: str,
+            ) -> tuple[Path, dict[str, object], dict[str, object]]:
+                nonlocal swapped
+                transaction, manifest, journal = original_validated_transaction(candidate_home, transaction_id)
+                if not swapped and journal["status"] == "prepared":
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.symlink_to(outside)
+                    swapped = True
+                return transaction, manifest, journal
+
+            installer_module._validated_transaction = swap_after_preparation
+            try:
+                with self.assertRaises(ValueError):
+                    installer_module.install(ROOT, home)
+            finally:
+                installer_module._validated_transaction = original_validated_transaction
+
+            self.assertTrue(swapped)
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(outside.read_bytes(), b"outside profile\n")
+            for name, data in originals.items():
+                self.assertEqual((home / name).read_bytes(), data)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            result = self.install(home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            transaction_id = json.loads(result.stdout)["transaction_id"]
+            target = home / "agents" / "sol_reviewer.toml"
+            outside = root / "outside-postimage.toml"
+            outside.write_bytes(target.read_bytes())
+            target.unlink()
+            target.symlink_to(outside)
+
+            rolled_back = self.invoke(
+                "rollback", "--codex-home", str(home), "--transaction-id", transaction_id
+            )
+
+            self.assertNotEqual(rolled_back.returncode, 0)
+            self.assertIn("symlink or reparse", (rolled_back.stdout + rolled_back.stderr).lower())
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(outside.read_bytes(), (ROOT / "agents" / "sol_reviewer.toml").read_bytes())
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction and reparse behavior")
+    def test_preview_and_install_reject_managed_leaf_junctions_before_state(self) -> None:
+        """Windows reparse-point leaves must survive every rejected operation."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            outside = root / "outside-directory"
+            outside.mkdir()
+            sentinel = outside / "sentinel.txt"
+            sentinel.write_text("outside\n", encoding="utf-8")
+            target = home / "agents" / "sol_reviewer.toml"
+            target.parent.mkdir()
+            created = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(target), str(outside)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(created.returncode, 0, created.stderr)
+            self.assertTrue(
+                int(getattr(os.lstat(target), "st_file_attributes", 0))
+                & int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+            )
+            self.assertTrue(installer_module._is_reparse(target))
+
+            preview = self.invoke("preview", "--source-root", str(ROOT), "--codex-home", str(home))
+            installed = self.install(home)
+
+            for result in (preview, installed):
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("symlink or reparse", (result.stdout + result.stderr).lower())
+            self.assertFalse((home / ".adversarial-review-install").exists())
+            self.assertTrue(installer_module._is_reparse(target))
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside\n")
+            os.rmdir(target)
+
+    @unittest.skipUnless(os.name == "nt", "Windows reparse attribute behavior")
+    def test_generic_windows_reparse_attribute_is_rejected_without_a_junction_hint(self) -> None:
+        """Dropping FILE_ATTRIBUTE_REPARSE_POINT inspection must fail."""
+        class ReparseMetadata:
+            st_mode = stat.S_IFREG
+            st_file_attributes = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+        original_lstat = installer_module._lstat
+        installer_module._lstat = lambda path: ReparseMetadata()
+        try:
+            self.assertTrue(installer_module._is_reparse(Path("ordinary-looking-leaf")))
+        finally:
+            installer_module._lstat = original_lstat
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction and reparse behavior")
+    def test_apply_revalidates_a_windows_junction_swap_before_live_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            originals = {name: (home / name).read_bytes() for name in ("config.toml", "hooks.json", "AGENTS.md")}
+            outside = root / "swap-outside"
+            outside.mkdir()
+            sentinel = outside / "sentinel.txt"
+            sentinel.write_text("outside\n", encoding="utf-8")
+            target = home / "agents" / "sol_reviewer.toml"
+            original_validated_transaction = installer_module._validated_transaction
+            swapped = False
+
+            def swap_to_junction_after_preparation(
+                candidate_home: Path,
+                transaction_id: str,
+            ) -> tuple[Path, dict[str, object], dict[str, object]]:
+                nonlocal swapped
+                transaction, manifest, journal = original_validated_transaction(candidate_home, transaction_id)
+                if not swapped and journal["status"] == "prepared":
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    created = subprocess.run(
+                        ["cmd", "/c", "mklink", "/J", str(target), str(outside)],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    if created.returncode != 0:
+                        raise RuntimeError(created.stderr)
+                    swapped = True
+                return transaction, manifest, journal
+
+            installer_module._validated_transaction = swap_to_junction_after_preparation
+            try:
+                with self.assertRaises(ValueError):
+                    installer_module.install(ROOT, home)
+            finally:
+                installer_module._validated_transaction = original_validated_transaction
+
+            self.assertTrue(swapped)
+            self.assertTrue(installer_module._is_reparse(target))
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside\n")
+            for name, data in originals.items():
+                self.assertEqual((home / name).read_bytes(), data)
+            os.rmdir(target)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction and reparse behavior")
+    def test_rollback_rejects_a_windows_junction_postimage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            result = self.install(home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            transaction_id = json.loads(result.stdout)["transaction_id"]
+            target = home / "agents" / "sol_reviewer.toml"
+            target.unlink()
+            outside = root / "rollback-outside"
+            outside.mkdir()
+            sentinel = outside / "sentinel.txt"
+            sentinel.write_text("outside\n", encoding="utf-8")
+            created = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(target), str(outside)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(created.returncode, 0, created.stderr)
+
+            rolled_back = self.invoke(
+                "rollback", "--codex-home", str(home), "--transaction-id", transaction_id
+            )
+
+            self.assertNotEqual(rolled_back.returncode, 0)
+            self.assertIn("symlink or reparse", (rolled_back.stdout + rolled_back.stderr).lower())
+            self.assertTrue(installer_module._is_reparse(target))
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside\n")
+            os.rmdir(target)
+
+    @unittest.skipUnless(os.name == "nt", "Windows file symlink behavior")
+    def test_windows_file_symlinks_and_broken_links_are_rejected_before_state(self) -> None:
+        for broken in (False, True):
+            with self.subTest(broken=broken), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                home = self.make_home(root)
+                target = home / "agents" / "sol_reviewer.toml"
+                target.parent.mkdir()
+                outside = root / ("missing-profile.toml" if broken else "outside-profile.toml")
+                if not broken:
+                    outside.write_text("outside profile\n", encoding="utf-8")
+                created = subprocess.run(
+                    ["cmd", "/c", "mklink", str(target), str(outside)],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                if created.returncode != 0:
+                    self.skipTest(f"Windows file symlink creation unavailable: {created.stderr.strip()}")
+                outside_before = outside.read_bytes() if outside.exists() else None
+
+                preview = self.invoke("preview", "--source-root", str(ROOT), "--codex-home", str(home))
+                installed = self.install(home)
+
+                for result in (preview, installed):
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("symlink or reparse", (result.stdout + result.stderr).lower())
+                self.assertFalse((home / ".adversarial-review-install").exists())
+                self.assertTrue(target.is_symlink())
+                self.assertEqual(outside.read_bytes() if outside.exists() else None, outside_before)
+                target.unlink()
 
     def test_completed_rollback_refuses_legacy_script_with_composite_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

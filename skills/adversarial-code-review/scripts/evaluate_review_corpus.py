@@ -768,6 +768,7 @@ def case_evidence_selector(evidence: Any, case_input: Mapping[str, Any]) -> dict
                 and item.get("repository") == case_input.get("repository")
                 and item.get("commit") == case_input.get("commit")
                 and item.get("path") == case_input.get("path")
+                and item.get("sha256") == case_input.get("source_sha256")
                 and "selector" in item
             ):
                 selectors.append(validate_evidence_selector(item["selector"]))

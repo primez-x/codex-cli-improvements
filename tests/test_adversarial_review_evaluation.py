@@ -13,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path, PurePosixPath
+from unittest import mock
 
 from tests import test_adversarial_review_hooks as hook_helpers
 
@@ -343,6 +344,343 @@ class EvaluationTests(unittest.TestCase):
             invalid[0]["selector"] = selector
             with self.assertRaises(ValueError):
                 review_contracts.validate_external_evidence(invalid)
+
+    def test_bundle_failures_leave_no_digest_path_and_allow_clean_retry(self) -> None:
+        content = {"nested/evidence.txt": b"sensitive evidence\n"}
+        digest = review_contracts.compute_packet_sha256({
+            name: hashlib.sha256(data).hexdigest()
+            for name, data in content.items()
+        })
+        failure_points = (
+            "_prepare_staging_root",
+            "_finalize_staging_permissions",
+            "_verify_staged_bundle",
+        )
+        if os.name == "nt":
+            failure_points += ("_current_windows_user_sid",)
+        for failure_point in failure_points:
+            with self.subTest(failure_point=failure_point), tempfile.TemporaryDirectory() as temporary:
+                store = review_contracts.BundleStore(Path(temporary) / "bundles")
+                store.root.mkdir()
+                sentinel = store.root / "unrelated.txt"
+                sentinel.write_bytes(b"preserve me")
+                final = store.root / digest
+
+                def fail_before_publication(*_args, **_kwargs):
+                    self.assertFalse(final.exists())
+                    if failure_point == "_prepare_staging_root":
+                        self.assertEqual(list(Path(_args[0]).iterdir()), [])
+                    elif failure_point in {"_finalize_staging_permissions", "_verify_staged_bundle"}:
+                        self.assertTrue(any(Path(_args[0]).iterdir()))
+                    raise RuntimeError(f"{failure_point} failed")
+
+                try:
+                    with mock.patch.object(
+                        review_contracts,
+                        failure_point,
+                        create=True,
+                        side_effect=fail_before_publication,
+                    ):
+                        with self.assertRaisesRegex(RuntimeError, "failed"):
+                            review_contracts.build_bundle(store, content)
+                    self.assertFalse(final.exists())
+                    self.assertEqual(
+                        {path.name for path in store.root.iterdir()},
+                        {sentinel.name},
+                    )
+
+                    retry = review_contracts.build_bundle(store, content)
+                    self.assertEqual(retry["bundle_sha256"], digest)
+                    self.assertEqual(store.read(digest, "nested/evidence.txt"), content["nested/evidence.txt"])
+                finally:
+                    if final.exists():
+                        remove_hardened_tree(final)
+
+    def test_bundle_publication_failure_preserves_only_unrelated_store_entries(self) -> None:
+        content = {"review.json": b"{}\n"}
+        digest = review_contracts.compute_packet_sha256({
+            "review.json": hashlib.sha256(content["review.json"]).hexdigest(),
+        })
+        with tempfile.TemporaryDirectory() as temporary:
+            store = review_contracts.BundleStore(Path(temporary) / "bundles")
+            store.root.mkdir()
+            sentinel = store.root / "unrelated.txt"
+            sentinel.write_bytes(b"preserve me")
+            final = store.root / digest
+
+            def fail_publication(staged, destination):
+                self.assertEqual(Path(destination), final)
+                self.assertFalse(final.exists())
+                review_contracts._verify_bundle_permissions(Path(staged))
+                raise OSError("publication failed")
+
+            try:
+                with mock.patch.object(
+                    review_contracts.os,
+                    "replace",
+                    side_effect=fail_publication,
+                ):
+                    with self.assertRaisesRegex(OSError, "publication failed"):
+                        review_contracts.build_bundle(store, content)
+                self.assertFalse(final.exists())
+                self.assertEqual(
+                    {path.name for path in store.root.iterdir()},
+                    {sentinel.name},
+                )
+
+                retry = review_contracts.build_bundle(store, content)
+                self.assertEqual(retry["bundle_sha256"], digest)
+            finally:
+                if final.exists():
+                    remove_hardened_tree(final)
+
+    def test_bundle_permissions_are_verified_recursively(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = review_contracts.BundleStore(Path(temporary) / "bundles")
+            bundle = review_contracts.build_bundle(
+                store,
+                {"nested/deep/evidence.txt": b"private\n"},
+            )
+            final = store.root / bundle["bundle_sha256"]
+            leaf = final / "nested" / "deep" / "evidence.txt"
+            try:
+                review_contracts._verify_bundle_permissions(final)
+                if os.name == "nt":
+                    inherited = subprocess.run(
+                        ["icacls", str(leaf), "/grant", "*S-1-5-11:(R)", "/Q"],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(inherited.returncode, 0, inherited.stderr)
+                else:
+                    leaf.chmod(0o644)
+                with self.assertRaisesRegex(RuntimeError, "permission|ACL"):
+                    review_contracts._verify_bundle_permissions(final)
+            finally:
+                if final.exists():
+                    remove_hardened_tree(final)
+
+    def test_review_output_uses_one_exact_pinned_git_finding_shape(self) -> None:
+        generic_reference = {
+            "kind": "git_commit",
+            "repository": "https://example.com/acme/review-fixture.git",
+            "commit": "a" * 40,
+            "path": "src/review.py",
+        }
+        self.assertEqual(
+            review_contracts.validate_external_evidence([generic_reference]),
+            [generic_reference],
+        )
+        evidence = {
+            **generic_reference,
+            "sha256": "b" * 64,
+            "selector": {"kind": "line_range", "start": 1, "end": 1},
+        }
+        output = {
+            "schema_version": 1,
+            "attempt_id": "attempt-1",
+            "packet_sha256": "c" * 64,
+            "bundle_sha256": "d" * 64,
+            "snapshot_sha256": "e" * 64,
+            "verdict": "fail",
+            "coverage": [],
+            "residual_risks": [],
+            "findings": [{
+                "id": "ACR-TEST",
+                "severity": "high",
+                "claim": "Pinned Git evidence must bind exact bytes.",
+                "evidence": [evidence],
+                "correction": "Use the exact finding evidence contract.",
+                "verification": "Resolve and hash the pinned blob.",
+            }],
+        }
+        self.assertEqual(review_contracts.validate_review_output(output), output)
+
+        invalid_evidence = {
+            "missing digest": {key: value for key, value in evidence.items() if key != "sha256"},
+            "malformed digest": {**evidence, "sha256": "B" * 64},
+            "malformed authority": {**evidence, "repository": "https://example.com/"},
+            "credential authority": {**evidence, "repository": "https://user@example.com/acme/review.git"},
+            "abbreviated commit": {**evidence, "commit": "a" * 12},
+            "unsafe path": {**evidence, "path": "../review.py"},
+            "missing selector": {key: value for key, value in evidence.items() if key != "selector"},
+            "malformed selector": {**evidence, "selector": {"kind": "line_range", "start": 2, "end": 1}},
+        }
+        for label, invalid in invalid_evidence.items():
+            with self.subTest(label=label):
+                changed = copy.deepcopy(output)
+                changed["findings"][0]["evidence"] = [invalid]
+                with self.assertRaises(ValueError):
+                    review_contracts.validate_review_output(changed)
+
+    def test_pinned_git_finding_shape_resolves_exact_authority_commit_path_digest_and_selector(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = root / "repo"
+            repository.mkdir()
+            remote = "https://example.com/acme/review-fixture.git"
+            subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.email", "fixture@example.invalid"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.name", "Fixture"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "core.autocrlf", "false"], cwd=repository, check=True)
+            subprocess.run(["git", "remote", "add", "origin", remote], cwd=repository, check=True)
+            source = b"exact_evidence_symbol\n"
+            (repository / "evidence.py").write_bytes(source)
+            subprocess.run(["git", "add", "evidence.py"], cwd=repository, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "fixture"], cwd=repository, check=True)
+            commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            store = review_contracts.BundleStore(root / "bundles")
+            bundle = review_contracts.build_bundle(store, {"anchor.txt": b"anchor\n"})
+            final = store.root / bundle["bundle_sha256"]
+            evidence = {
+                "kind": "git_commit",
+                "repository": remote,
+                "commit": commit,
+                "path": "evidence.py",
+                "sha256": hashlib.sha256(source).hexdigest(),
+                "selector": {"kind": "symbol", "value": "exact_evidence_symbol"},
+            }
+            finding = {"id": "PINNED-GIT", "evidence": [evidence]}
+            resolver = review_contracts.build_local_git_resolver(repository)
+            try:
+                self.assertEqual(
+                    review_contracts.validate_finding_evidence(
+                        [finding],
+                        store=store,
+                        active_bundle_sha256=bundle["bundle_sha256"],
+                        git_resolver=resolver,
+                    ),
+                    [finding],
+                )
+                invalid_evidence = {
+                    "authority": {**evidence, "repository": "https://example.com/acme/other.git"},
+                    "commit": {**evidence, "commit": "f" * 40},
+                    "path": {**evidence, "path": "missing.py"},
+                    "digest": {**evidence, "sha256": "0" * 64},
+                    "selector": {**evidence, "selector": {"kind": "symbol", "value": "missing_symbol"}},
+                }
+                for label, invalid in invalid_evidence.items():
+                    with self.subTest(label=label), self.assertRaises(ValueError):
+                        review_contracts.validate_finding_evidence(
+                            [{"id": "PINNED-GIT", "evidence": [invalid]}],
+                            store=store,
+                            active_bundle_sha256=bundle["bundle_sha256"],
+                            git_resolver=resolver,
+                        )
+            finally:
+                if final.exists():
+                    remove_hardened_tree(final)
+
+    def test_pinned_git_resolver_rejects_non_regular_tree_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "repo"
+            repository.mkdir()
+            remote = "https://example.com/acme/tree-entry-fixture.git"
+            subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.email", "fixture@example.invalid"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.name", "Fixture"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "core.autocrlf", "false"], cwd=repository, check=True)
+            subprocess.run(["git", "remote", "add", "origin", remote], cwd=repository, check=True)
+            source = b"print('regular blob')\n"
+            (repository / "target.py").write_bytes(source)
+            (repository / "nested").mkdir()
+            (repository / "nested" / "code.py").write_bytes(b"nested_code = True\n")
+            subprocess.run(["git", "add", "target.py", "nested/code.py"], cwd=repository, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=repository, check=True)
+            base = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            link_blob = subprocess.run(
+                ["git", "hash-object", "-w", "--stdin"],
+                cwd=repository,
+                input=b"target.py",
+                capture_output=True,
+                check=True,
+            ).stdout.decode("ascii").strip()
+            subprocess.run(
+                ["git", "update-index", "--add", "--cacheinfo", f"120000,{link_blob},link.py"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "update-index", "--add", "--cacheinfo", f"160000,{base},dependency"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(["git", "update-index", "--chmod=+x", "target.py"], cwd=repository, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "tree entry modes"], cwd=repository, check=True)
+            commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            resolver = review_contracts.build_local_git_resolver(repository)
+
+            self.assertEqual(resolver(remote, commit, "target.py"), source)
+            self.assertEqual(
+                resolver(remote, commit, "nested/code.py"),
+                b"nested_code = True\n",
+            )
+            for path in ("link.py", "dependency", "nested"):
+                with self.subTest(path=path), self.assertRaisesRegex(
+                    ValueError,
+                    "regular Git blob",
+                ):
+                    resolver(remote, commit, path)
+
+    def test_evaluator_replay_binds_git_finding_to_case_source_digest(self) -> None:
+        corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
+        results = json.loads(RESULTS.read_text(encoding="utf-8"))
+        cases_by_id = {case["id"]: case for case in corpus["cases"]}
+        git_results = [
+            case for case in results["cases"]
+            if cases_by_id[case["id"]]["input"]["kind"] == "git_review"
+            and case["output"]["findings"]
+        ]
+        self.assertTrue(git_results)
+        for case in git_results:
+            expected = cases_by_id[case["id"]]["input"]["source_sha256"]
+            for finding in case["output"]["findings"]:
+                for evidence in finding["evidence"]:
+                    if evidence["kind"] == "git_commit":
+                        self.assertEqual(evidence["sha256"], expected)
+
+        def remove_digest(_corpus, changed_results):
+            case = next(
+                item for item in changed_results["cases"]
+                if cases_by_id[item["id"]]["input"]["kind"] == "git_review"
+                and item["output"]["findings"]
+            )
+            del case["output"]["findings"][0]["evidence"][0]["sha256"]
+
+        missing = self.mutated(corpus, results, remove_digest)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("evidence", (missing.stdout + missing.stderr).casefold())
+
+        def replace_digest(_corpus, changed_results):
+            case = next(
+                item for item in changed_results["cases"]
+                if cases_by_id[item["id"]]["input"]["kind"] == "git_review"
+                and item["output"]["findings"]
+            )
+            case["output"]["findings"][0]["evidence"][0]["sha256"] = "0" * 64
+
+        wrong = self.mutated(corpus, results, replace_digest)
+        self.assertNotEqual(wrong.returncode, 0)
+        self.assertIn("immutable case artifact", (wrong.stdout + wrong.stderr).casefold())
 
     def test_category_finding_requires_immutable_case_artifact_evidence(self) -> None:
         corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
