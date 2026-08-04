@@ -24,6 +24,7 @@ sys.path.insert(0, str(HERE))
 from review_contracts import (  # noqa: E402
     BundleStore,
     SnapshotLimits,
+    build_local_git_resolver,
     build_bundle,
     build_git_snapshot,
     delivery_address_sha256,
@@ -660,6 +661,45 @@ def _blocked_output_has_evidence(output: Mapping[str, Any]) -> bool:
     return bool(output.get("residual_risks")) or any(finding.get("evidence") for finding in output.get("findings", []))
 
 
+def _immutable_evidence_context(
+    state: Mapping[str, Any],
+    root: Path,
+) -> tuple[BundleStore, Any]:
+    bundle_sha256 = state.get("bundle_sha256")
+    if not isinstance(bundle_sha256, str):
+        raise ValueError("active review bundle is unavailable for immutable evidence resolution")
+    store = BundleStore(root / "bundles")
+    try:
+        snapshot = json.loads(store.read(bundle_sha256, "snapshot.json"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("frozen snapshot is malformed") from exc
+    if not isinstance(snapshot, Mapping):
+        raise ValueError("frozen snapshot is malformed")
+    git_resolver = None
+    if snapshot.get("kind") == "git":
+        repository_root = snapshot.get("repo")
+        if not isinstance(repository_root, str) or not repository_root:
+            raise ValueError("frozen Git repository root is unavailable")
+        git_resolver = build_local_git_resolver(Path(repository_root))
+    return store, git_resolver
+
+
+def _validate_disposition_state(
+    state: Mapping[str, Any],
+    root: Path,
+    output: Mapping[str, Any],
+) -> dict[str, Any]:
+    store, git_resolver = _immutable_evidence_context(state, root)
+    return validate_disposition_ledger(
+        state["ledger"],
+        output["findings"],
+        generation=state["generation"],
+        store=store,
+        active_bundle_sha256=state["bundle_sha256"],
+        git_resolver=git_resolver,
+    )
+
+
 def subagent_stop(payload: dict[str, Any], root: Path, profile_path: Path) -> dict[str, Any]:
     with lock(session_lock(root, payload["session_id"], payload["turn_id"])):
         try:
@@ -675,10 +715,12 @@ def subagent_stop(payload: dict[str, Any], root: Path, profile_path: Path) -> di
                 raise ValueError("review snapshot is stale or a mutation remains in flight")
             output = validate_review_output(json.loads(payload.get("last_assistant_message") or ""))
             validate_lens_coverage(output["coverage"])
+            store, git_resolver = _immutable_evidence_context(state, root)
             validate_finding_evidence(
                 output["findings"],
-                store=BundleStore(root / "bundles"),
+                store=store,
                 active_bundle_sha256=state["bundle_sha256"],
+                git_resolver=git_resolver,
             )
             if output["attempt_id"] != state["attempt_id"] or output["attempt_id"] in state["consumed_attempt_ids"]:
                 raise ValueError("review attempt is stale or replayed")
@@ -888,7 +930,7 @@ def _verify_final_state(state: Mapping[str, Any], root: Path, cwd: Path, profile
     output_sha = compute_raw_sha256(canonical_bytes(output))
     if output_sha != state["output_sha256"]:
         raise ValueError("review output digest mismatch")
-    ledger = validate_disposition_ledger(state["ledger"], output["findings"], generation=state["generation"])
+    ledger = _validate_disposition_state(state, root, output)
     disposition_sha = compute_raw_sha256(canonical_bytes(ledger))
     if disposition_sha != state["dispositions"]:
         raise ValueError("disposition digest mismatch")
@@ -1211,7 +1253,18 @@ def export_replay(state: Mapping[str, Any], root: Path, profile_path: Path) -> d
         if output[field] != state.get(field):
             raise ValueError(f"review output {field} mismatch")
     receipt = validate_review_receipt(state.get("receipt"))
-    if receipt != _make_receipt(state, receipt["disposition_sha256"]):
+    if state.get("ledger") is None:
+        if state.get("dispositions") is not None:
+            raise ValueError("pending review has an unexpected disposition digest")
+        disposition_sha = state.get("pending_disposition_sha256")
+    else:
+        ledger = _validate_disposition_state(state, root, output)
+        disposition_sha = compute_raw_sha256(canonical_bytes(ledger))
+        if disposition_sha != state.get("dispositions"):
+            raise ValueError("persisted disposition ledger digest mismatch")
+    if receipt.get("disposition_sha256") != disposition_sha:
+        raise ValueError("review receipt disposition digest mismatch")
+    if receipt != _make_receipt(state, disposition_sha):
         raise ValueError("review receipt does not bind persisted lifecycle state")
 
     store = BundleStore(root / "bundles")
@@ -1295,7 +1348,15 @@ def cli(args: argparse.Namespace, root: Path, profile_path: Path) -> int:
             if not state or state["status"] != "receipted" or not state["review_output"] or not state["receipt"]:
                 raise ValueError("current review output and local receipt are required")
             ledger = json.loads(Path(args.file).read_text(encoding="utf-8"))
-            ledger = validate_disposition_ledger(ledger, state["review_output"]["findings"], generation=state["generation"])
+            store, git_resolver = _immutable_evidence_context(state, root)
+            ledger = validate_disposition_ledger(
+                ledger,
+                state["review_output"]["findings"],
+                generation=state["generation"],
+                store=store,
+                active_bundle_sha256=state["bundle_sha256"],
+                git_resolver=git_resolver,
+            )
             if any(item["decision"] == "accepted" for item in ledger["dispositions"]):
                 state = _accepted_generation(state, ledger, root)
             else:

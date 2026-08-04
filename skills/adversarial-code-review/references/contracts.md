@@ -8,8 +8,12 @@ It binds attempt, packet, bundle, snapshot, verdict, coverage, risks, and
 complete stable findings. Lifecycle validation additionally requires one
 evidence-bearing coverage disposition for every mandatory lens named by the
 frozen contract. `DispositionLedgerV1` covers every finding; acceptance
-advances generation, blocking rejection has nonempty immutable primary
-counterevidence, and only nonblocking findings may defer with owner/follow-up.
+advances generation, and only nonblocking findings may defer with
+owner/follow-up. Every primary-counterevidence entry for a blocking rejection
+must resolve to exact active-bundle or authority-matched pinned-Git bytes before
+the ledger is persisted and again during final Stop, export, and evaluator
+replay. Generic digest and opaque-version references cannot reject a blocking
+finding.
 `ReviewReceiptV1` binds session/task/delivery/generation, reviewer
 identity/config, all evidence digests, and epoch. The lifecycle gate, never the
 reviewer, creates a provisional receipt from the actual canonical output and a
@@ -51,10 +55,12 @@ At `SubagentStop`, `validate_finding_evidence` additionally binds every finding
 to actual immutable bytes. Bundle evidence must name the active bundle digest,
 an exact manifest path and raw-byte digest, plus a nonempty symbol or bounded
 line-range selector that exists in that content. Pinned-Git evidence has the
-equivalent full commit, path, raw-byte digest, selector, and resolver checks;
-without an immutable resolver it fails closed. Generic digest and opaque-version
-references can support verification metadata, but cannot stand alone as finding
-code evidence.
+equivalent full commit, path, raw-byte digest, selector, and resolver checks.
+Lifecycle resolution requires the repository URI to exactly match a configured
+remote in the frozen snapshot's local repository, and the full commit and path
+bytes must remain locally available; otherwise it fails closed. Generic digest
+and opaque-version references can support verification metadata, but cannot
+stand alone as finding code evidence or blocking-rejection counterevidence.
 
 ```json
 {
