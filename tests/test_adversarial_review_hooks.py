@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 from typing import Any
 
@@ -184,6 +185,40 @@ def run_cli_with_fault(
 
 
 class LifecycleGateTests(unittest.TestCase):
+    def test_environment_lookup_preserves_posix_case_sensitive_names(self) -> None:
+        with mock.patch.object(lifecycle_gate.os, "name", "posix"):
+            self.assertIsNone(
+                lifecycle_gate._environment_get(
+                    {"codex_adversarial_state": "workspace-state"},
+                    "CODEX_ADVERSARIAL_STATE",
+                )
+            )
+
+    def test_leading_environment_assignments_preserve_platform_name_semantics(self) -> None:
+        tokens = [
+            lifecycle_gate.ShellToken("word", "Path=first"),
+            lifecycle_gate.ShellToken("word", "PATH=second"),
+            lifecycle_gate.ShellToken("word", "echo"),
+        ]
+        with mock.patch.object(lifecycle_gate.os, "name", "posix"):
+            remaining, effective, assigned, failure = lifecycle_gate._leading_environment_assignments(tokens)
+            self.assertIsNone(failure)
+            self.assertEqual(assigned, ["Path", "PATH"])
+            self.assertEqual(effective["Path"], "first")
+            self.assertEqual(effective["PATH"], "second")
+            self.assertEqual([token.value for token in remaining], ["echo"])
+
+        with mock.patch.object(lifecycle_gate.os, "name", "nt"):
+            remaining, effective, assigned, failure = lifecycle_gate._leading_environment_assignments(tokens)
+            self.assertIsNone(failure)
+            self.assertEqual(assigned, ["PATH", "PATH"])
+            self.assertEqual(effective["PATH"], "second")
+            self.assertEqual(
+                [key for key in effective if key.casefold() == "path"],
+                ["PATH"],
+            )
+            self.assertEqual([token.value for token in remaining], ["echo"])
+
     def test_delivery_state_address_stays_below_legacy_windows_directory_limit(self) -> None:
         root = Path("C:/Users/Example/AppData/Local/Temp/tmp12345678/state")
         state = {
@@ -1026,7 +1061,7 @@ class LifecycleGateTests(unittest.TestCase):
         ):
             self.assertTrue(lifecycle_gate.is_mutation({"tool_name": name, "tool_input": {"command": command}}), name)
         self.assertFalse(lifecycle_gate.is_mutation({"tool_name": "mcp__filesystem__read_file", "tool_input": {"path": "x"}}))
-        self.assertFalse(lifecycle_gate.is_mutation({"tool_name": "Bash", "tool_input": {"command": "git status"}}))
+        self.assertTrue(lifecycle_gate.is_mutation({"tool_name": "Bash", "tool_input": {"command": "git status"}}))
 
         with tempfile.TemporaryDirectory() as temporary:
             state_root, profile, workspace = self.make_fixture(temporary)
@@ -1065,7 +1100,6 @@ class LifecycleGateTests(unittest.TestCase):
             ("bash", "echo '$(rm owned.txt)'"),
             ("powershell", "Write-Output @'\nRemove-Item owned.txt\n'@"),
             ("bash", "cat <<'EOF'\nrm owned.txt\ngit apply change.patch\nEOF\n"),
-            ("bash", "git status -- 'rm' '> owned.txt'"),
             ("powershell", "Write-Output changed 2>&1"),
             ("powershell", "Write-Output changed > $null"),
             ("powershell", "Write-Output changed | Tee-Object -Variable captured"),
@@ -1091,6 +1125,7 @@ class LifecycleGateTests(unittest.TestCase):
             ("powershell", "Write-Output changed | Tee-Object -FilePath owned.txt"),
             ("powershell", "[IO.File]::WriteAllText('owned.txt', 'changed')"),
             ("shell_command", "echo changed > owned.txt"),
+            ("bash", "git status -- 'rm' '> owned.txt'"),
         )
         for name, command in mutations:
             with self.subTest(kind="mutation", command=command):
@@ -1099,6 +1134,248 @@ class LifecycleGateTests(unittest.TestCase):
                         {"tool_name": name, "tool_input": {"command": command}}
                     )
                 )
+
+    def test_every_syntactic_git_invocation_is_a_tracked_mutation(self) -> None:
+        mutations = (
+            "git status",
+            "git --no-pager status --short",
+            "git diff --check",
+            "git rev-parse HEAD",
+            "git --version",
+            "git version",
+            "git pull --ff-only",
+            "git stash push -- owned.txt",
+            "git stash pop",
+            "git clone source.git clone",
+            "git fetch origin",
+            "git config user.name Test",
+            "git submodule update --init",
+            "git surprise-command",
+            "git -c alias.sneak=!touch-owned sneak",
+            "git -C .. status",
+            "git --git-dir .git status",
+            "git --unknown-global status",
+            "git -c",
+            "git",
+            '"/tmp/git" status',
+            '".\\fake\\git.cmd" status',
+            '".\\fake\\git.com" status',
+        )
+
+        for command in mutations:
+            with self.subTest(kind="mutation", command=command):
+                self.assertEqual(
+                    lifecycle_gate.classify_tool_mutation(
+                        {
+                            "tool_name": "shell_command",
+                            "cwd": str(ROOT),
+                            "tool_input": {"command": command},
+                        }
+                    )[0],
+                    "mutation",
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            self.arm(state_root, profile, workspace)
+            for index, command in enumerate(mutations):
+                with self.subTest(kind="hook-mutation", command=command):
+                    payload = self.payload(
+                        "PreToolUse",
+                        workspace,
+                        tool_name="shell_command",
+                        tool_use_id=f"git-mutation-{index}",
+                        tool_input={"command": command},
+                    )
+                    self.assertNotIn("decision", run_hook(self, payload, state_root, profile))
+                    self.assertIn(
+                        payload["tool_use_id"],
+                        self.status(state_root, profile)["inflight_tool_use_ids"],
+                    )
+                    self.assertNotIn(
+                        "decision",
+                        run_hook(
+                            self,
+                            {**payload, "hook_event_name": "PostToolUse"},
+                            state_root,
+                            profile,
+                        ),
+                    )
+            self.assertEqual(self.status(state_root, profile)["mutation_epoch"], len(mutations))
+
+    def test_shell_escape_alias_and_delayed_expansion_shapes_fail_closed(self) -> None:
+        cases = (
+            ("powershell", "g`it pull"),
+            ("bash", r"g\it pull"),
+            ("bash", "g`printf i`t pull"),
+            ("shell_command", 'cmd /d /c "g^it pull"'),
+            ("shell_command", 'cmd /d /v:on /c "g!PART!t pull"'),
+            ("bash", "alias g=git; g pull"),
+            ("powershell", "Set-Alias g git; g pull"),
+        )
+        for tool_name, command in cases:
+            with self.subTest(tool_name=tool_name, command=command):
+                kind = lifecycle_gate.classify_tool_mutation(
+                    {
+                        "tool_name": tool_name,
+                        "cwd": str(ROOT),
+                        "tool_input": {"command": command},
+                    }
+                )[0]
+                self.assertIn(kind, {"ambiguous", "mutation"})
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            for index, (tool_name, command) in enumerate(cases):
+                with self.subTest(kind="hook-block", command=command):
+                    blocked = run_hook(
+                        self,
+                        self.payload(
+                            "PreToolUse",
+                            workspace,
+                            tool_name=tool_name,
+                            tool_use_id=f"escape-alias-{index}",
+                            tool_input={"command": command},
+                        ),
+                        state_root,
+                        profile,
+                    )
+                    self.assertEqual(blocked.get("decision"), "block")
+
+    def test_git_stash_a_b_a_advances_the_epoch_even_when_owned_bytes_return_to_the_freeze(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root, profile, workspace = self.make_fixture(temporary)
+            original = (workspace / "owned.txt").read_bytes()
+            self.arm(state_root, profile, workspace)
+            frozen = self.freeze(state_root, profile, workspace)
+            self.assertEqual(frozen["mutation_epoch"], 0)
+
+            (workspace / "owned.txt").write_text("temporary B state\n", encoding="utf-8")
+            payload = self.payload(
+                "PreToolUse",
+                workspace,
+                tool_name="shell_command",
+                tool_use_id="git-stash-a-b-a",
+                tool_input={"command": "git stash push -- owned.txt"},
+            )
+            self.assertNotIn("decision", run_hook(self, payload, state_root, profile))
+            stashed = run_process(["git", "stash", "push", "--", "owned.txt"], cwd=workspace)
+            self.assertEqual(stashed.returncode, 0, stashed.stderr.decode())
+            self.assertEqual((workspace / "owned.txt").read_bytes(), original)
+            self.assertNotIn(
+                "decision",
+                run_hook(
+                    self,
+                    {**payload, "hook_event_name": "PostToolUse"},
+                    state_root,
+                    profile,
+                ),
+            )
+
+            stale = self.status(state_root, profile)
+            self.assertEqual(stale["mutation_epoch"], 1)
+            self.assertEqual(stale["frozen_epoch"], 0)
+            self.assertEqual(stale["status"], "stale")
+            self.assertEqual(stale["stale_reason"], "managed mutation after freeze")
+
+    def test_environment_assignments_are_preserved_as_hook_security_inputs(self) -> None:
+        routing_test = ROOT / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root, profile, workspace = self.make_fixture(temporary)
+            fake_bin = root / "fake-bin"
+            fake_bin.mkdir()
+            probe = root / "probe"
+            probe.mkdir()
+            if os.name == "nt":
+                fake_git = fake_bin / "git.cmd"
+                fake_git.write_text("@echo malicious>owned.txt\r\n", encoding="utf-8")
+                selected = run_process(
+                    ["cmd", "/d", "/c", "git status"],
+                    cwd=probe,
+                    env={**os.environ, "PATH": str(fake_bin)},
+                )
+            else:
+                fake_git = fake_bin / "git"
+                fake_git.write_text("#!/bin/sh\nprintf malicious > owned.txt\n", encoding="utf-8")
+                fake_git.chmod(0o755)
+                selected = run_process(
+                    ["git", "status"],
+                    cwd=probe,
+                    env={**os.environ, "PATH": str(fake_bin)},
+                )
+            self.assertEqual(selected.returncode, 0, selected.stderr.decode())
+            self.assertEqual((probe / "owned.txt").read_text(encoding="utf-8").strip(), "malicious")
+
+            lifecycle_command = (
+                f'CODEX_ADVERSARIAL_STATE=. "{sys.executable}" -B "{HOOK}" '
+                "classify --session-id s --turn-id t --classification exempt --reason bounded"
+            )
+            ambiguous = (
+                f'PATH="{fake_bin}" git status',
+                "LABEL=$DYNAMIC_VALUE git status",
+                "LABEL=literal git status",
+                "GIT_DIR=.git git status",
+                f'PYTHONPATH="{fake_bin}" python -B "{routing_test}"',
+                "PYTHONHOME=runtime python --version",
+                "PYTHONINSPECT=1 python --version",
+                f'PYTHONPYCACHEPREFIX="{workspace / "pycache"}" python --version',
+                "PYTHON_PRESITE=workspace-startup python --version",
+                "LD_AUDIT=workspace-loader echo safe",
+                "DYLD_FRAMEWORK_PATH=workspace-loader echo safe",
+                "PAGER=workspace-helper echo safe",
+            )
+            for command in ambiguous:
+                with self.subTest(kind="classifier-ambiguous", command=command):
+                    self.assertEqual(
+                        lifecycle_gate.classify_tool_mutation(
+                            {
+                                "tool_name": "shell_command",
+                                "cwd": str(workspace),
+                                "tool_input": {"command": command},
+                            }
+                        )[0],
+                        "ambiguous",
+                    )
+            self.assertEqual(
+                lifecycle_gate.classify_tool_mutation(
+                    {
+                        "tool_name": "shell_command",
+                        "cwd": str(workspace),
+                        "tool_input": {"command": lifecycle_command},
+                    }
+                )[0],
+                "mutation",
+            )
+            self.assertEqual(
+                lifecycle_gate.classify_tool_mutation(
+                    {
+                        "tool_name": "shell_command",
+                        "cwd": str(workspace),
+                        "tool_input": {"command": "git status"},
+                    }
+                )[0],
+                "mutation",
+            )
+
+            original = (workspace / "owned.txt").read_text(encoding="utf-8")
+            for index, command in enumerate((*ambiguous, lifecycle_command)):
+                with self.subTest(kind="hook-block", command=command):
+                    blocked = run_hook(
+                        self,
+                        self.payload(
+                            "PreToolUse",
+                            workspace,
+                            tool_name="shell_command",
+                            tool_use_id=f"environment-{index}",
+                            tool_input={"command": command},
+                        ),
+                        state_root,
+                        profile,
+                    )
+                    self.assertEqual(blocked["decision"], "block")
+            self.assertEqual((workspace / "owned.txt").read_text(encoding="utf-8"), original)
+            self.assertEqual(self.status(state_root, profile)["inflight_tool_use_ids"], [])
 
     def test_python_invocations_fail_closed_and_track_unittest_and_known_writers(self) -> None:
         evaluator = ROOT / "skills" / "adversarial-code-review" / "scripts" / "evaluate_review_corpus.py"

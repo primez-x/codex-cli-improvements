@@ -148,22 +148,7 @@ _DIRECT_COMMAND_MUTATIONS = {
     "truncate",
 }
 _POWERSHELL_MUTATION_ALIASES = {"ac", "mi", "rni", "sc"}
-_GIT_MUTATIONS = {
-    "add",
-    "am",
-    "apply",
-    "checkout",
-    "cherry-pick",
-    "clean",
-    "commit",
-    "merge",
-    "mv",
-    "rebase",
-    "reset",
-    "restore",
-    "rm",
-    "switch",
-}
+_LIFECYCLE_ROOT_ENVIRONMENT = {"CODEX_ADVERSARIAL_STATE", "CODEX_HOME"}
 _PYTHON_WRITER_SCRIPTS = {
     "evaluate_review_corpus.py",
     "install_review_gate.py",
@@ -223,9 +208,23 @@ def _filesystem_path(path: Path) -> Path:
     return Path("\\\\?\\" + absolute)
 
 
-def default_root() -> Path:
-    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
-    return Path(os.environ.get("CODEX_ADVERSARIAL_STATE") or home / "hooks" / "state" / "adversarial-review")
+def _environment_get(environment: Mapping[str, str], name: str) -> str | None:
+    if os.name != "nt":
+        return environment.get(name)
+    expected = name.casefold()
+    return next(
+        (value for key, value in environment.items() if key.casefold() == expected),
+        None,
+    )
+
+
+def default_root(environment: Mapping[str, str] | None = None) -> Path:
+    effective = os.environ if environment is None else environment
+    home = Path(_environment_get(effective, "CODEX_HOME") or Path.home() / ".codex")
+    return Path(
+        _environment_get(effective, "CODEX_ADVERSARIAL_STATE")
+        or home / "hooks" / "state" / "adversarial-review"
+    )
 
 
 def default_profile() -> Path:
@@ -590,11 +589,14 @@ def _shell_operator(text: str, index: int) -> str | None:
     return next((item for item in _SHELL_OPERATORS if text.startswith(item, index)), None)
 
 
-def _dynamic_shell_value(value: str) -> bool:
-    return bool(re.search(r"\$\(|\$\{|(?<!\\)\$[A-Za-z_]|%[^%\r\n]+%", value))
+def _dynamic_shell_value(value: str, *, dialect: str | None = None) -> bool:
+    return bool(
+        re.search(r"\$\(|\$\{|(?<!\\)\$[A-Za-z_]|%[^%\r\n]+%", value)
+        or (dialect == "cmd" and re.search(r"![^!\r\n]+!", value))
+    )
 
 
-def _read_shell_word(text: str, index: int) -> tuple[ShellToken, int]:
+def _read_shell_word(text: str, index: int, *, dialect: str) -> tuple[ShellToken, int]:
     value: list[str] = []
     quoted = False
     substitutions_active = False
@@ -619,30 +621,43 @@ def _read_shell_word(text: str, index: int) -> tuple[ShellToken, int]:
                     index += 1
                     closed = True
                     break
-                if quote == '"' and character == "`" and index + 1 < len(text):
-                    value.append(text[index + 1])
-                    index += 2
-                    continue
+                if quote == '"' and character == "`" and dialect in {
+                    "bash",
+                    "dash",
+                    "ksh",
+                    "powershell",
+                    "pwsh",
+                    "sh",
+                    "zsh",
+                }:
+                    raise ValueError("unsupported dialect-sensitive backtick escaping or substitution")
                 if (
                     quote == '"'
                     and character == "\\"
                     and index + 1 < len(text)
                     and text[index + 1] in {'"', "\\", "$", "`"}
                 ):
-                    value.append(text[index + 1])
-                    index += 2
-                    continue
+                    if dialect in {"bash", "dash", "ksh", "sh", "zsh"}:
+                        raise ValueError("unsupported POSIX backslash escaping")
                 value.append(character)
                 index += 1
             if not closed:
                 raise ValueError("unterminated shell quote")
             continue
-        if character in {"\\", "`"} and index + 1 < len(text):
-            following = text[index + 1]
-            if following.isspace() or following in "'\"`\\#;&|<>(){}":
-                value.append(following)
-                index += 2
-                continue
+        if character == "`" and dialect in {
+            "bash",
+            "dash",
+            "ksh",
+            "powershell",
+            "pwsh",
+            "sh",
+            "zsh",
+        }:
+            raise ValueError("unsupported dialect-sensitive backtick escaping or substitution")
+        if character == "\\" and dialect in {"bash", "dash", "ksh", "sh", "zsh"}:
+            raise ValueError("unsupported POSIX backslash escaping")
+        if character == "^" and dialect == "cmd":
+            raise ValueError("unsupported cmd caret escaping")
         substitutions_active = True
         value.append(character)
         index += 1
@@ -653,7 +668,7 @@ def _read_shell_word(text: str, index: int) -> tuple[ShellToken, int]:
         "word",
         rendered,
         quoted=quoted,
-        dynamic=substitutions_active and _dynamic_shell_value(rendered),
+        dynamic=substitutions_active and _dynamic_shell_value(rendered, dialect=dialect),
         substitutions_active=substitutions_active,
     ), index
 
@@ -707,7 +722,7 @@ def _skip_heredoc_bodies(text: str, index: int, delimiters: list[str]) -> int:
     return index
 
 
-def _shell_tokens(text: str) -> list[ShellToken]:
+def _shell_tokens(text: str, *, dialect: str) -> list[ShellToken]:
     tokens: list[ShellToken] = []
     heredoc_delimiters: list[str] = []
     expect_heredoc_delimiter = False
@@ -740,7 +755,7 @@ def _shell_tokens(text: str) -> list[ShellToken]:
             expect_heredoc_delimiter = operator == "<<"
             index += len(operator)
             continue
-        token, index = _read_shell_word(text, index)
+        token, index = _read_shell_word(text, index, dialect=dialect)
         tokens.append(token)
         if expect_heredoc_delimiter:
             if token.dynamic or not token.value:
@@ -754,10 +769,54 @@ def _shell_tokens(text: str) -> list[ShellToken]:
 
 def _command_name(value: str) -> str:
     name = re.split(r"[\\/]", value)[-1].casefold()
-    for suffix in (".exe", ".cmd", ".bat", ".ps1"):
+    for suffix in (".exe", ".com", ".cmd", ".bat", ".ps1"):
         if name.endswith(suffix):
             return name[: -len(suffix)]
     return name
+
+
+def _leading_environment_assignments(
+    tokens: list[ShellToken],
+) -> tuple[list[ShellToken], dict[str, str], list[str], tuple[str, str] | None]:
+    effective = dict(os.environ)
+    assigned: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        match = re.fullmatch(
+            r"(?i)(?:\$env:)?([A-Za-z_][A-Za-z0-9_]*)(\+?=)(.*)",
+            token.value,
+            re.DOTALL,
+        )
+        if match is None:
+            break
+        name, operator, value = match.groups()
+        windows_names = os.name == "nt"
+        normalized = name.upper() if windows_names else name
+        if token.dynamic or "\0" in value:
+            return (
+                tokens[index + 1 :],
+                effective,
+                assigned,
+                ("ambiguous", f"environment assignment {normalized} is dynamic or malformed"),
+            )
+        if operator == "+=":
+            value = (_environment_get(effective, name) or "") + value
+        for existing in tuple(effective):
+            if (
+                existing.casefold() == name.casefold()
+                if windows_names
+                else existing == name
+            ):
+                del effective[existing]
+        effective[normalized] = value
+        assigned.append(normalized)
+        index += 1
+    return tokens[index:], effective, assigned, None
+
+
+def _classify_git(_arguments: list[ShellToken]) -> tuple[str, str]:
+    return "mutation", "Git may mutate state or execute configured helpers"
 
 
 def _next_non_option(values: list[str], start: int = 0) -> str | None:
@@ -878,6 +937,7 @@ def _exact_lifecycle_cli(
     values: list[str],
     *,
     cwd: Path,
+    environment: Mapping[str, str] | None = None,
 ) -> tuple[bool, str | None, bool]:
     """Return exact-script match, authenticated action, and state-root-in-cwd."""
 
@@ -908,7 +968,7 @@ def _exact_lifecycle_cli(
     action = arguments[index]
     if not _parse_lifecycle_options(action, arguments[index + 1 :]):
         return True, None, False
-    effective_root = state_root or default_root()
+    effective_root = state_root or default_root(environment)
     if not effective_root.is_absolute():
         effective_root = cwd / effective_root
     return True, action, _path_is_within(effective_root, cwd)
@@ -943,8 +1003,13 @@ def _classify_lifecycle_values(
     values: list[str],
     *,
     cwd: Path,
+    environment: Mapping[str, str] | None = None,
 ) -> tuple[str, str] | None:
-    exact_script, action, writes_inside_cwd = _exact_lifecycle_cli(values, cwd=cwd)
+    exact_script, action, writes_inside_cwd = _exact_lifecycle_cli(
+        values,
+        cwd=cwd,
+        environment=environment,
+    )
     if action is not None:
         if action in {"classify", "freeze", "disposition", "block", "reconcile", "abort"}:
             if writes_inside_cwd:
@@ -1068,7 +1133,7 @@ def _classify_shell_segment(
     cwd: Path,
     depth: int,
 ) -> tuple[str, str]:
-    values: list[str] = []
+    word_tokens: list[ShellToken] = []
     index = 0
     while index < len(segment):
         token = segment[index]
@@ -1088,12 +1153,12 @@ def _classify_shell_segment(
                 )
                 if nested[0] in {"mutation", "ambiguous"}:
                     return nested
-            values.append(token.value)
+            word_tokens.append(token)
             index += 1
             continue
         if token.kind != "redirection":
             if token.value == "&":
-                values.append(token.value)
+                word_tokens.append(token)
             index += 1
             continue
         output = ">" in token.value
@@ -1117,22 +1182,53 @@ def _classify_shell_segment(
                 return "mutation", "shell output redirection writes bytes"
         index += 1
 
-    while values and re.fullmatch(r"(?:\$?(?:env:)?[A-Za-z_][\w:]*)=.*", values[0]):
-        values.pop(0)
-    while values and values[0].casefold() in {"&", "command", "builtin", "call"}:
-        values.pop(0)
-    if not values:
+    command_tokens, effective_environment, assigned, assignment_failure = (
+        _leading_environment_assignments(word_tokens)
+    )
+    if assignment_failure is not None:
+        return assignment_failure
+    assigned_set = set(assigned)
+    lifecycle_assignment = assigned_set & _LIFECYCLE_ROOT_ENVIRONMENT
+    if lifecycle_assignment and assigned_set <= _LIFECYCLE_ROOT_ENVIRONMENT:
+        effective_root = default_root(effective_environment)
+        if not effective_root.is_absolute():
+            effective_root = cwd / effective_root
+        if _path_is_within(effective_root, cwd):
+            return "mutation", "lifecycle environment redirects state writes into the task workspace"
+        return "ambiguous", "lifecycle state-root environment assignment is not authenticated"
+    if assigned:
+        return "ambiguous", "leading environment assignments are not authenticated read-only grammar"
+
+    while command_tokens and command_tokens[0].value.casefold() in {"&", "command", "builtin", "call"}:
+        command_tokens.pop(0)
+    if not command_tokens:
         return "read_only", "shell segment has no executable command"
-    if _dynamic_shell_value(values[0]):
+    if command_tokens[0].dynamic:
         return "ambiguous", "shell executable position is dynamic"
 
+    values = [token.value for token in command_tokens]
     command = _command_name(values[0])
     arguments = values[1:]
-    direct_lifecycle = _classify_lifecycle_values(values, cwd=cwd)
+    direct_lifecycle = _classify_lifecycle_values(
+        values,
+        cwd=cwd,
+        environment=effective_environment,
+    )
     if direct_lifecycle is not None:
         return direct_lifecycle
     if command in {"rem", "::"}:
         return "read_only", "shell comment command is inert"
+    if command in {
+        "alias",
+        "env",
+        "export",
+        "function",
+        "new-alias",
+        "set",
+        "set-alias",
+        "setenv",
+    } and arguments:
+        return "ambiguous", f"shell definition command {command} may alter later command resolution"
     if command in _DIRECT_COMMAND_MUTATIONS or (
         dialect == "powershell" and command in _POWERSHELL_MUTATION_ALIASES
     ):
@@ -1155,12 +1251,7 @@ def _classify_shell_segment(
             else ("read_only", "tee command has no file target")
         )
     if command == "git":
-        subcommand = _next_non_option(arguments)
-        return (
-            ("mutation", f"recognized git mutation {subcommand}")
-            if subcommand in _GIT_MUTATIONS
-            else ("read_only", "git subcommand is read-only")
-        )
+        return _classify_git(command_tokens[1:])
     if command == "sed" and any(
         value == "--in-place" or re.fullmatch(r"-[A-Za-z]*i[A-Za-z]*(?:=.*)?", value)
         for value in arguments
@@ -1273,7 +1364,7 @@ def _classify_shell_command(
     if len(command) > MAX_SHELL_COMMAND_CHARS:
         return "ambiguous", "shell command exceeds the classifier bound"
     try:
-        tokens = _shell_tokens(command)
+        tokens = _shell_tokens(command, dialect=dialect)
     except ValueError as exc:
         return "ambiguous", str(exc)
     segments: list[list[ShellToken]] = [[]]
