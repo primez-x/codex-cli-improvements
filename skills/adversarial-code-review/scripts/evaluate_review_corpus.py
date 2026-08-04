@@ -21,7 +21,9 @@ from urllib.parse import urlsplit
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from review_contracts import (  # noqa: E402
+    BundleStore,
     MANDATORY_REVIEW_LENSES,
+    build_local_git_resolver,
     canonical_bytes,
     compute_packet_sha256,
     delivery_address_sha256,
@@ -545,6 +547,15 @@ def validate_lifecycle_export(
     if any(token in output["attempt_id"].casefold() for token in ("baseline", "curated", "fixture", "placeholder")):
         fail("lifecycle export contains a placeholder attempt identity")
 
+    snapshot, _, _, bundle_content = _validate_bundle(state_root, export, state)
+    git_resolver = None
+    if snapshot.get("kind") == "git":
+        repository_root = snapshot.get("repo")
+        if not isinstance(repository_root, str) or not repository_root:
+            fail("frozen Git repository root is unavailable")
+        git_resolver = build_local_git_resolver(Path(repository_root))
+    store = BundleStore(_filesystem_path(state_root) / "bundles")
+
     receipt = validate_review_receipt(export["receipt"])
     if receipt != state["receipt"]:
         fail("lifecycle export receipt differs from persisted gate state")
@@ -561,7 +572,14 @@ def validate_lifecycle_export(
         if state["pending_disposition_sha256"] != disposition_sha:
             fail("pending disposition digest does not bind reviewer findings")
     else:
-        ledger = validate_disposition_ledger(state["ledger"], output["findings"], generation=generation)
+        ledger = validate_disposition_ledger(
+            state["ledger"],
+            output["findings"],
+            generation=generation,
+            store=store,
+            active_bundle_sha256=export["bundle_sha256"],
+            git_resolver=git_resolver,
+        )
         disposition_sha = sha(canonical_bytes(ledger))
         if state["dispositions"] != disposition_sha:
             fail("persisted disposition ledger digest mismatch")
@@ -585,7 +603,6 @@ def validate_lifecycle_export(
     }
     if receipt != expected_receipt:
         fail("lifecycle receipt does not bind the persisted profile, output, bundle, disposition, and epoch")
-    snapshot, _, _, bundle_content = _validate_bundle(state_root, export, state)
     return {
         "output": output,
         "receipt": receipt,

@@ -693,6 +693,90 @@ class EvaluationTests(unittest.TestCase):
             cleanup_root = long_state_top or state_root / "deliveries"
             remove_hardened_tree(cleanup_root)
 
+    def test_evaluator_replay_revalidates_persisted_blocking_counterevidence(self) -> None:
+        helper = hook_helpers.LifecycleGateTests(methodName="run")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root, profile, workspace = helper.make_fixture(temporary)
+            try:
+                _, evidence = helper.blocking_review(state_root, profile, workspace)
+                ledger = helper.rejection_ledger(evidence)
+                state = helper.disposition(root, state_root, profile, ledger)
+                exported = hook_helpers.run_cli(
+                    self,
+                    state_root,
+                    profile,
+                    "export-replay",
+                    "--session-id",
+                    "session",
+                    "--turn-id",
+                    "turn",
+                )
+
+                case_input = {
+                    "kind": "local_fixture",
+                    "path": "owned.txt",
+                    "sha256": hashlib.sha256((workspace / "owned.txt").read_bytes()).hexdigest(),
+                    "version": 1,
+                }
+                cases = [{"id": "counterevidence-case", "kind": "corrected_non_cpp_control", "input": case_input}]
+                replay = {
+                    "schema_version": 1,
+                    "results_kind": "sol_reviewer_replay",
+                    "corpus_id": "counterevidence-replay-test",
+                    "corpus_sha256": evaluation_module.input_manifest_sha(cases),
+                    "replay_id": "counterevidence-replay-test-v1",
+                    "reviewer": {
+                        "agent_type": "sol_reviewer",
+                        "model": "gpt-5.6-sol",
+                        "reasoning_effort": "max",
+                        "profile_sha256": hashlib.sha256(profile.read_bytes()).hexdigest(),
+                    },
+                    "cases": [{
+                        "id": "counterevidence-case",
+                        "input_sha256": hashlib.sha256(
+                            json.dumps(case_input, sort_keys=True, separators=(",", ":")).encode()
+                        ).hexdigest(),
+                        "case_sha256": hashlib.sha256(
+                            json.dumps(cases[0], sort_keys=True, separators=(",", ":")).encode()
+                        ).hexdigest(),
+                        "lifecycle_export": exported,
+                    }],
+                }
+
+                tampered_ledger = copy.deepcopy(ledger)
+                tampered_ledger["dispositions"][0]["primary_counterevidence"] = [{
+                    "kind": "digest",
+                    "uri": "https://example.com/source.txt",
+                    "authority": {"kind": "archive", "source": "https://example.com/archive"},
+                    "sha256": "d" * 64,
+                }]
+                disposition_sha = hashlib.sha256(
+                    hook_helpers.lifecycle_gate.canonical_bytes(tampered_ledger)
+                ).hexdigest()
+                state["ledger"] = tampered_ledger
+                state["dispositions"] = disposition_sha
+                state["receipt"]["disposition_sha256"] = disposition_sha
+                hook_helpers.lifecycle_gate.save_active(state_root, state)
+                state_path = state_root.joinpath(
+                    *PurePosixPath(exported["state_relative_path"]).parts
+                )
+                state_raw = hook_helpers.lifecycle_gate._filesystem_path(state_path).read_bytes()
+                exported["state_sha256"] = hashlib.sha256(state_raw).hexdigest()
+                exported["receipt"] = copy.deepcopy(state["receipt"])
+
+                with self.assertRaisesRegex(ValueError, "counterevidence"):
+                    evaluation_module.load_results(
+                        replay,
+                        "counterevidence-replay-test",
+                        cases,
+                        profile,
+                        state_root,
+                    )
+            finally:
+                if hook_helpers.lifecycle_gate._filesystem_path(state_root).exists():
+                    remove_hardened_tree(state_root)
+
 
 if __name__ == "__main__":
     unittest.main()

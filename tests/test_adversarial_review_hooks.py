@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import copy
 import hashlib
 import json
 import os
@@ -423,6 +424,54 @@ class LifecycleGateTests(unittest.TestCase):
         self.assertNotIn("decision", accepted)
         self.disposition(root, state_root, profile, {"schema_version": 1, "generation": 0, "dispositions": []})
         return self.status(state_root, profile)
+
+    def blocking_review(
+        self,
+        state_root: Path,
+        profile: Path,
+        workspace: Path,
+        *,
+        severity: str = "high",
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        self.arm(state_root, profile, workspace)
+        self.freeze(state_root, profile, workspace)
+        state = self.start_reviewer(state_root, profile, workspace)
+        bundle = state_root / "bundles" / str(state["bundle_sha256"])
+        manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+        evidence = {
+            "kind": "bundle",
+            "uri": f"bundle://{state['bundle_sha256']}/snapshot.json",
+            "sha256": manifest["snapshot.json"],
+            "selector": {"kind": "line_range", "start": 1, "end": 1},
+        }
+        finding = {
+            "id": "F-1",
+            "severity": severity,
+            "claim": "The review assumption is wrong.",
+            "evidence": [evidence],
+            "correction": "Change the assumption.",
+            "verification": "Inspect the immutable evidence.",
+        }
+        accepted = self.stop_reviewer(
+            state_root,
+            profile,
+            workspace,
+            self.review_output(state, verdict="fail", findings=[finding]),
+        )
+        self.assertNotIn("decision", accepted)
+        return state, evidence
+
+    @staticmethod
+    def rejection_ledger(evidence: dict[str, object]) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "generation": 0,
+            "dispositions": [{
+                "finding_id": "F-1",
+                "decision": "rejected",
+                "primary_counterevidence": [evidence],
+            }],
+        }
 
     def test_legacy_delivery_state_migrates_before_status_and_mutation_hooks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1446,6 +1495,188 @@ class LifecycleGateTests(unittest.TestCase):
                 "decision",
                 run_hook(self, self.payload("Stop", workspace, last_assistant_message="Delivered."), state_root, profile),
             )
+
+    def test_blocking_rejection_counterevidence_is_resolved_before_persistence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root, profile, workspace = self.make_fixture(temporary)
+            state, evidence = self.blocking_review(state_root, profile, workspace)
+
+            invalid_counterevidence = {
+                "foreign bundle": {
+                    **evidence,
+                    "uri": f"bundle://{'b' * 64}/snapshot.json",
+                },
+                "missing bundle path": {
+                    **evidence,
+                    "uri": f"bundle://{state['bundle_sha256']}/missing.txt",
+                },
+                "wrong raw digest": {**evidence, "sha256": "c" * 64},
+                "missing selector": {
+                    "kind": "bundle",
+                    "uri": evidence["uri"],
+                    "sha256": evidence["sha256"],
+                },
+                "absent selector": {
+                    **evidence,
+                    "selector": {"kind": "symbol", "value": "DefinitelyAbsent"},
+                },
+                "generic digest": {
+                    "kind": "digest",
+                    "uri": "https://example.com/source.txt",
+                    "authority": {"kind": "archive", "source": "https://example.com/archive"},
+                    "sha256": evidence["sha256"],
+                },
+                "opaque version": {
+                    "kind": "opaque_version",
+                    "uri": "https://example.com/source.txt",
+                    "authority": {"kind": "archive", "source": "https://example.com/archive"},
+                    "version": "release-1",
+                    "immutable": True,
+                },
+            }
+            for label, counterevidence in invalid_counterevidence.items():
+                with self.subTest(label=label):
+                    rejected = self.rejection_ledger(counterevidence)
+                    result = self.disposition(root, state_root, profile, rejected, expected=2)
+                    self.assertIn("counterevidence", result["detail"].casefold())
+                    self.assertIsNone(self.status(state_root, profile)["ledger"])
+
+            supported = self.rejection_ledger(evidence)
+            persisted = self.disposition(root, state_root, profile, supported)
+            self.assertEqual(persisted["ledger"], supported)
+
+    def test_blocking_rejection_accepts_resolved_pinned_git_counterevidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root, profile, workspace = self.make_fixture(temporary)
+            repository = "https://example.com/acme/review-fixture.git"
+            configured = run_process(["git", "remote", "add", "origin", repository], cwd=workspace)
+            self.assertEqual(configured.returncode, 0, configured.stderr.decode())
+            commit = run_process(["git", "rev-parse", "HEAD"], cwd=workspace)
+            self.assertEqual(commit.returncode, 0, commit.stderr.decode())
+            commit_id = commit.stdout.decode("ascii").strip()
+
+            self.blocking_review(state_root, profile, workspace, severity="critical")
+            counterevidence = {
+                "kind": "git_commit",
+                "repository": repository,
+                "commit": commit_id,
+                "path": "owned.txt",
+                "sha256": hashlib.sha256(b"base\n").hexdigest(),
+                "selector": {"kind": "line_range", "start": 1, "end": 1},
+            }
+            for label, invalid in {
+                "repository mismatch": {
+                    **counterevidence,
+                    "repository": "https://example.com/acme/other.git",
+                },
+                "unavailable commit": {**counterevidence, "commit": "f" * 40},
+                "raw digest mismatch": {**counterevidence, "sha256": "e" * 64},
+                "absent selector": {
+                    **counterevidence,
+                    "selector": {"kind": "symbol", "value": "DefinitelyAbsent"},
+                },
+            }.items():
+                with self.subTest(label=label):
+                    invalid_ledger = self.rejection_ledger(invalid)
+                    rejected = self.disposition(
+                        root,
+                        state_root,
+                        profile,
+                        invalid_ledger,
+                        expected=2,
+                    )
+                    self.assertIn("counterevidence", rejected["detail"].casefold())
+                    self.assertIsNone(self.status(state_root, profile)["ledger"])
+
+            ledger = self.rejection_ledger(counterevidence)
+            persisted = self.disposition(root, state_root, profile, ledger)
+            self.assertEqual(persisted["ledger"], ledger)
+            self.assertNotIn(
+                "decision",
+                run_hook(
+                    self,
+                    self.payload("Stop", workspace, last_assistant_message="Delivered."),
+                    state_root,
+                    profile,
+                ),
+            )
+            exported = run_cli(
+                self,
+                state_root,
+                profile,
+                "export-replay",
+                "--session-id",
+                "session",
+                "--turn-id",
+                "turn",
+            )
+            self.assertEqual(exported["receipt"], persisted["receipt"])
+
+    def test_final_stop_revalidates_tampered_persisted_counterevidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root, profile, workspace = self.make_fixture(temporary)
+            _, evidence = self.blocking_review(state_root, profile, workspace)
+            valid_ledger = self.rejection_ledger(evidence)
+            state = self.disposition(root, state_root, profile, valid_ledger)
+            tampered_ledger = copy.deepcopy(valid_ledger)
+            tampered_ledger["dispositions"][0]["primary_counterevidence"][0]["uri"] = (
+                f"bundle://{'b' * 64}/snapshot.json"
+            )
+            disposition_sha = hashlib.sha256(lifecycle_gate.canonical_bytes(tampered_ledger)).hexdigest()
+            state["ledger"] = tampered_ledger
+            state["dispositions"] = disposition_sha
+            state["receipt"]["disposition_sha256"] = disposition_sha
+            lifecycle_gate.save_active(state_root, state)
+
+            stopped = run_hook(
+                self,
+                self.payload("Stop", workspace, last_assistant_message="Delivered."),
+                state_root,
+                profile,
+            )
+            self.assertEqual(stopped["decision"], "block")
+            self.assertIn("counterevidence", stopped["reason"].casefold())
+
+    def test_export_replay_revalidates_tampered_persisted_counterevidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root, profile, workspace = self.make_fixture(temporary)
+            _, evidence = self.blocking_review(
+                state_root,
+                profile,
+                workspace,
+                severity="critical",
+            )
+            valid_ledger = self.rejection_ledger(evidence)
+            state = self.disposition(root, state_root, profile, valid_ledger)
+            tampered_ledger = copy.deepcopy(valid_ledger)
+            tampered_ledger["dispositions"][0]["primary_counterevidence"] = [{
+                "kind": "digest",
+                "uri": "https://example.com/source.txt",
+                "authority": {"kind": "archive", "source": "https://example.com/archive"},
+                "sha256": "d" * 64,
+            }]
+            disposition_sha = hashlib.sha256(lifecycle_gate.canonical_bytes(tampered_ledger)).hexdigest()
+            state["ledger"] = tampered_ledger
+            state["dispositions"] = disposition_sha
+            state["receipt"]["disposition_sha256"] = disposition_sha
+            lifecycle_gate.save_active(state_root, state)
+
+            exported = run_cli(
+                self,
+                state_root,
+                profile,
+                "export-replay",
+                "--session-id",
+                "session",
+                "--turn-id",
+                "turn",
+                expected=2,
+            )
+            self.assertIn("counterevidence", exported["detail"].casefold())
 
     def test_concurrent_post_reviewer_stop_and_stop_do_not_lose_epochs_or_accept_stale_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

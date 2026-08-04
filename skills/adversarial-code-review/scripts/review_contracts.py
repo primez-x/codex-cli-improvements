@@ -330,6 +330,105 @@ def validate_finding_evidence(
     return validated
 
 
+def build_local_git_resolver(
+    workspace: Path,
+    *,
+    max_bytes: int = 10_000_000,
+    max_seconds: float = 30.0,
+    clock: Callable[[], float] = time.monotonic,
+    runner: Callable[..., Any] = subprocess.run,
+) -> Callable[[str, str, str], bytes]:
+    """Resolve exact commit bytes only from an authority-matched local Git repository."""
+    if (
+        isinstance(max_bytes, bool)
+        or not isinstance(max_bytes, int)
+        or max_bytes < 1
+        or isinstance(max_seconds, bool)
+        or not isinstance(max_seconds, (int, float))
+        or not math.isfinite(max_seconds)
+        or max_seconds <= 0
+    ):
+        raise ValueError("pinned Git resolver limits are invalid")
+    root = Path(workspace)
+    deadline = clock() + float(max_seconds)
+
+    def run(arguments: list[str], label: str) -> bytes:
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise ValueError("pinned Git evidence resolution deadline exceeded")
+        try:
+            result = runner(
+                ["git", *arguments],
+                cwd=root,
+                capture_output=True,
+                check=False,
+                timeout=remaining,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError(f"{label} is unavailable") from exc
+        if not hasattr(result, "returncode") or not hasattr(result, "stdout") or result.returncode != 0:
+            raise ValueError(f"{label} is unavailable")
+        if not isinstance(result.stdout, bytes):
+            raise ValueError(f"{label} returned invalid bytes")
+        return result.stdout
+
+    def resolve(repository: str, commit: str, path: str) -> bytes:
+        authority = _absolute_uri(
+            repository,
+            "Git repository authority",
+            schemes={"git", "https", "ssh"},
+        )
+        object_id = validate_git_object_id(commit, "Git evidence commit")
+        relative = _safe_relative(path).as_posix()
+
+        try:
+            top = Path(os.fsdecode(run(["rev-parse", "--show-toplevel"], "Git repository root")).strip()).resolve(strict=True)
+            expected_top = root.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError("pinned Git repository root is unavailable") from exc
+        if top != expected_top:
+            raise ValueError("pinned Git repository root mismatch")
+
+        configured = run(
+            ["config", "--get-regexp", r"^remote\..*\.url$"],
+            "Git repository authority",
+        )
+        try:
+            remote_urls = {
+                line.split(None, 1)[1].decode("utf-8", errors="strict")
+                for line in configured.splitlines()
+                if len(line.split(None, 1)) == 2
+            }
+        except UnicodeDecodeError as exc:
+            raise ValueError("Git repository authority is malformed") from exc
+        if authority not in remote_urls:
+            raise ValueError("pinned Git repository authority mismatch")
+
+        try:
+            resolved_commit = run(
+                ["rev-parse", "--verify", "--end-of-options", f"{object_id}^{{commit}}"],
+                "pinned Git commit",
+            ).decode("ascii", errors="strict").strip()
+        except UnicodeDecodeError as exc:
+            raise ValueError("pinned Git commit resolution is malformed") from exc
+        if resolved_commit != object_id:
+            raise ValueError("pinned Git commit does not resolve exactly")
+
+        specifier = f"{object_id}:{relative}"
+        try:
+            size = int(run(["cat-file", "-s", specifier], "pinned Git path").decode("ascii", errors="strict").strip())
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise ValueError("pinned Git path size is malformed") from exc
+        if size < 0 or size > max_bytes:
+            raise ValueError("pinned Git evidence exceeds the byte limit")
+        content = run(["show", specifier], "pinned Git path")
+        if len(content) != size:
+            raise ValueError("pinned Git evidence size mismatch")
+        return content
+
+    return resolve
+
+
 def validate_review_output(record: Mapping[str, Any]) -> dict[str, Any]:
     fields = {"schema_version", "attempt_id", "packet_sha256", "bundle_sha256", "snapshot_sha256", "verdict", "coverage", "residual_risks", "findings"}
     value = _record(record, fields, "ReviewOutputV1")
@@ -963,7 +1062,15 @@ def build_bundle(store: BundleStore, content: Mapping[str, bytes]) -> dict[str, 
     return {"bundle_sha256": digest, "bundle_path": f"bundle://{digest}/"}
 
 
-def validate_disposition_ledger(record: Mapping[str, Any], findings: list[Mapping[str, Any]], *, generation: int) -> dict[str, Any]:
+def validate_disposition_ledger(
+    record: Mapping[str, Any],
+    findings: list[Mapping[str, Any]],
+    *,
+    generation: int,
+    store: "BundleStore" | None = None,
+    active_bundle_sha256: str | None = None,
+    git_resolver: Callable[[str, str, str], bytes] | None = None,
+) -> dict[str, Any]:
     value = _record(record, {"schema_version", "generation", "dispositions"}, "DispositionLedgerV1"); _integer(value["generation"], "generation")
     if value["generation"] != generation or not isinstance(value["dispositions"], list): raise ValueError("invalid ledger")
     finding_map = {item.get("id"): item for item in findings}; seen = set()
@@ -978,7 +1085,17 @@ def validate_disposition_ledger(record: Mapping[str, Any], findings: list[Mappin
             counterevidence = entry.get("primary_counterevidence")
             if not isinstance(counterevidence, list) or not counterevidence:
                 raise ValueError("blocking rejection needs primary immutable counterevidence")
-            validate_external_evidence(counterevidence)
+            if store is None or active_bundle_sha256 is None:
+                raise ValueError("blocking rejection counterevidence requires immutable byte resolution")
+            try:
+                validate_finding_evidence(
+                    [{"id": entry["finding_id"], "evidence": counterevidence}],
+                    store=store,
+                    active_bundle_sha256=active_bundle_sha256,
+                    git_resolver=git_resolver,
+                )
+            except ValueError as exc:
+                raise ValueError(f"blocking rejection counterevidence is invalid: {exc}") from exc
         if decision == "deferred" and (severity in _BLOCKING or not entry.get("owner") or not entry.get("follow_up")): raise ValueError("deferral is invalid")
     if seen != set(finding_map): raise ValueError("every finding needs a disposition")
     return value
