@@ -55,6 +55,10 @@ class RepositoryContractTests(unittest.TestCase):
             registered,
             set(GENERAL_ROUTING_MATRIX) | {REVIEWER_PROFILE_NAME},
         )
+        self.assertEqual(
+            agents[REVIEWER_PROFILE_NAME]["description"],
+            "On-demand read-only Sol reviewer for root-prepared consequential delivery evidence packets.",
+        )
         self.assertTrue(registered)
 
         profile_files = {
@@ -98,7 +102,7 @@ class RepositoryContractTests(unittest.TestCase):
                 ).read_text(encoding="utf-8").lower()
                 self.assertRegex(instructions, r"do not[^.\n]*spawn")
 
-    def test_gate_only_reviewer_profile_is_read_only_and_returns_review_output(self) -> None:
+    def test_on_demand_reviewer_profile_is_read_only_and_evidence_bound(self) -> None:
         agents = self.config["agents"]
         self.assertIn(REVIEWER_PROFILE_NAME, agents)
         reviewer_path = ROOT / agents[REVIEWER_PROFILE_NAME]["config_file"]
@@ -117,7 +121,9 @@ class RepositoryContractTests(unittest.TestCase):
             "operate only at depth 1",
             "do not spawn",
             "do not emit a receipt",
-            "reviewoutputv1",
+            "root-prepared evidence packet",
+            "evidence anchors",
+            "verdict",
         ):
             self.assertIn(phrase, instructions)
         self.assertRegex(instructions, r"do not[^.\n]*(?:edit|mutate)")
@@ -211,9 +217,11 @@ class RepositoryContractTests(unittest.TestCase):
         hooks = json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"]
         self.assertIn("UserPromptSubmit", hooks)
         self.assertIn("Stop", hooks)
-        self.assertEqual(set(hooks), {"UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"})
+        self.assertEqual(set(hooks), {"UserPromptSubmit", "Stop"})
 
         serialized = json.dumps(hooks).lower()
+        self.assertNotIn("adversarial-code-review", serialized)
+        self.assertNotIn("lifecycle_gate.py", serialized)
         self.assertNotIn("c:\\\\users\\\\", serialized)
         self.assertNotIn("m." + "pincoski", serialized)
         self.assertIn("os.environ.get('codex_home')", serialized)
@@ -224,6 +232,41 @@ class RepositoryContractTests(unittest.TestCase):
                 for entry in group["hooks"]:
                     self.assertRegex(entry["command"], r'^python3 -B -c ".+"$')
                     self.assertRegex(entry["commandWindows"], r'^python -B -c ".+"$')
+
+    def test_review_policy_is_risk_triggered_and_low_risk_work_is_not_blocked(self) -> None:
+        root_facing = (
+            ROOT / "AGENTS.md",
+            ROOT / "README.md",
+            ROOT / "skills" / "adversarial-code-review" / "references" / "managed-agents-instruction.md",
+            ROOT / "skills" / "delivery-orchestration" / "SKILL.md",
+        )
+        combined = " ".join(path.read_text(encoding="utf-8").lower() for path in root_facing)
+        normalized = " ".join(combined.split())
+        for phrase in (
+            "root-routed independent review",
+            "security, authentication, credentials",
+            "reversible startup-setting changes",
+            "`agents.md` wording",
+            "optional review infrastructure fails",
+            "only a required high-risk review failure blocks delivery",
+        ):
+            self.assertIn(phrase, normalized)
+        for path in root_facing:
+            policy = " ".join(path.read_text(encoding="utf-8").lower().split())
+            with self.subTest(path=path):
+                for phrase in ("privacy", "public-contract", "repeated failed verification"):
+                    self.assertIn(phrase, policy)
+        self.assertNotIn("for every material delivery", normalized)
+
+    def test_plan_review_docs_exclude_the_on_demand_delivery_reviewer(self) -> None:
+        for path in (
+            ROOT / "skills" / "plan-review-ladder" / "SKILL.md",
+            ROOT / "skills" / "plan-review-ladder" / "references" / "review-lenses.md",
+        ):
+            text = " ".join(path.read_text(encoding="utf-8").lower().split())
+            with self.subTest(path=path):
+                self.assertIn("on-demand `sol_reviewer` delivery-review identity", text)
+                self.assertNotIn("gate-only", text)
 
     def test_runtime_state_is_ignored_at_repository_boundaries(self) -> None:
         patterns = {

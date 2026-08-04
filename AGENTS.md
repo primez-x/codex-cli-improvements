@@ -70,8 +70,8 @@ These are personal defaults across Codex projects. Repository and nested
   subagent delegation; the user does not manage routing.
 - Treat multi-file/cross-layer work, code plus tests or generated output,
   substantial discovery, and build/install/deploy workflows as material.
-- Use the six configured general-purpose routing profiles plus the gate-only
-  `sol_reviewer` enforcement identity. Spark XHigh handles tiny exact checks
+- Use the six configured general-purpose routing profiles plus the on-demand
+  `sol_reviewer` review identity. Spark XHigh handles tiny exact checks
   and small mechanical edits from fresh self-contained packets dispatched with
   `fork_turns = "none"`. Do not send Spark broad discovery, synthesis, or
   inherited full-history context; escalate those tasks to Luna.
@@ -82,10 +82,9 @@ These are personal defaults across Codex projects. Repository and nested
   diagnosis.
 - Every general-purpose routing profile is a terminal depth-1 leaf. Leaves do
   not spawn, commit, push, deploy, publish, perform destructive actions, or
-  mutate external systems. The gate-only `sol_reviewer` identity is also depth
-  1 but is dispatchable only by the managed adversarial gate, never by normal
-  routing. The root owns direct routing, integration, authorized external
-  actions, and the user response.
+  mutate external systems. The on-demand `sol_reviewer` identity is also depth
+  1 and read-only. The root owns review routing, integration, authorized
+  external actions, and the user response.
 - Only the depth-0 root dispatches `sol_advisor` at Max. Use it for rare,
   consequential architecture, compatibility, migration, persistence, security,
   concurrency, data-integrity, external-impact, conflicting-evidence, stuck, or
@@ -93,15 +92,19 @@ These are personal defaults across Codex projects. Repository and nested
   the same risk remains or four or more substantive stages require sign-off.
   It is not mandatory for localized low-risk work with mechanical verification,
   and it never creates a user approval gate.
-- For every material delivery, after fresh applicable verification, the managed
-  adversarial gate is mandatory: it freezes an immutable bundle, dispatches only
-  gate-only `sol_reviewer`, accepts its strict `ReviewOutputV1`, and creates the
-  local `ReviewReceiptV1`. Do not claim completion until that exact receipt and
-  all required finding dispositions are recorded. Accepted findings require a
-  new generation, refreeze, and rereview; a persisted blocker exits only as
-  `[adversarial-review-blocked] Incomplete: ...`. This post-verification gate is
-  distinct from the optional risk-triggered `sol_advisor` checkpoint and never
-  adds a user approval step.
+- Independent review is root-routed and risk-triggered. Use `sol_reviewer` at
+  Max when explicitly requested or when security, authentication, credentials,
+  or privacy; destructive or irreversible actions; migrations, persistence,
+  data integrity, or concurrency; production or external impact; major
+  architecture, compatibility, or public-contract changes; or conflicting
+  evidence, a stuck approach, or repeated failed verification makes an
+  independent final challenge materially useful.
+- Use root verification without independent review for documentation or
+  `AGENTS.md` wording, formatting and renames, localized deterministic
+  configuration, small mechanical changes, and reversible startup-setting
+  changes unless a high-risk trigger applies. If optional review infrastructure
+  fails, report the limitation without converting a verified low-risk delivery
+  into a blocker. Only a required high-risk review failure blocks delivery.
 - Keep normal work to one to three concurrent leaves and use the configured
   ceiling of four only for genuinely independent packages. Do not ask the user
   to select a model unless a required profile is unavailable.

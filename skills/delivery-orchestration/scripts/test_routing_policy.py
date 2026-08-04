@@ -64,6 +64,10 @@ class RoutingPolicyTests(unittest.TestCase):
             registered,
             set(GENERAL_ROUTING_MATRIX) | {REVIEWER_PROFILE_NAME},
         )
+        self.assertEqual(
+            self.agents[REVIEWER_PROFILE_NAME]["description"],
+            "On-demand read-only Sol reviewer for root-prepared consequential delivery evidence packets.",
+        )
         self.assertFalse(
             any("terra" in name or "coordinator" in name for name in registered)
         )
@@ -88,7 +92,7 @@ class RoutingPolicyTests(unittest.TestCase):
                 instructions = self.load_agent(name)["developer_instructions"].lower()
                 self.assertRegex(instructions, r"do not[^.\n]*spawn")
 
-    def test_gate_only_reviewer_profile_is_read_only_and_returns_review_output(self) -> None:
+    def test_on_demand_reviewer_profile_is_read_only_and_evidence_bound(self) -> None:
         reviewer = self.load_agent(REVIEWER_PROFILE_NAME)
         self.assertEqual(reviewer["name"], REVIEWER_PROFILE_NAME)
         self.assertEqual(
@@ -101,7 +105,9 @@ class RoutingPolicyTests(unittest.TestCase):
             "operate only at depth 1",
             "do not spawn",
             "do not emit a receipt",
-            "reviewoutputv1",
+            "root-prepared evidence packet",
+            "evidence anchors",
+            "verdict",
         ):
             self.assertIn(phrase, instructions)
         self.assertRegex(instructions, r"do not[^.\n]*(?:edit|mutate)")
@@ -159,12 +165,14 @@ class RoutingPolicyTests(unittest.TestCase):
             "spark fast path",
             "luna is the default",
             "escalate the model",
-            "terminal `sol_reviewer`",
-            "recorded reason",
-            "locally-created receipt",
-            "require refreeze plus rereview",
-            "immutable primary counterevidence",
-            "never success",
+            "root-routed independent review",
+            "high-risk trigger",
+            "privacy",
+            "public-contract",
+            "repeated failed verification",
+            "reversible startup-setting changes",
+            "optional review infrastructure fails",
+            "only a required high-risk review failure blocks delivery",
         ):
             self.assertIn(phrase, flat_skill)
         self.assertRegex(flat_skill, r"root (?:directly )?coordinate")

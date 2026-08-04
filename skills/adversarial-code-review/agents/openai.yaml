@@ -1,4 +1,4 @@
 interface:
   display_name: "Adversarial Code Reviewer"
-  short_description: "Independent immutable-evidence code-review gate."
-  default_prompt: "Use $adversarial-code-review to review the declared task bundle independently."
+  short_description: "Independent risk-triggered delivery review."
+  default_prompt: "Use $adversarial-code-review to review the root-prepared evidence packet independently."

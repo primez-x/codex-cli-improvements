@@ -119,7 +119,11 @@ class InstallerTests(unittest.TestCase):
             preserved = [installer_module._remove_gate_handlers(entry) for entry in entries]
             hooks["hooks"][event] = [entry for entry in preserved if entry is not None]
         (home / "hooks.json").write_text(json.dumps(hooks, indent=2), encoding="utf-8")
-        (home / "AGENTS.md").write_text("# existing global agreements\n", encoding="utf-8")
+        (home / "AGENTS.md").write_text(
+            "# existing global agreements\n"
+            "- Use only the six configured custom profiles.\n",
+            encoding="utf-8",
+        )
         return home
 
     def install(self, home: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -158,6 +162,42 @@ class InstallerTests(unittest.TestCase):
             journal["postimage_identities"] = identities
         installer_module._atomic_json(journal_path, journal)
         return journal
+
+    def test_runtime_bytecode_is_nontransactional_and_legacy_cache_drift_does_not_block_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            relative = "skills/adversarial-code-review/scripts/__pycache__/legacy.pyc"
+            cache = home / relative
+            cache.parent.mkdir(parents=True)
+            cache.write_bytes(b"generated-runtime-cache")
+
+            self.assertNotIn(relative, installer_module._managed_extras(home))
+
+            transaction_id = "f" * 32
+            with installer_module._install_lock(home):
+                transaction = installer_module._prepare_transaction(
+                    home,
+                    transaction_id,
+                    {},
+                    {relative},
+                )
+            _, manifest, journal = installer_module._validated_transaction(home, transaction_id)
+            cache.unlink()
+            self.update_journal(
+                transaction,
+                status="completed",
+                applied=sorted(manifest["paths"]),
+                next_path=None,
+            )
+
+            backup = transaction / "backup" / relative
+            backup.write_bytes(b"rewritten-generated-runtime-cache")
+            with self.assertRaisesRegex(ValueError, "backup authentication failed"):
+                installer_module._validated_transaction(home, transaction_id)
+            self.assertEqual(installer_module._active_completed_head(home), transaction_id)
+
+            result = self.install(home)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_prepared_recovery_does_not_rewrite_untouched_preimages(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -331,13 +371,19 @@ class InstallerTests(unittest.TestCase):
             installed = self.install(home)
             self.assertEqual(installed.returncode, 0, installed.stderr)
             receipt = json.loads(installed.stdout)
+            self.assertIsNone(receipt["handler_contract_smoke"])
+            self.assertIn("No adversarial lifecycle hooks are registered", receipt["next"])
+            self.assertNotIn("approve changed handlers", receipt["next"])
+            self.assertNotIn("live provenance smoke", receipt["next"])
             transaction = home / ".adversarial-review-install" / receipt["transaction_id"]
             self.assertTrue((transaction / "manifest.json").is_file())
             self.assertEqual(json.loads((transaction / "journal.json").read_text(encoding="utf-8"))["status"], "completed")
 
             verified = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
             self.assertEqual(verified.returncode, 0, verified.stderr)
-            self.assertTrue(json.loads(verified.stdout)["ok"])
+            verified_data = json.loads(verified.stdout)
+            self.assertTrue(verified_data["ok"])
+            self.assertIsNone(verified_data["handler_contract_smoke"])
 
             smoke = self.invoke("smoke", "--source-root", str(ROOT), "--codex-home", str(home))
             self.assertEqual(smoke.returncode, 0, smoke.stderr)
@@ -371,42 +417,18 @@ class InstallerTests(unittest.TestCase):
             for name, data in original.items():
                 self.assertEqual((home / name).read_bytes(), data)
 
-    def test_installed_hook_command_does_not_recreate_managed_bytecode(self) -> None:
-        """The exact installed hook command must leave managed files immutable."""
+    def test_install_verify_and_explicit_smoke_do_not_recreate_managed_bytecode(self) -> None:
+        """Package operations must not write runtime cache into managed roots."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             home = self.make_home(root)
             installed = self.install(home)
             self.assertEqual(installed.returncode, 0, installed.stderr)
-            hooks = json.loads((home / "hooks.json").read_text(encoding="utf-8"))["hooks"]
-            review_hook = next(
-                entry
-                for entry in hooks["PostToolUse"][0]["hooks"]
-                if "lifecycle_gate.py" in entry.get("command", "")
-            )
-            command = review_hook["commandWindows" if os.name == "nt" else "command"]
-            payload = {
-                "hook_event_name": "PostToolUse",
-                "session_id": "bytecode-cleanliness-session",
-                "turn_id": "bytecode-cleanliness-turn",
-                "cwd": str(root),
-                "tool_name": "shell_command",
-                "tool_use_id": "bytecode-cleanliness-tool",
-                "tool_input": {"command": "Get-ChildItem" if os.name == "nt" else "ls"},
-            }
-            environment = {**os.environ, "CODEX_HOME": str(home)}
+            verified = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
+            self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+            smoked = self.invoke("smoke", "--source-root", str(ROOT), "--codex-home", str(home))
+            self.assertEqual(smoked.returncode, 0, smoked.stdout + smoked.stderr)
 
-            invoked = subprocess.run(
-                command,
-                shell=True,
-                input=json.dumps(payload),
-                text=True,
-                capture_output=True,
-                check=False,
-                env=environment,
-            )
-
-            self.assertEqual(invoked.returncode, 0, invoked.stderr)
             managed_root = home / "skills" / "adversarial-code-review"
             runtime_leaves = sorted(
                 path.relative_to(home).as_posix()
@@ -414,8 +436,6 @@ class InstallerTests(unittest.TestCase):
                 if path.name == "__pycache__" or path.suffix == ".pyc"
             )
             self.assertEqual(runtime_leaves, [])
-            verified = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
-            self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
             again = self.install(home)
             self.assertEqual(again.returncode, 0, again.stderr)
             self.assertTrue(json.loads(again.stdout)["idempotent"])
@@ -1071,6 +1091,16 @@ class InstallerTests(unittest.TestCase):
                 self.assertEqual(tomllib.load(stream)["model_reasoning_effort"], "medium")
             self.assertIn("sol_reviewer", after["agents"])
             self.assertEqual(
+                after["agents"]["sol_reviewer"]["description"],
+                "On-demand read-only Sol reviewer for root-prepared consequential delivery evidence packets.",
+            )
+            installed_agents = (home / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn("Use only the six configured custom profiles.", installed_agents)
+            self.assertIn(
+                "The six-profile limit applies only to general-purpose routing",
+                installed_agents,
+            )
+            self.assertEqual(
                 routing_test.read_bytes(),
                 (ROOT / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py").read_bytes(),
             )
@@ -1123,7 +1153,7 @@ class InstallerTests(unittest.TestCase):
         merged = installer_module.hooks_text(existing, ROOT).decode("utf-8")
         for marker in ("plan_gap_goal_hook.py", "instruction_learning_hook.py"):
             self.assertIn(marker, merged)
-        self.assertEqual(merged.count("lifecycle_gate.py"), 12)
+        self.assertNotIn("lifecycle_gate.py", merged)
 
     def test_payload_is_exact_production_allowlist_with_one_canonical_packet_helper(self) -> None:
         """Copying tests or a second packet helper must fail this test."""
@@ -1174,20 +1204,20 @@ class InstallerTests(unittest.TestCase):
                 expected,
             )
 
-    def test_skill_routes_materiality_lifecycle_entrypoints_and_output_authority(self) -> None:
-        """Forward-use guidance must expose decisions and executable entrypoints."""
+    def test_skill_routes_only_consequential_review_and_keeps_low_risk_work_direct(self) -> None:
+        """Forward-use guidance must expose the risk boundary and lightweight packet."""
         skill = (ROOT / "skills" / "adversarial-code-review" / "SKILL.md").read_text(encoding="utf-8")
+        normalized_skill = " ".join(skill.split())
         contracts = (ROOT / "skills" / "adversarial-code-review" / "references" / "contracts.md").read_text(encoding="utf-8")
         for phrase in (
-            "Multi-file or cross-layer",
-            "record an exact exemption reason",
-            "lifecycle_gate.py classify",
-            "lifecycle_gate.py freeze",
-            "lifecycle_gate.py disposition",
-            "lifecycle_gate.py status",
-            "Hooks own `UserPromptSubmit`",
+            "consequential delivery",
+            "`AGENTS.md` wording",
+            "reversible startup-setting changes",
+            "root-prepared evidence packet",
+            "Optional review infrastructure",
+            "Only a required high-risk review failure blocks delivery",
         ):
-            self.assertIn(phrase, skill)
+            self.assertIn(phrase, normalized_skill)
         self.assertIn("](../scripts/review_contracts.py)", contracts)
         self.assertIn("Strict pass example", contracts)
         self.assertIn("Strict finding example", contracts)
@@ -1229,7 +1259,7 @@ class InstallerTests(unittest.TestCase):
             self.assertNotIn("plan_gap_goal_hook", serialized)
             self.assertNotIn("instruction_learning_hook", serialized)
             self.assertNotIn("old adversarial-code-review", serialized)
-            self.assertEqual(serialized.count("lifecycle_gate.py"), 12)  # command + commandWindows, six events.
+            self.assertNotIn("lifecycle_gate.py", serialized)
 
     def test_semantic_corruption_fails_verify(self) -> None:
         """Fail-open semantic comparisons must fail this test."""
@@ -1246,16 +1276,13 @@ class InstallerTests(unittest.TestCase):
             ),
             "profile-purpose": lambda home: (home / "agents" / "sol_reviewer.toml").write_text(
                 (home / "agents" / "sol_reviewer.toml").read_text(encoding="utf-8").replace(
-                    "Review only the frozen bundle", "Review the mutable workspace"
+                    "Review only the root-prepared evidence packet", "Review the mutable workspace"
                 ), encoding="utf-8"
-            ),
-            "hooks-matcher": lambda home: (home / "hooks.json").write_text(
-                (home / "hooks.json").read_text(encoding="utf-8").replace('^sol_reviewer$', '^anything$'),
-                encoding="utf-8",
             ),
             "managed-block": lambda home: (home / "AGENTS.md").write_text(
                 (home / "AGENTS.md").read_text(encoding="utf-8").replace(
-                    "`ReviewReceiptV1`", "`ReviewReceiptV0`"
+                    "Only a required high-risk review failure",
+                    "Every review failure blocks delivery",
                 ), encoding="utf-8"
             ),
         }
@@ -1269,9 +1296,9 @@ class InstallerTests(unittest.TestCase):
                 self.assertNotEqual(verified.returncode, 0, verified.stdout)
                 self.assertFalse(json.loads(verified.stdout)["ok"])
 
-    def test_install_rolls_back_on_replacement_validator_and_smoke_failures(self) -> None:
+    def test_install_rolls_back_on_replacement_and_validator_failures(self) -> None:
         """Any post-journal failure leaving partial live bytes must fail this test."""
-        for failure in ("replace:2", "validators", "smoke"):
+        for failure in ("replace:2", "validators"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
                 home = self.make_home(Path(temporary))
                 originals = {name: (home / name).read_bytes() for name in ("config.toml", "hooks.json", "AGENTS.md")}
@@ -1281,8 +1308,8 @@ class InstallerTests(unittest.TestCase):
                     self.assertEqual((home / name).read_bytes(), data)
                 self.assertFalse((home / "agents" / "sol_reviewer.toml").exists())
 
-    def test_smoke_and_install_fail_when_prompt_or_epoch_observation_is_regressed(self) -> None:
-        """A read-only misclassification or omitted epoch increment must fail installation."""
+    def test_lifecycle_regression_fails_explicit_smoke_without_blocking_routine_install(self) -> None:
+        """Optional lifecycle evaluation must not gate the non-lifecycle package install."""
         mutations = {
             "prompt": ('return "pending", None', 'return "exempt", "automatic: injected regression"'),
             "epoch": (
@@ -1300,11 +1327,16 @@ class InstallerTests(unittest.TestCase):
                 self.assertIn(before, text)
                 gate.write_text(text.replace(before, after, 1), encoding="utf-8")
                 home = self.make_home(root)
-                originals = {path: (home / path).read_bytes() for path in ("config.toml", "hooks.json", "AGENTS.md")}
-                result = self.invoke("install", "--source-root", str(source), "--codex-home", str(home))
-                self.assertNotEqual(result.returncode, 0, result.stdout)
-                for path, data in originals.items():
-                    self.assertEqual((home / path).read_bytes(), data)
+                installed = self.invoke("install", "--source-root", str(source), "--codex-home", str(home))
+                self.assertEqual(installed.returncode, 0, installed.stderr)
+                self.assertIsNone(json.loads(installed.stdout)["handler_contract_smoke"])
+
+                verified = self.invoke("verify", "--source-root", str(source), "--codex-home", str(home))
+                self.assertEqual(verified.returncode, 0, verified.stderr)
+                self.assertTrue(json.loads(verified.stdout)["ok"])
+
+                explicit_smoke = self.invoke("smoke", "--source-root", str(source), "--codex-home", str(home))
+                self.assertNotEqual(explicit_smoke.returncode, 0, explicit_smoke.stdout)
 
     def test_next_install_recovers_an_interrupted_journal_before_applying(self) -> None:
         """Ignoring a prepared/applying recovery journal must fail this test."""
