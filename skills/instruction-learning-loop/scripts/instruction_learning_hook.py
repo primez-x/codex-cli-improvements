@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import sys
@@ -21,12 +22,25 @@ LOG_PATH_NAME = "hooks/instruction_learning_hook.log"
 MAX_LOG_BYTES = 64 * 1024
 MAX_LOG_LINES = 400
 STATE_TTL_SECONDS = 6 * 60 * 60
-ADDITIONAL_CONTEXT_PREFIX = (
-    "Review this as a possible durable instruction-system improvement. "
-    "Use $instruction-learning-loop to classify it; do not infer write authority. "
-    "Include a standalone disposition line: "
-    "`Instruction learning:` ..."
+ACTION_CONTEXT = (
+    "This prompt contains behavioral guidance or an instruction-system correction. "
+    "Use $instruction-learning-loop to form the smallest durable proposal and send it to an independent "
+    "sol_advisor. If approved, implement it in the applicable user-owned AGENTS.md, skill, hook, agent "
+    "direction, or config surface and verify it before finishing. If rejected, revise or replace the proposal "
+    "from the advisor's rationale and resubmit it until a valid narrow change is approved. "
+    "A proposal alone is not completion."
 )
+READ_ONLY_CONTEXT = (
+    "This prompt may contain behavioral guidance or an instruction-system correction, but the user explicitly "
+    "made the task read-only. Use $instruction-learning-loop only to classify and report the possible durable "
+    "improvement. Do not mutate instruction files or other user state."
+)
+READ_ONLY_PHRASES = (
+    "read-only", "read only", "keep this read-only", "keep this read only",
+    "do not change files", "don't change files", "do not edit files", "don't edit files",
+    "proposal only", "review only",
+)
+ONE_OFF_PHRASES = ("for this task only", "this time only", "just this once", "one-off")
 
 
 def get_codex_home() -> Path:
@@ -81,7 +95,7 @@ def has_sentinel(text: str) -> bool:
 
 def is_durable_correction_prompt(text: str) -> bool:
     low = (text or "").lower()
-    if not low.strip() or has_sentinel(low):
+    if not low.strip() or has_sentinel(low) or any(phrase in low for phrase in ONE_OFF_PHRASES):
         return False
 
     explicit_targets = [
@@ -147,9 +161,121 @@ def is_durable_correction_prompt(text: str) -> bool:
     if has_target and has_verb:
         return True
 
+    redirect_patterns = [
+        r"\bstop\s+(?:asking|handing|making|telling|requiring)\b",
+        r"\b(?:do not|don't|never)\s+(?:ask|hand|make|tell|require)\b",
+        r"\bdo (?:it|that|the .*?) yourself\b",
+    ]
+    if any(re.search(pattern, low) for pattern in redirect_patterns):
+        return True
+
     has_recurrence = any(phrase in low for phrase in recurrence_phrases)
     has_failure = any(signal in low for signal in failure_signals)
     return has_recurrence and has_failure
+
+
+def explicitly_read_only(text: str) -> bool:
+    low = (text or "").lower()
+    if re.search(
+        r"\b(?:do not|don't|never)\s+(?:change|edit|update|modify)\s+"
+        r"(?:the\s+)?(?:agents?\.md|skills?\b|hooks?\b|config(?:\.toml)?\b|instructions?\b)",
+        low,
+    ):
+        return True
+    if re.search(
+        r"\bno\s+(?:changes|edits)\s+(?:to|in)\s+"
+        r"(?:the\s+)?(?:agents?\.md|skills?\b|hooks?\b|config(?:\.toml)?\b|instructions?\b)",
+        low,
+    ):
+        return True
+    if re.fullmatch(r"\s*(?:please\s+)?(?:make\s+)?no\s+(?:changes|edits)[.!]?\s*", low):
+        return True
+    return any(phrase in low for phrase in READ_ONLY_PHRASES)
+
+
+def has_explicit_instruction_action(text: str) -> bool:
+    low = (text or "").lower()
+    return re.search(
+        r"\b(?:update|improve|fix|tighten|revise|adjust|edit|change|correct|harden|consolidate|simplify|refactor)\s+"
+        r"(?:the\s+)?(?:global\s+|local\s+|project\s+|nested\s+)?"
+        r"(?:agents?\.md|skills?\b|hooks?\b|config(?:\.toml)?\b|agent direction\b|instruction(?: system|-system|s)?\b)",
+        low,
+    ) is not None
+
+
+def requires_instruction_change(text: str) -> bool:
+    if not is_durable_correction_prompt(text) or explicitly_read_only(text):
+        return False
+    if has_explicit_instruction_action(text):
+        return True
+    review_intent = re.match(
+        r"\s*(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+)*"
+        r"(?:review|explain|classify|assess|analy[sz]e|summarize|inspect)\b",
+        text or "",
+        re.IGNORECASE,
+    )
+    return review_intent is None
+
+
+def instruction_files(home: Path, project_root: Optional[Path] = None) -> Iterable[Path]:
+    seen = set()
+
+    def emit(path: Path) -> Iterable[Path]:
+        try:
+            resolved = path.resolve(strict=True)
+        except (OSError, RuntimeError):
+            return
+        key = os.path.normcase(str(resolved))
+        if resolved.is_file() and key not in seen and is_safe_path(resolved):
+            seen.add(key)
+            yield resolved
+
+    direct = (home / "AGENTS.md", home / "config.toml", home / "hooks.json")
+    for path in direct:
+        yield from emit(path)
+    roots = (home / "agents", home / "skills")
+    allowed_names = {"AGENTS.md", "SKILL.md"}
+    allowed_suffixes = {".py", ".toml", ".yaml", ".yml", ".json"}
+    for root in roots:
+        if not root.is_dir() or not is_safe_path(root):
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and (path.name in allowed_names or path.suffix.lower() in allowed_suffixes):
+                yield from emit(path)
+
+    if project_root is None or not project_root.is_dir() or not is_safe_path(project_root):
+        return
+    cursor = project_root
+    while True:
+        yield from emit(cursor / "AGENTS.md")
+        if cursor.parent == cursor:
+            break
+        cursor = cursor.parent
+    for path in project_root.rglob("AGENTS.md"):
+        yield from emit(path)
+    project_skills = project_root / ".agents" / "skills"
+    if project_skills.is_dir() and is_safe_path(project_skills):
+        for path in project_skills.rglob("SKILL.md"):
+            yield from emit(path)
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def instruction_snapshot(home: Path, project_root: Optional[Path] = None) -> Dict[str, str]:
+    snapshot: Dict[str, str] = {}
+    for path in instruction_files(home, project_root):
+        try:
+            key = os.path.normcase(str(path.resolve(strict=True)))
+            snapshot[key] = file_sha256(path)
+        except (OSError, RuntimeError):
+            continue
+    return snapshot
 
 
 def is_safe_path(path: Path) -> bool:
@@ -276,7 +402,9 @@ def find_stale_or_exact_state(home: Path, session_id: str, turn_id: Optional[str
     return matches[0]
 
 
-def state_payload(event: str, payload: Dict[str, Any], turn_id: Optional[str] = None) -> Dict[str, Any]:
+def state_payload(event: str, payload: Dict[str, Any], turn_id: Optional[str] = None,
+                  requires_change: bool = False, baseline: Optional[Dict[str, str]] = None,
+                  project_root: Optional[Path] = None) -> Dict[str, Any]:
     return {
         "event": event,
         "session_id": extract_first(payload, ["session_id", "sessionId", "session"]),
@@ -285,6 +413,9 @@ def state_payload(event: str, payload: Dict[str, Any], turn_id: Optional[str] = 
         "hook_event": extract_first(payload, ["hook_event_name", "event", "type"]),
         "created_unix": now_unix(),
         "stop_hook_active": bool(payload.get("stop_hook_active")),
+        "requires_change": requires_change,
+        "instruction_baseline": baseline or {},
+        "project_root": str(project_root) if project_root else None,
     }
 
 
@@ -327,12 +458,8 @@ def log_entry(event: str, payload: Dict[str, Any], result: Dict[str, Any], codex
         return
 
 
-def build_context() -> str:
-    return (
-        f"{ADDITIONAL_CONTEXT_PREFIX}\n"
-        "Use the exact standalone line format:\n"
-        "Instruction learning: <scope, evidence, rationale, next step>"
-    )
+def build_context(requires_change: bool = True) -> str:
+    return ACTION_CONTEXT if requires_change else READ_ONLY_CONTEXT
 
 
 def userprompt_submit(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -343,8 +470,18 @@ def userprompt_submit(payload: Dict[str, Any]) -> Dict[str, Any]:
     session = extract_first(payload, ["session_id", "sessionId", "session"]) or "unknown"
     turn = extract_first(payload, ["turn_id", "turnId", "turn"]) or now_ts().replace(":", "-")
     home = get_codex_home()
+    cwd = extract_first(payload, ["cwd", "working_directory", "workdir"])
+    project_root = Path(cwd).resolve() if cwd else None
+    if project_root is not None and (not project_root.is_dir() or not is_safe_path(project_root)):
+        project_root = None
     path = state_filename(session, turn, home)
-    state = state_payload("UserPromptSubmit", payload, turn_id=turn)
+    needs_change = requires_instruction_change(prompt)
+    state = state_payload(
+        "UserPromptSubmit", payload, turn_id=turn,
+        requires_change=needs_change,
+        baseline=instruction_snapshot(home, project_root) if needs_change else {},
+        project_root=project_root,
+    )
     if not write_state_atomic(path, state):
         return {}
     log_entry("UserPromptSubmit", payload, {"state": path.name, "status": "stored"}, home)
@@ -352,7 +489,7 @@ def userprompt_submit(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": build_context(),
+            "additionalContext": build_context(needs_change),
         }
     }
 
@@ -372,14 +509,6 @@ def last_assistant_message(payload: Dict[str, Any]) -> str:
     return ""
 
 
-def has_disposition_marker(text: str) -> bool:
-    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
-    return any(
-        re.fullmatch(r"instruction learning:\s*\S.*", line, re.IGNORECASE)
-        for line in lines
-    )
-
-
 def stop_hook(payload: Dict[str, Any]) -> Dict[str, Any]:
     if payload.get("stop_hook_active"):
         return {}
@@ -391,21 +520,31 @@ def stop_hook(payload: Dict[str, Any]) -> Dict[str, Any]:
     if state_path is None:
         return {}
 
-    delete_state(state_path)
-    marker_present = has_disposition_marker(last_assistant_message(payload))
-    if marker_present:
-        log_entry("Stop", payload, {"state": state_path.name, "decision": "allow"}, home)
+    state = read_state(state_path) or {}
+    requires_change = bool(state.get("requires_change"))
+    baseline = state.get("instruction_baseline")
+    raw_project_root = state.get("project_root")
+    project_root = Path(raw_project_root) if isinstance(raw_project_root, str) and raw_project_root else None
+    changed = not requires_change or (
+        isinstance(baseline, dict) and instruction_snapshot(home, project_root) != baseline
+    )
+    if changed:
+        delete_state(state_path)
+        log_entry(
+            "Stop", payload,
+            {"state": state_path.name, "decision": "allow", "instruction_changed": requires_change}, home,
+        )
         return {}
 
     log_entry(
         "Stop",
         payload,
-        {"state": state_path.name, "decision": "block"},
+        {"state": state_path.name, "decision": "block", "instruction_changed": False},
         home,
     )
     return {
         "decision": "block",
-        "reason": "[instruction-learning-hook] Include the required final marker before stop proceeds.",
+        "reason": "[instruction-learning-hook] This actionable correction has not changed an instruction file. Obtain independent advisor review, revise any rejected proposal, then implement and verify the approved durable change; a proposal or claimed rejection alone is not completion.",
     }
 
 
