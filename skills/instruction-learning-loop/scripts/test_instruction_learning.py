@@ -51,12 +51,17 @@ class HookTests(unittest.TestCase):
         self.assertEqual(result["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
         context = result["hookSpecificOutput"]["additionalContext"]
         self.assertIn("$instruction-learning-loop", context)
-        self.assertIn("Instruction learning:", context)
+        self.assertIn("implement", context.lower())
+        self.assertNotIn("Instruction learning:", context)
+        self.assertIn("revise", context.lower())
+        self.assertIn("resubmit", context.lower())
 
         positives = [
             "Please improve this AGENTS.md and this SKILL.md instruction.",
             "The agent keeps returning wrong results and missing validation.",
             "I have to babysit Codex because it has zero autonomy.",
+            "Stop handing routine diagnostics back to me. Use the available tools and do it yourself.",
+            "Don't ask me to perform retries you can perform yourself.",
         ]
         negatives = [
             "Can you use a warm color palette for the UI?\"",
@@ -69,6 +74,40 @@ class HookTests(unittest.TestCase):
             self.assertTrue(hook.is_durable_correction_prompt(text), text)
         for text in negatives:
             self.assertFalse(hook.is_durable_correction_prompt(text), text)
+
+    def test_behavioral_redirect_is_actionable_unless_explicitly_one_off(self):
+        durable = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "behavior-session",
+            "turn_id": "behavior-turn",
+            "prompt": "Stop asking me to click Retry. Use your authenticated browser and diagnose it yourself.",
+        }
+        result = hook.handle(durable)
+        self.assertIn("hookSpecificOutput", result)
+        state = json.loads(hook.state_filename("behavior-session", "behavior-turn", self.home).read_text(encoding="utf-8"))
+        self.assertTrue(state["requires_change"])
+
+        one_off = dict(durable, turn_id="one-off", prompt="For this task only, don't click Retry; wait for me instead.")
+        self.assertEqual(hook.handle(one_off), {})
+
+    def test_authorization_classifier_respects_intent_and_constraint_scope(self):
+        cases = [
+            ("Review the AGENTS.md update I just made.", False),
+            ("Please review the AGENTS.md update I just made.", False),
+            ("Explain why agents keep getting this wrong.", False),
+            ("Can you explain why agents keep getting this wrong?", False),
+            ("Do not change app code; update AGENTS.md to prevent recurrence.", True),
+            ("No changes to app code; update AGENTS.md to prevent recurrence.", True),
+        ]
+        for index, (prompt, expected) in enumerate(cases):
+            payload = {
+                "hook_event_name": "UserPromptSubmit", "session_id": "intent-session",
+                "turn_id": f"intent-{index}", "prompt": prompt,
+            }
+            result = hook.handle(payload)
+            self.assertIn("hookSpecificOutput", result, prompt)
+            state = json.loads(hook.state_filename("intent-session", f"intent-{index}", self.home).read_text(encoding="utf-8"))
+            self.assertEqual(state["requires_change"], expected, prompt)
 
     def test_state_file_schema_and_name_safety(self):
         payload = {
@@ -88,7 +127,7 @@ class HookTests(unittest.TestCase):
         self.assertIn("created_unix", data)
         self.assertNotIn("prompt", data)
 
-    def test_stop_exact_match_deletes_state_and_blocks(self):
+    def test_authorized_correction_cannot_stop_without_instruction_change(self):
         payload_a = {
             "hook_event_name": "UserPromptSubmit",
             "session_id": "session-a",
@@ -103,11 +142,12 @@ class HookTests(unittest.TestCase):
             "hook_event_name": "Stop",
             "session_id": "session-a",
             "turn_id": "turn-1",
-            "last_assistant_message": "No final marker yet.",
+            "last_assistant_message": "Instruction learning: proposed a change.",
         })
         self.assertEqual(block.get("decision"), "block")
         self.assertIn("[instruction-learning-hook]", block.get("reason", ""))
-        self.assertEqual(state.exists(), False)
+        self.assertIn("instruction file", block.get("reason", "").lower())
+        self.assertTrue(state.exists())
 
     def test_stop_fallback_requires_single_fresh_state(self):
         payload = {
@@ -128,7 +168,7 @@ class HookTests(unittest.TestCase):
         # turn_id absent and two fresh states -> no fallback
         self.assertEqual(fallback_block, {})
 
-    def test_stop_exact_match_with_marker(self):
+    def test_authorized_correction_allows_stop_after_real_instruction_change(self):
         payload = {
             "hook_event_name": "UserPromptSubmit",
             "session_id": "session-b",
@@ -136,13 +176,15 @@ class HookTests(unittest.TestCase):
             "prompt": "Please simplify AGENTS.md and improve instructions.",
         }
         hook.handle(payload)
+        (self.home / "AGENTS.md").write_text("durable corrected rule\n", encoding="utf-8")
         allow = hook.handle({
             "hook_event_name": "Stop",
             "session_id": "session-b",
             "turn_id": "turn-2",
-            "last_assistant_message": "Instruction learning: updated docs.",
+            "last_assistant_message": "Updated and verified.",
         })
         self.assertEqual(allow, {})
+        self.assertFalse(hook.state_filename("session-b", "turn-2", self.home).exists())
         # stale cleanup test via old-created state
         stale = hook.state_filename("session-b", "turn-stale", self.home)
         stale.write_text(json.dumps({"created_at": (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()}), encoding="utf-8")
@@ -155,14 +197,98 @@ class HookTests(unittest.TestCase):
         hook.find_stale_or_exact_state(self.home, "session-b", "turn-stale")
         self.assertFalse(stale.exists())
 
-    def test_marker_must_be_a_nonempty_standalone_line(self):
-        self.assertTrue(hook.has_disposition_marker("Instruction learning: proposed only\nMore text"))
-        self.assertFalse(hook.has_disposition_marker("Instruction learning:"))
-        self.assertTrue(hook.has_disposition_marker("Done.\n\nInstruction learning: updated one narrow rule"))
+    def test_metadata_only_and_reverted_changes_do_not_satisfy_gate(self):
+        agents = self.home / "AGENTS.md"
+        agents.write_text("original rule\n", encoding="utf-8")
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "content-session",
+            "turn_id": "content-turn",
+            "prompt": "Please improve AGENTS.md and fix this behavior.",
+        }
+        hook.handle(payload)
+        os.utime(agents, None)
+        touched = hook.handle({
+            "hook_event_name": "Stop", "session_id": "content-session", "turn_id": "content-turn",
+        })
+        self.assertEqual(touched.get("decision"), "block")
+        agents.write_text("temporary rule\n", encoding="utf-8")
+        agents.write_text("original rule\n", encoding="utf-8")
+        reverted = hook.handle({
+            "hook_event_name": "Stop", "session_id": "content-session", "turn_id": "content-turn",
+        })
+        self.assertEqual(reverted.get("decision"), "block")
 
-    def test_stop_hook_active_pass_through(self):
-        block = hook.handle({"hook_event_name": "Stop", "stop_hook_active": True, "session_id": "s", "turn_id": "1"})
-        self.assertEqual(block, {})
+    def test_nested_project_agents_content_change_satisfies_gate(self):
+        project = self.home / "project"
+        nested = project / "feature" / "AGENTS.md"
+        nested.parent.mkdir(parents=True, exist_ok=True)
+        nested.write_text("old project rule\n", encoding="utf-8")
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "project-session",
+            "turn_id": "project-turn",
+            "cwd": str(project),
+            "prompt": "Please improve AGENTS.md and fix this behavior.",
+        }
+        hook.handle(payload)
+        nested.write_text("new project rule\n", encoding="utf-8")
+        allow = hook.handle({
+            "hook_event_name": "Stop", "session_id": "project-session", "turn_id": "project-turn",
+        })
+        self.assertEqual(allow, {})
+
+    def test_explicit_read_only_review_does_not_require_instruction_change(self):
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "read-only-session",
+            "turn_id": "read-only-turn",
+            "prompt": "Review AGENTS.md for a possible improvement, but keep this read-only and do not change files.",
+        }
+        result = hook.handle(payload)
+        self.assertIn("hookSpecificOutput", result)
+        context = result["hookSpecificOutput"]["additionalContext"].lower()
+        self.assertIn("read-only", context)
+        self.assertNotIn("implement", context)
+        allow = hook.handle({
+            "hook_event_name": "Stop",
+            "session_id": "read-only-session",
+            "turn_id": "read-only-turn",
+            "last_assistant_message": "Review complete; no files changed.",
+        })
+        self.assertEqual(allow, {})
+
+    def test_claimed_advisor_rejection_cannot_bypass_implementation(self):
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "reject-session",
+            "turn_id": "reject-turn",
+            "prompt": "Stop asking me to click Retry. Use your authenticated browser and diagnose it yourself.",
+        }
+        hook.handle(payload)
+        rejected = hook.handle({
+            "hook_event_name": "Stop",
+            "session_id": "reject-session",
+            "turn_id": "reject-turn",
+            "last_assistant_message": (
+                "Instruction proposal rejected: reviewer=/root/instruction_advisor; "
+                "rationale=The proposed rule duplicates an existing enforced rule and would add no behavior."
+            ),
+        })
+        self.assertEqual(rejected.get("decision"), "block")
+        self.assertTrue(hook.state_filename("reject-session", "reject-turn", self.home).exists())
+
+    def test_stop_hook_active_pass_through_preserves_pending_state(self):
+        payload = {
+            "hook_event_name": "UserPromptSubmit", "session_id": "s", "turn_id": "1",
+            "prompt": "Please improve AGENTS.md and fix this behavior.",
+        }
+        hook.handle(payload)
+        state = hook.state_filename("s", "1", self.home)
+        self.assertTrue(state.exists())
+        result = hook.handle({"hook_event_name": "Stop", "stop_hook_active": True, "session_id": "s", "turn_id": "1"})
+        self.assertEqual(result, {})
+        self.assertTrue(state.exists())
 
     def test_log_rotation_enforces_line_and_byte_caps(self):
         path = hook.log_path(self.home)
