@@ -27,9 +27,13 @@ authorize a write.
    - `.codex/skills` skill entrypoint and helpers
 5. remove/replace obsolete text and keep language short
 6. add or verify executable gates (unit tests, audits, or lint rules)
-7. if the advisor rejects the proposal, do not implement that proposal; use its concrete rationale to revise or replace the proposal and resubmit it for review
+7. if the advisor rejects the proposal, do not implement that version; fold valid in-scope findings into a revised or replacement proposal and resubmit it internally until approved, then continue implementation without renewed user approval
 8. if not authorized, report a proposal and risks instead of writing
 9. report the actual changed instruction path and verification; a proposal alone is not completion
+
+Review advice cannot enlarge the user's accepted scope or authority. Reject or
+defer findings that require new scope or authority, and ask the user only when
+that expansion is necessary to complete the requested outcome.
 
 ## Workflow
 
@@ -40,7 +44,7 @@ authorize a write.
    - run `quick_validate.py` for discovered SKILL.md files
 3. have an independent `sol_advisor` approve or reject the evidence-backed proposal
 4. if approved and authorized, patch only the narrowest target surface
-5. if rejected, preserve the current instructions, revise the proposal from the rejection rationale, and repeat review until a valid narrow change is approved
+5. if rejected, preserve the current instructions, revise the proposal from the rejection rationale, and repeat review internally until a valid narrow change is approved; a revise-then-approve verdict is not a user checkpoint
 6. preserve source authority and project conventions; avoid adding preference text
 7. do not mutate if trigger is only personal taste or a one-time workaround
 
@@ -49,9 +53,9 @@ authorize a write.
 `instruction_learning_hook.py` follows the official hook schema and enforces an
 outcome rather than a prose marker:
 
-- on durable behavioral guidance or instruction correction at `UserPromptSubmit`, it snapshots SHA-256 content identities for recognized global and current-project instruction surfaces, records state under `hooks/state/instruction-learning`, and instructs the agent to propose, independently review, then implement and verify the smallest approved durable correction.
+- on durable behavioral guidance or instruction correction at `UserPromptSubmit`, it snapshots SHA-256 content identities for recognized global and current-project instruction surfaces, records state under `hooks/state/instruction-learning`, and instructs the agent to propose, independently review, then implement and verify the smallest approved durable correction without renewed user approval after in-scope revisions.
 - explicit read-only and one-off prompts do not require mutation.
-- on `Stop`, an actionable correction remains blocked until the instruction snapshot proves a real file change; proposals, claimed rejections, and generic completion phrases cannot satisfy the gate.
+- on `Stop`, an actionable correction remains blocked until the instruction snapshot proves a real non-test instruction file change; proposals, test-only edits, claimed rejections, and generic completion phrases cannot satisfy the gate.
 - blocked state is retained across ordinary retries. A `stop_hook_active` continuation passes through without deleting state, as required to prevent recursive Stop-hook loops; the next ordinary Stop re-evaluates the same content gate.
 - ignore hook continuation sentinels in your own loop
 

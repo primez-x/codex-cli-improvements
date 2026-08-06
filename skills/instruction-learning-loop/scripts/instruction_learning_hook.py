@@ -27,7 +27,9 @@ ACTION_CONTEXT = (
     "Use $instruction-learning-loop to form the smallest durable proposal and send it to an independent "
     "sol_advisor. If approved, implement it in the applicable user-owned AGENTS.md, skill, hook, agent "
     "direction, or config surface and verify it before finishing. If rejected, revise or replace the proposal "
-    "from the advisor's rationale and resubmit it until a valid narrow change is approved. "
+    "from the advisor's rationale and resubmit it until a valid narrow change is approved. Treat valid in-scope "
+    "review findings as implementation inputs, continue without renewed user approval, and reject or defer "
+    "findings that require new scope or authority. "
     "A proposal alone is not completion."
 )
 READ_ONLY_CONTEXT = (
@@ -35,12 +37,99 @@ READ_ONLY_CONTEXT = (
     "made the task read-only. Use $instruction-learning-loop only to classify and report the possible durable "
     "improvement. Do not mutate instruction files or other user state."
 )
-READ_ONLY_PHRASES = (
-    "read-only", "read only", "keep this read-only", "keep this read only",
-    "do not change files", "don't change files", "do not edit files", "don't edit files",
-    "proposal only", "review only",
-)
 ONE_OFF_PHRASES = ("for this task only", "this time only", "just this once", "one-off")
+PLAN_DIRECTIVE_RE = re.compile(
+    r"^(?:yes\s*,?\s+)?(?:please\s+)?implement\s+(?:the|this)\s+plan\s*"
+    r"(?:(?P<terminal>[.!])|(?P<colon>:)(?:\s*(?P<body>.*))?)?$",
+    re.IGNORECASE,
+)
+IMMEDIATE_REVERSAL_PREFIX_RE = re.compile(
+    r"^(?:(?P<cancellation>(?:(?:actually|wait)\s*(?:[,;:]|-{1,2}|\N{EM DASH})?\s*)?(?:"
+    r"never\s+mind\b|"
+    r"cancel\s+(?:this\s+)?(?:request|task|plan|work)\b|"
+    r"(?:do\s+not|don't|never)\s+implement\s+(?:this\s+plan|the\s+plan|it)\b"
+    r"))|(?P<restriction>"
+    r"keep\s+this(?:\s+(?:task|request|turn|work))?\s+read[- ]only\b|"
+    r"(?:review|proposal)\s+only\b|"
+    r"(?:do\s+not|don't|never)\s+(?:edit|change|modify)\s+(?:any\s+)?files\b|"
+    r"no\s+(?:code|file|instruction)\s+(?:changes|edits)\b"
+    r"))(?=\s*(?:$|[.,;:!?—–-]|\b(?:because|until|unless|while|before|after|for\s+now|pending)\b))",
+    re.IGNORECASE,
+)
+DIRECTED_ACTION_RE = re.compile(
+    r"(?:(?P<action_boundary>^|[;:]\s*)|(?P<countermand_then>\bthen\s+))"
+    r"(?P<countermand_contrast>(?:(?:but|instead)\s+)?)(?:please\s+)?"
+    r"(?P<action>implement|execute|proceed|continue|"
+    r"resume|update|edit|change|modify|fix|correct|revise|adjust|create|add|remove|"
+    r"write|patch|apply|document|run|validate|test|build|install)\b",
+    re.IGNORECASE,
+)
+SEQUENCED_ACTION_RE = re.compile(
+    r"\b(?:until\s+(?:after\s+)?|unless\s+|while\s+|before\s+|after\s+)"
+    r"(?:please\s+)?(?:(?:you\s+)(?P<finite_action>implement|execute|proceed|continue|resume|"
+    r"update|edit|change|modify|fix|correct|revise|adjust|create|add|remove|write|"
+    r"patch|apply|document|run|validate|test|build|install)|(?P<gerund_action>implementing|"
+    r"executing|proceeding|continuing|resuming|updating|editing|changing|modifying|"
+    r"fixing|correcting|revising|adjusting|creating|adding|removing|writing|"
+    r"patching|applying|documenting|running|validating|testing|building|installing))\b",
+    re.IGNORECASE,
+)
+ACTION_CLAUSE_BOUNDARY_RE = re.compile(r";|\.(?=\s+\S|$)|[!?](?=\s+\S|$)")
+ACTION_CLAUSE_AUXILIARY_RE = re.compile(
+    r"\b(?:am|is|are|was|were|be|been|being|has|have|had)\b",
+    re.IGNORECASE,
+)
+ACTION_CLAUSE_SUBORDINATE_RE = re.compile(
+    r"\s+(?:as|which|who|that|until|unless|when|while|after|before|because)\s+",
+    re.IGNORECASE,
+)
+ACTION_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/\\?=-]*")
+ACTION_RESOURCE_TOKEN_RE = re.compile(
+    r"^(?:[A-Za-z]:[/\\]|https?://|.*\.[A-Za-z0-9]{1,12}(?:[?=].*)?)",
+    re.IGNORECASE,
+)
+AMBIGUOUS_ACTION_FORMS = {
+    "build", "building", "install", "installing", "patch", "patching",
+    "run", "running", "test", "testing", "update", "updating",
+}
+NO_OBJECT_ACTION_FORMS = {"continue", "continuing", "proceed", "proceeding", "resume", "resuming"}
+SINGLE_TOKEN_STATE_FORMS = {
+    "blocked", "broke", "broken", "crashed", "crashes", "failed", "fails",
+    "failing", "finishes", "green", "hangs", "hung", "incomplete", "pending",
+    "red", "stalled", "succeeds",
+}
+AMBIGUOUS_PRESENT_STATE_FORMS = {
+    "abort", "aborts", "complete", "completes", "crash", "crashes", "error",
+    "errors", "fail", "fails", "finish", "finishes", "hang", "hangs", "pass",
+    "passes", "stall", "stalls", "succeed", "succeeds",
+}
+IRREGULAR_STATE_FORMS = {"blocked", "broke", "broken", "down", "hung", "incomplete", "pending", "red", "green"}
+ELLIPTICAL_MODIFIER_FORMS = {
+    "accepted", "approved", "assigned", "described", "discussed", "documented",
+    "expected", "generated", "identified", "listed", "mentioned", "noted",
+    "planned", "proposed", "provided", "reported", "requested", "required",
+    "selected", "specified",
+}
+QUALIFYING_SUFFIX_RE = re.compile(
+    r"^(?:because|until|unless|while|before|after|for\s+now|pending)\b",
+    re.IGNORECASE,
+)
+ACTION_AWARE_QUALIFYING_SUFFIX_RE = re.compile(
+    r"^(?:until|unless|while|before|after)\b",
+    re.IGNORECASE,
+)
+NO_CODE_CHANGES_PREFIX_RE = re.compile(
+    r"^no\s+code\s+(?:changes|edits)\b",
+    re.IGNORECASE,
+)
+INSTRUCTION_ACTION_RE = re.compile(
+    r"\b(?:update|improve|fix|tighten|revise|adjust|edit|change|modify|correct|harden|"
+    r"consolidate|simplify|refactor)\s+"
+    r"(?:the\s+)?(?:global\s+|local\s+|project\s+|nested\s+)?"
+    r"(?:agents?\.md|skills?\b|hooks?\b|config(?:\.toml)?\b|agent direction\b|"
+    r"instruction(?: system|-system|s)?\b)",
+    re.IGNORECASE,
+)
 
 
 def get_codex_home() -> Path:
@@ -93,6 +182,144 @@ def has_sentinel(text: str) -> bool:
     return STATE_SENTINEL.lower() in (text or "").lower()
 
 
+def action_match_is_unambiguous(
+    text: str,
+    match: re.Match[str],
+    *,
+    allow_subordinate: bool = False,
+    require_explicit_countermand: bool = False,
+) -> bool:
+    tail = text[match.end():]
+    boundary = ACTION_CLAUSE_BOUNDARY_RE.search(tail)
+    clause = tail[:boundary.start()] if boundary else tail
+    subordinate = ACTION_CLAUSE_SUBORDINATE_RE.search(clause)
+    explicit_countermand = any(
+        name in match.re.groupindex and bool(match.group(name))
+        for name in ("countermand_then", "countermand_contrast")
+    )
+    if require_explicit_countermand and not explicit_countermand:
+        return False
+    if subordinate and not (allow_subordinate or explicit_countermand):
+        return False
+    main_clause = clause[:subordinate.start()] if subordinate else clause
+    action = next(
+        (match.group(name) for name in ("action", "finite_action", "gerund_action")
+         if name in match.re.groupindex and match.group(name)),
+        "",
+    ).lower()
+    if ACTION_CLAUSE_AUXILIARY_RE.search(main_clause):
+        return False
+    tokens = [token.lower() for token in ACTION_TOKEN_RE.findall(main_clause)]
+    has_determiner = bool(tokens and tokens[0] in {
+        "a", "an", "the", "this", "that", "these", "those", "my", "your", "our", "its",
+    })
+    if has_determiner:
+        tokens = tokens[1:]
+    if not tokens:
+        return action in NO_OBJECT_ACTION_FORMS
+    if len(tokens) == 1:
+        return not (
+            action in AMBIGUOUS_ACTION_FORMS
+            and tokens[0] in SINGLE_TOKEN_STATE_FORMS
+        )
+    if (
+        action in AMBIGUOUS_ACTION_FORMS
+        and not has_determiner
+        and ACTION_RESOURCE_TOKEN_RE.match(tokens[0]) is None
+    ):
+        return False
+    predicate = tokens[-1]
+    if predicate.endswith("ly") and len(tokens) > 2:
+        predicate = tokens[-2]
+    if predicate in ELLIPTICAL_MODIFIER_FORMS:
+        return True
+    if len(tokens) >= 2 and tokens[-2:] == ["timed", "out"]:
+        return False
+    if predicate in IRREGULAR_STATE_FORMS or predicate.endswith("ed"):
+        return False
+    if action in AMBIGUOUS_ACTION_FORMS and predicate in AMBIGUOUS_PRESENT_STATE_FORMS:
+        return False
+    return True
+
+
+def has_unambiguous_action(
+    text: str,
+    pattern: re.Pattern[str],
+    *,
+    allow_subordinate: bool = False,
+    require_explicit_countermand: bool = False,
+) -> bool:
+    return any(
+        action_match_is_unambiguous(
+            text,
+            match,
+            allow_subordinate=allow_subordinate,
+            require_explicit_countermand=require_explicit_countermand,
+        )
+        for match in pattern.finditer(text)
+    )
+
+
+def is_immediate_whole_task_reversal(text: str) -> bool:
+    body = (text or "").strip()
+    match = IMMEDIATE_REVERSAL_PREFIX_RE.match(body)
+    if match is None:
+        return False
+    raw_remainder = body[match.end():].strip()
+    if not raw_remainder or re.fullmatch(r"[.!?]+", raw_remainder):
+        return True
+    separator_match = re.match(r"^(?P<separator>--|[,;:!?—–-])", raw_remainder)
+    separator = separator_match.group("separator") if separator_match else ""
+    remainder = re.sub(r"^[\s,;:!?—–-]+", "", raw_remainder).strip()
+    if not remainder:
+        return True
+    if is_immediate_whole_task_reversal(remainder):
+        return True
+    if QUALIFYING_SUFFIX_RE.match(remainder):
+        sequence_match = SEQUENCED_ACTION_RE.match(remainder)
+        return (
+            ACTION_AWARE_QUALIFYING_SUFFIX_RE.match(remainder) is None
+            or sequence_match is None
+            or not action_match_is_unambiguous(
+                remainder,
+                sequence_match,
+                allow_subordinate=True,
+            )
+        )
+    is_restriction = match.group("restriction") is not None
+    countermand_separators = {",", ":", "!", "?", "-", "--", "–", "—"}
+    allow_subordinate = is_restriction and separator not in countermand_separators
+    require_explicit_countermand = is_restriction and separator in countermand_separators
+    return not (
+        has_unambiguous_action(
+            remainder,
+            DIRECTED_ACTION_RE,
+            allow_subordinate=allow_subordinate,
+            require_explicit_countermand=require_explicit_countermand,
+        )
+        or has_unambiguous_action(
+            remainder,
+            SEQUENCED_ACTION_RE,
+            allow_subordinate=allow_subordinate,
+            require_explicit_countermand=require_explicit_countermand,
+        )
+    )
+
+
+def is_plan_implementation_prompt(text: str) -> bool:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines:
+        return False
+    match = PLAN_DIRECTIVE_RE.fullmatch(lines[0])
+    if match is None:
+        return False
+    inline_body = (match.group("body") or "").strip()
+    body_lines = ([inline_body] if inline_body else []) + lines[1:]
+    if match.group("colon") and not body_lines:
+        return False
+    return not body_lines or not is_immediate_whole_task_reversal(body_lines[0])
+
+
 def is_durable_correction_prompt(text: str) -> bool:
     low = (text or "").lower()
     if not low.strip() or has_sentinel(low) or any(phrase in low for phrase in ONE_OFF_PHRASES):
@@ -127,6 +354,7 @@ def is_durable_correction_prompt(text: str) -> bool:
         "adjust",
         "edit",
         "change",
+        "modify",
         "correct",
         "harden",
     ]
@@ -157,7 +385,7 @@ def is_durable_correction_prompt(text: str) -> bool:
     ]
 
     has_target = any(token in low for token in explicit_targets)
-    has_verb = any(f" {v} " in f" {low} " for v in verbs)
+    has_verb = re.search(rf"\b(?:{'|'.join(map(re.escape, verbs))})\b", low) is not None
     if has_target and has_verb:
         return True
 
@@ -176,31 +404,51 @@ def is_durable_correction_prompt(text: str) -> bool:
 
 def explicitly_read_only(text: str) -> bool:
     low = (text or "").lower()
+    if is_plan_implementation_prompt(text):
+        return False
+    if re.search(
+        r"(?:\bkeep\s+this(?:\s+(?:task|request|turn|work))?\s+read[- ]only\b|"
+        r"\bthis\s+(?:task|request|turn|work)\s+(?:is\s+)?read[- ]only\b)"
+        r"(?=\s*(?:$|[.,;:!?]))",
+        low,
+    ):
+        return True
+    starts = [0] + [match.end() for match in re.finditer(r"[.!?]\s+", low)]
+    for start in starts:
+        candidate = low[start:].lstrip()
+        if not is_immediate_whole_task_reversal(candidate):
+            continue
+        if (
+            NO_CODE_CHANGES_PREFIX_RE.match(candidate)
+            and has_explicit_instruction_action(text)
+        ):
+            continue
+        return True
     if re.search(
         r"\b(?:do not|don't|never)\s+(?:change|edit|update|modify)\s+"
         r"(?:the\s+)?(?:agents?\.md|skills?\b|hooks?\b|config(?:\.toml)?\b|instructions?\b)",
         low,
-    ):
+    ) and not has_explicit_instruction_action(text):
         return True
     if re.search(
         r"\bno\s+(?:changes|edits)\s+(?:to|in)\s+"
         r"(?:the\s+)?(?:agents?\.md|skills?\b|hooks?\b|config(?:\.toml)?\b|instructions?\b)",
         low,
-    ):
+    ) and not has_explicit_instruction_action(text):
         return True
     if re.fullmatch(r"\s*(?:please\s+)?(?:make\s+)?no\s+(?:changes|edits)[.!]?\s*", low):
         return True
-    return any(phrase in low for phrase in READ_ONLY_PHRASES)
+    return False
 
 
 def has_explicit_instruction_action(text: str) -> bool:
     low = (text or "").lower()
-    return re.search(
-        r"\b(?:update|improve|fix|tighten|revise|adjust|edit|change|correct|harden|consolidate|simplify|refactor)\s+"
-        r"(?:the\s+)?(?:global\s+|local\s+|project\s+|nested\s+)?"
-        r"(?:agents?\.md|skills?\b|hooks?\b|config(?:\.toml)?\b|agent direction\b|instruction(?: system|-system|s)?\b)",
-        low,
-    ) is not None
+    for match in INSTRUCTION_ACTION_RE.finditer(low):
+        prefix = low[max(0, match.start() - 20):match.start()]
+        if re.search(r"(?:\bdo\s+not|\bdon't|\bnever)\s+$", prefix):
+            continue
+        return True
+    return False
 
 
 def requires_instruction_change(text: str) -> bool:
@@ -220,7 +468,29 @@ def requires_instruction_change(text: str) -> bool:
 def instruction_files(home: Path, project_root: Optional[Path] = None) -> Iterable[Path]:
     seen = set()
 
-    def emit(path: Path) -> Iterable[Path]:
+    def is_test_or_evaluation_artifact(path: Path, classification_root: Path) -> bool:
+        try:
+            relative = path.relative_to(classification_root)
+        except ValueError:
+            relative = Path(path.name)
+        parts = {part.lower() for part in relative.parts[:-1]}
+        if parts.intersection(
+            {"test", "tests", "fixture", "fixtures", "testdata", "test-data", "evaluation-inputs"}
+        ):
+            return True
+        name = path.name.lower()
+        stem = path.stem.lower()
+        return (
+            name == "conftest.py"
+            or stem.startswith(("test_", "test-", "evaluation_", "evaluation-"))
+            or stem.endswith(("_test", "-test"))
+            or "self_test" in stem
+            or "self-test" in stem
+        )
+
+    def emit(path: Path, classification_root: Path) -> Iterable[Path]:
+        if is_test_or_evaluation_artifact(path, classification_root):
+            return
         try:
             resolved = path.resolve(strict=True)
         except (OSError, RuntimeError):
@@ -232,7 +502,7 @@ def instruction_files(home: Path, project_root: Optional[Path] = None) -> Iterab
 
     direct = (home / "AGENTS.md", home / "config.toml", home / "hooks.json")
     for path in direct:
-        yield from emit(path)
+        yield from emit(path, home)
     roots = (home / "agents", home / "skills")
     allowed_names = {"AGENTS.md", "SKILL.md"}
     allowed_suffixes = {".py", ".toml", ".yaml", ".yml", ".json"}
@@ -241,22 +511,22 @@ def instruction_files(home: Path, project_root: Optional[Path] = None) -> Iterab
             continue
         for path in root.rglob("*"):
             if path.is_file() and (path.name in allowed_names or path.suffix.lower() in allowed_suffixes):
-                yield from emit(path)
+                yield from emit(path, home)
 
     if project_root is None or not project_root.is_dir() or not is_safe_path(project_root):
         return
     cursor = project_root
     while True:
-        yield from emit(cursor / "AGENTS.md")
+        yield from emit(cursor / "AGENTS.md", project_root)
         if cursor.parent == cursor:
             break
         cursor = cursor.parent
     for path in project_root.rglob("AGENTS.md"):
-        yield from emit(path)
+        yield from emit(path, project_root)
     project_skills = project_root / ".agents" / "skills"
     if project_skills.is_dir() and is_safe_path(project_skills):
         for path in project_skills.rglob("SKILL.md"):
-            yield from emit(path)
+            yield from emit(path, project_root)
 
 
 def file_sha256(path: Path) -> str:
@@ -544,7 +814,7 @@ def stop_hook(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     return {
         "decision": "block",
-        "reason": "[instruction-learning-hook] This actionable correction has not changed an instruction file. Obtain independent advisor review, revise any rejected proposal, then implement and verify the approved durable change; a proposal or claimed rejection alone is not completion.",
+        "reason": "[instruction-learning-hook] This actionable correction has not changed an instruction file. Obtain independent advisor review, fold valid in-scope findings into the proposal, revise and resubmit internally, then implement and verify the approved durable change without renewed user approval; a proposal or claimed rejection alone is not completion.",
     }
 
 

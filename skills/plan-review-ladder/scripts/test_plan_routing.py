@@ -141,6 +141,29 @@ class PlanRoutingTests(unittest.TestCase):
         ):
             self.assertIn(phrase, self.combined)
 
+    def test_reusable_instruction_system_review_finishes_before_approval(self) -> None:
+        for phrase in (
+            "reusable instruction",
+            "at least expanded",
+            "instruction-learning-loop",
+            "independent `sol_advisor`",
+            "revise/resubmit internally",
+            "before presenting implementation approval",
+            "concrete smallest proposal",
+            "canonical-to-installed/runtime authority trace",
+            "installer",
+            "registration",
+            "manifest",
+            "drift evidence or explicit n/a",
+            "immutable packet",
+            "final instruction-system plan",
+            "material authority or implementation change",
+            "refresh `sol_advisor` review before sign-off",
+            "already authorized",
+            "never creates renewed user approval",
+        ):
+            self.assertIn(phrase, self.combined)
+
 
 if __name__ == "__main__":
     unittest.main()

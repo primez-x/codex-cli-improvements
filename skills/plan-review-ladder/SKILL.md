@@ -51,6 +51,17 @@ Use the least expensive route that preserves the quality bar:
   explicitly requests adversarial sign-off, or unresolved high-severity risk
   would block implementation.
 
+For any plan that changes or relies on reusable instruction, configuration,
+hook, or skill surfaces:
+
+- Use at least Expanded.
+- **REQUIRED SUB-SKILL:** Use instruction-learning-loop and complete its
+  independent `sol_advisor` proposal review before presenting implementation
+  approval. Revise/resubmit internally until the smallest valid proposal is
+  approved.
+- Count the Expanded Sol stage only when its immutable packet meets the
+  reusable instruction-system authority contract in `review-lenses.md`.
+
 If a required review times out or is unavailable, name the omitted stage and
 confidence limit. Full is complete only when both required Sol stages return.
 
@@ -141,6 +152,12 @@ source-verified owners or documented N/A reasons; compatibility, persistence,
 migration, cleanup, ownership, negative paths, runtime/design-time/generated
 output/documentation/test impacts are covered; and the packet baseline still
 matches or affected stages were refreshed.
+
+For a reusable instruction-system plan, require the final plan and authority
+trace to match the reviewed proposal. Any material authority or implementation
+change must refresh `sol_advisor` review before sign-off. This is an internal
+prerequisite; when execution is already authorized, it never creates renewed
+user approval.
 
 Return:
 

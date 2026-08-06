@@ -46,6 +46,13 @@ class GlobalAutonomyContractTests(unittest.TestCase):
             self.normalized,
         )
         self.assertIn("continue through implementation and verification", self.normalized)
+        self.assertIn("valid in-scope review findings", self.normalized)
+        self.assertIn("without renewed user approval", self.normalized)
+        self.assertIn("new scope or authority", self.normalized)
+
+    def test_leading_plan_acceptance_with_attached_body_authorizes_execution(self) -> None:
+        self.assertIn("leading plan-acceptance directive", self.normalized)
+        self.assertIn("attached plan", self.normalized)
 
     def test_autonomy_preserves_high_impact_authorization_boundaries(self) -> None:
         self.assertIn(
