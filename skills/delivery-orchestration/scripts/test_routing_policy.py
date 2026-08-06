@@ -194,7 +194,7 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertEqual(parsed, expected)
 
     def test_luna_parents_require_metadata_only_roster_delta_contract(self) -> None:
-        _, topology, agents_text = self._read_routing_sources(self.config_path)
+        skill, topology, agents_text = self._read_routing_sources(self.config_path)
         envelope = re.search(r"(?is)```text\s*ROSTER_DELTA_V1\s*(.*?)```", topology)
         self.assertIsNotNone(envelope, "ROSTER_DELTA_V1 envelope is missing")
         fields = [line.split(":", 1)[0].strip() for line in envelope.group(1).strip().splitlines() if ":" in line]
@@ -244,8 +244,12 @@ class RoutingPolicyTests(unittest.TestCase):
             ],
         )
         self.assertIn("direct_return_target", assignment_fields)
+        parent_instructions = {
+            name: self.load_agent(name)["developer_instructions"].lower()
+            for name in ("luna_orchestrator", "luna_worker")
+        }
         for name in ("luna_orchestrator", "luna_worker"):
-            instructions = self.load_agent(name)["developer_instructions"].lower()
+            instructions = parent_instructions[name]
             for phrase in (
                 "roster_delta_v1",
                 "metadata-only",
@@ -264,6 +268,58 @@ class RoutingPolicyTests(unittest.TestCase):
 
         for phrase in ("roster_delta_v1", "direct-parent", "work_return_v1"):
             self.assertIn(phrase, agents_text.lower())
+
+        self.assertIn(
+            "nested luna parents send the root metadata-only `roster_delta_v1` as a separate",
+            skill.lower(),
+        )
+        self.assertIn(
+            "roster_delta_v1 is metadata-only. it is a separate envelope sent directly to",
+            topology.lower(),
+        )
+        self.assertRegex(
+            topology.lower(),
+            r"it carries no work results or\s+ownership",
+        )
+        self.assertIn(
+            "not carried by work_return_v1",
+            topology.lower(),
+        )
+        self.assertIn(
+            "do not alter `work_return_v1` direct-parent routing",
+            parent_instructions["luna_orchestrator"],
+        )
+        self.assertIn(
+            "do not alter `work_return_v1` direct-parent routing",
+            parent_instructions["luna_worker"],
+        )
+        self.assertIn(
+            "carry no work results",
+            parent_instructions["luna_orchestrator"],
+        )
+        self.assertIn(
+            "carry no work results",
+            parent_instructions["luna_worker"],
+        )
+
+        normalised_contract_text = re.sub(
+            r"[`\\s]+",
+            " ",
+            " ".join(
+                (
+                    skill,
+                    topology,
+                    agents_text,
+                    parent_instructions["luna_orchestrator"],
+                    parent_instructions["luna_worker"],
+                )
+            ).lower(),
+        )
+        self.assertNotRegex(
+            normalised_contract_text,
+            r"\broster_delta_v1\b.*?\bthrough\b.*?\bwork_return_v1\b",
+            "ROSTER_DELTA_V1 must remain separate direct-to-root metadata-only signaling and not route through WORK_RETURN_V1.",
+        )
 
     def test_root_and_untyped_subagent_defaults(self) -> None:
         self.assertEqual(self.config["model"], "gpt-5.6-luna")

@@ -91,7 +91,7 @@ are behavioral while `max_depth` is a runtime constraint. The root owns
 routing, final integration/response, Git, external actions, and
 repository-wide generators. Only the depth-0 root dispatches `sol_advisor` at
 high effort for consequential risk triggers.
-Use semantic task names, metadata-only `ROSTER_DELTA_V1` updates through `WORK_RETURN_V1`, and the compact root roster when delegation starts or materially changes.
+Use semantic task names, direct-to-root metadata-only `ROSTER_DELTA_V1` updates separate from direct-parent `WORK_RETURN_V1`, and the compact root roster on material delegation changes.
 
 ## Communication
 

@@ -56,12 +56,14 @@ collisions. Same-agent revisions use `followup_task` with a fresh assignment ID
 and unchanged ownership; authorized model/effort overrides affect only the
 display label. Both work envelopes retain `task_name` and `display_label`.
 
-Nested Luna parents send the root metadata-only `ROSTER_DELTA_V1` after a
-successful spawn and after terminal reconciliation. It has only the canonical
-task path, task name, display label, and active/completed/failed/terminated
-status; it carries no work results, transfers no ownership, and cannot bypass
-direct-parent `WORK_RETURN_V1` routing. The root publishes a compact roster on
-start and material delegation changes; generated aliases are secondary.
+Nested Luna parents send the root metadata-only `ROSTER_DELTA_V1` as a separate
+direct-to-root envelope after a successful spawn and after terminal
+reconciliation. It has only the canonical task path, task name, display label,
+and active/completed/failed/terminated status; it is not carried by
+`WORK_RETURN_V1`, carries no work results or ownership, and leaves work and
+evidence in `WORK_RETURN_V1` direct-parent only.
+The root publishes a compact roster on start and material delegation changes;
+generated aliases are secondary.
 
 An orchestrator makes no edits in an active child scope and integrates only
 after writers are idle and returns are reconciled. A Sol advisor is a

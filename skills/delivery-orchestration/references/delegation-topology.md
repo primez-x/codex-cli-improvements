@@ -107,9 +107,6 @@ background_activity: <processes, ports, jobs, or none>
 remaining_risks: <risks or none>
 ```
 
-Both WORK_ASSIGNMENT_V1 and WORK_RETURN_V1 additionally carry these identity
-fields without changing their existing direct-parent ownership fields:
-
 ```text
 ROSTER_DELTA_V1
 canonical_task_path: </root/...>
@@ -118,10 +115,11 @@ display_label: <D<depth> · <family>/<effort> · <role> · <purpose>>
 status: <active|completed|failed|terminated>
 ```
 
-ROSTER_DELTA_V1 is metadata-only. Nested Luna parents send an active delta
-after a successful spawn and a terminal delta after reconciliation to the
-root; it carries no work results, transfers no ownership, and never bypasses
-direct-parent WORK_RETURN routing. The root publishes a compact roster on
+ROSTER_DELTA_V1 is metadata-only. It is a separate envelope sent directly to
+the root by nested Luna parents as an active delta after a successful spawn and
+as a terminal delta after reconciliation. It carries no work results or
+ownership and is not carried by WORK_RETURN_V1. WORK_RETURN_V1 work and
+evidence remain direct-parent only. The root publishes a compact roster on
 start and material delegation changes. Generated Codex aliases remain
 secondary.
 
