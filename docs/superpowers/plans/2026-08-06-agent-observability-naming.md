@@ -12,7 +12,11 @@
 
 - Human labels use exactly `D<depth> · <family>/<effort> · <role> · <purpose>`.
 - Machine task names use exactly `d<depth>_<profile>_<purpose_slug>` and lowercase ASCII letters, digits, and underscores.
+- Purpose slugs are derived by trim plus Unicode NFKD, lowercase, combining-mark/non-ASCII removal, non-`[a-z0-9]` run replacement with one underscore, underscore collapse, and edge trimming; an empty result is rejected.
 - Depth is computed as parent depth plus one; model, effort, and role come from the actual selected profile.
+- An authorized runtime model/effort override replaces the corresponding human-label value; the machine name retains the registered profile. Untyped/default dispatch is rejected.
+- A live sibling-name collision always blocks a new spawn. A same-agent revision uses `followup_task` on the existing canonical path with a fresh `WORK_ASSIGNMENT_V1` and assignment ID, unchanged ownership, and no implicit random suffix.
+- Nested Luna parents send root metadata-only active and terminal `ROSTER_DELTA_V1` updates without bypassing direct-parent ownership or work returns.
 - Generated Codex aliases may coexist but never replace the semantic identity.
 - No hook, scheduler, persistent registry, custom UI, model-routing change, or new dependency.
 - Keep the canonical full model/effort/depth matrix only in `delegation-topology.md`.
@@ -27,36 +31,34 @@
 
 **Interfaces:**
 - Consumes: existing `AGENTS.md`, topology, delivery skill, README, and parent-capable profile text.
-- Produces: regression assertions for the exact machine and human formats, assignment fields, root roster, and parent enforcement.
+- Produces: structured static contract checks for exact identities, profile/depth/model/effort/role consistency, normalization, collision/reuse, overrides, roster deltas, and parent enforcement.
 
-- [ ] **Step 1: Add the routing-policy failure test**
+- [ ] **Step 1: Add a structured routing-policy validator and red tests**
 
-Add a test shaped as follows, using normalized UTF-8 source reads already established in the suite:
+Extend `setUpClass` with explicit UTF-8 reads for the delivery skill, topology,
+and global `AGENTS.md`. Parse concrete identity rows from the canonical topology
+instead of checking disconnected prose fragments. For each row, parse the task
+name and human label and connect them to:
 
-```python
-def test_spawn_identity_and_roster_contract_is_exact(self) -> None:
-    combined = "\n".join((self.skill, self.topology, self.global_agents))
-    for phrase in (
-        "d<depth>_<profile>_<purpose_slug>",
-        "d<depth> · <family>/<effort> · <role> · <purpose>",
-        "task_name:",
-        "display_label:",
-        "d0 · luna/max · root · delivery integration",
-    ):
-        self.assertIn(phrase, combined.lower())
+- the registered profile named by the task name;
+- that profile's parsed TOML model and effort, including normalized family;
+- the role implied by the registered profile;
+- the profile's legal depth in the canonical adjacency matrix.
 
-    for profile in ("luna_orchestrator", "luna_worker"):
-        instructions = self.load_agent(profile)["developer_instructions"].lower()
-        self.assertIn("task_name", instructions)
-        self.assertIn("display_label", instructions)
-        self.assertIn("parent depth plus one", instructions)
-```
+Use table-driven negative cases for wrong depth, unregistered profile, wrong
+effort, wrong role, and untyped/default dispatch. These are static contract
+checks; the nested runtime smoke remains the behavioral proof.
 
-Use the literal human template with uppercase `D` in a case-sensitive assertion elsewhere in the same test so punctuation remains exact.
+- [ ] **Step 2: Add normalization, reuse, override, and roster-delta tests**
 
-- [ ] **Step 2: Add the repository-facing examples test**
+Add literal cases for punctuation, accented Latin text, non-Latin/empty output,
+duplicate spawn, assignment-ID reuse, same-agent `followup_task` with a fresh
+assignment, and authorized model/effort overrides. Assert that both Luna parent profiles require active and
+terminal metadata-only roster deltas containing `canonical_task_path`,
+`task_name`, `display_label`, and `status`, while retaining direct-parent work
+returns.
 
-Assert that README or the canonical topology includes these exact examples and never duplicates the family in the role:
+Also assert that README or the canonical topology includes these exact examples and never duplicates the family in the role:
 
 ```python
 examples = (
@@ -79,7 +81,8 @@ python -B .\skills\delivery-orchestration\scripts\test_routing_policy.py
 python -B -m unittest tests.test_repository_contract -v
 ```
 
-Expected: both suites fail only on missing naming/roster contract assertions.
+Expected: both suites fail only on missing identity, normalization, roster-delta,
+or parent-enforcement behavior; no fixture/setup `AttributeError` is acceptable.
 
 ### Task 2: Implement the portable naming and roster contract
 
@@ -93,18 +96,33 @@ Expected: both suites fail only on missing naming/roster contract assertions.
 
 **Interfaces:**
 - Consumes: the canonical profile matrix and existing `WORK_ASSIGNMENT_V1` / `WORK_RETURN_V1` envelopes.
-- Produces: `task_name`, `display_label`, and root roster behavior for every legal spawn.
+- Produces: `task_name`, `display_label`, deterministic slug behavior, nested `ROSTER_DELTA_V1`, and root roster behavior for every legal spawn.
 
 - [ ] **Step 1: Extend the assignment and return envelopes**
 
-Add these exact fields to both envelopes in the topology reference:
+Add these exact fields to both work envelopes in the topology reference:
 
 ```text
 task_name: <d<depth>_<profile>_<purpose_slug>>
 display_label: <D<depth> · <family>/<effort> · <role> · <purpose>>
 ```
 
-Document that the direct parent computes depth, resolves model/effort/role from the actual profile, and rejects malformed or conflicting identities before dispatch or integration.
+Add the metadata-only roster envelope:
+
+```text
+ROSTER_DELTA_V1
+canonical_task_path: </root/...>
+task_name: <d<depth>_<profile>_<purpose_slug>>
+display_label: <D<depth> · <family>/<effort> · <role> · <purpose>>
+status: <active|completed|failed|terminated>
+```
+
+Document that the direct parent computes depth, resolves model/effort/role from
+the selected registered profile, applies any authorized runtime model/effort
+override to the human label, and rejects malformed, empty, untyped, colliding,
+or conflicting identities before dispatch or integration. Specify the exact
+normalization algorithm, duplicate-spawn rejection, and same-warm-agent
+`followup_task` rule with a fresh assignment ID and unchanged ownership.
 
 - [ ] **Step 2: Add label derivation and roster behavior to the delivery skill**
 
@@ -115,15 +133,27 @@ d<depth>_<profile>_<purpose_slug>
 D<depth> · <family>/<effort> · <role> · <purpose>
 ```
 
-Require the root to publish the D0 line and refresh the compact roster whenever the active delegation set materially changes.
+Require the root to publish the D0 line and refresh the compact roster whenever
+the active delegation set materially changes. Require nested Luna parents to
+send root a `ROSTER_DELTA_V1` after a successful spawn and again after terminal
+reconciliation. The delta is observability metadata only and cannot carry the
+work return, transfer ownership, or alter direct-parent routing.
 
 - [ ] **Step 3: Bind every spawn-capable parent**
 
-Add role-local instructions to `luna_orchestrator.toml` and `luna_worker.toml` that require each legal child to receive a compliant `task_name`, `display_label`, and `WORK_ASSIGNMENT_V1`, with child depth computed as parent depth plus one.
+Add role-local instructions to `luna_orchestrator.toml` and `luna_worker.toml`
+that require each legal child to receive a compliant `task_name`,
+`display_label`, and `WORK_ASSIGNMENT_V1`, with child depth computed as parent
+depth plus one. Require duplicate-spawn rejection, fresh-assignment follow-up
+checks, and active/terminal root-facing roster deltas while preserving
+direct-parent returns.
 
 - [ ] **Step 4: Keep global and user-facing text compact**
 
-Add one count-free sentence to `AGENTS.md` activating semantic task names and the roster. Add the exact four-line roster example to `README.md`, including:
+Add one count-free sentence to `AGENTS.md` activating semantic task names and
+the roster. Keep README to a compact example plus the canonical-topology link,
+so it does not become a second mapping authority. Include the exact four-line
+roster example, including:
 
 ```text
 D1 · Luna/medium · Worker · Component style reviewer
@@ -185,7 +215,13 @@ D2 · Luna/medium · Worker · Nested label coordinator
 D3 · Spark/xhigh · Scanner · Verify semantic task path
 ```
 
-Use machine task names `d1_luna_orchestrator_agent_label_smoke`, `d2_luna_worker_nested_label_coordinator`, and `d3_spark_scanner_verify_semantic_task_path`. Confirm each returned canonical task path and direct-parent return.
+Use machine task names `d1_luna_orchestrator_agent_label_smoke`,
+`d2_luna_worker_nested_label_coordinator`, and
+`d3_spark_scanner_verify_semantic_task_path`. Confirm each returned canonical
+task path and direct-parent return. Confirm the root first publishes all active
+D1-D3 entries from its own spawn data and nested `ROSTER_DELTA_V1` messages,
+then refreshes the same entries to terminal status without receiving nested
+work results directly.
 
 - [ ] **Step 4: Run final repository verification**
 
