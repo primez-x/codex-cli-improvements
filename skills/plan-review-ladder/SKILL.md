@@ -9,20 +9,23 @@ description: >-
 # Plan Review Ladder
 
 Produce a source-grounded implementation plan without changing product code.
-The Sol Low root owns evidence synthesis, candidate planning, route selection,
+The Luna max root owns evidence synthesis, candidate planning, route selection,
 finding disposition, residual-risk analysis, and the user-facing plan. Read
 [review-lenses.md](references/review-lenses.md) before dispatch or sign-off.
 
 ## Operating Contract
 
-- The configured six-profile matrix is `spark_scanner`, xhigh;
-  `spark_worker`, xhigh; `luna_scanner`, medium; `luna_worker`, max;
-  `sol_worker`, xhigh; and `sol_advisor`, max. Plan review dispatches only the
-  read-only `spark_scanner`, `luna_scanner`, and `sol_advisor` profiles.
+- Plan review dispatches only the read-only `spark_scanner`, `luna_scanner`, and
+  `sol_advisor` profiles. Their efforts are `spark_scanner`, xhigh;
+  `luna_scanner`, low; and `sol_advisor`, high. They are terminal routes:
+  Spark for exact bounded evidence, Luna for broad completeness, and Sol for
+  risk-triggered advice. Delivery workers and orchestrators are not routes.
 - The on-demand `sol_reviewer` delivery-review identity is not a plan-review
   routing profile; packet validation must reject it for this ladder.
 - All descendants remain read-only, operate at depth 1, report directly to the
-  root, and do not spawn.
+  root, and do not spawn. Reviewers are terminal d1; terminal reviewer child
+  count and descendant count exactly `0` are behavioral telemetry, not packet
+  budget fields.
 - Use Spark only for exact low-context evidence. Always dispatch it with
   `fork_turns = "none"` and a self-contained bounded packet with exact anchors,
   expected evidence, and stop conditions. Do not send broad discovery or
@@ -77,7 +80,7 @@ Assemble the smallest sufficient common evidence bundle:
   hashes for material non-Git artifacts, and a domain-authority map covering
   canonical definitions, consumers, persistence, outputs, and alternate paths.
 
-Use Spark only for a tiny exact anchor check. Use Luna Medium for broad or
+Use Spark only for a tiny exact anchor check. Use Luna low for broad or
 context-heavy discovery and independent evidence. Prefer authoritative source
 and executable tests over guides or model claims. Recheck the manifest before
 sign-off; changed material evidence invalidates affected findings.
@@ -111,16 +114,23 @@ candidate, primary coverage categories, the complete Shared Review Packet, and
 non-overlapping questions. It must source-verify requirements, interfaces,
 lifecycle states, cross-layer flow, compatibility, artifacts, and verification.
 
-Every packet freezes integer `deadline_minutes` in `1..45` (default `15`),
-`grace_minutes` in `1..5` (default `3`), a required `reviewer_profile`, and
-`descendant_budget` exactly `0`. The terminal profiles `spark_scanner`,
-`luna_scanner`, and `sol_advisor` are the only planning reviewer profiles.
-Unknown profiles, workers, missing values, or any nonzero descendant budget
-block dispatch.
+Every packet freezes integer `status_check_minutes` in `1..45` (default `15`),
+`unresponsive_grace_minutes` in `1..5` (default `3`), and a required
+`reviewer_profile`. Retired fields are explicitly rejected: reject
+`deadline_minutes`, reject `grace_minutes`, and reject `descendant_budget`.
+Unknown profiles, workers, missing values, or unknown payload keys block dispatch.
 
-On timeout, steer once, wait exactly the frozen grace, then interrupt. Never
-restart an unchanged packet. Reject output without the independently recomputed
-`observed_packet_sha256` matching the frozen packet.
+Elapsed time never terminates healthy work: active tool use, running work with
+evidence, or concrete progress renews indefinitely. Reaching
+`status_check_minutes` causes one status query. Steer once; a progress reply
+renews the interval indefinitely. Interrupt only after that one unanswered
+steer and silence through `unresponsive_grace_minutes`, or demonstrably
+stuck/idle; then
+run the crash/session audit before ownership reclaim. Preserve partial or
+`timed_out` telemetry and confidence/sign-off limits for genuinely
+unresponsive stages. Never automatically restart an unchanged packet. Reject
+output without the independently recomputed `observed_packet_sha256` matching
+the frozen packet.
 
 ## 5. Synthesize And Search For A New Gap
 

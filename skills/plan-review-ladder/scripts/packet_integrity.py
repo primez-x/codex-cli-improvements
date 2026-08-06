@@ -1,4 +1,4 @@
-"""Canonical, immutable review-packet envelopes and stage-budget validation."""
+"""Canonical, immutable review-packet envelopes and stage-liveness validation."""
 
 from __future__ import annotations
 
@@ -11,15 +11,12 @@ from types import MappingProxyType
 from typing import Any
 
 
-DEFAULT_DEADLINE_MINUTES = 15
-DEFAULT_GRACE_MINUTES = 3
-DEFAULT_DESCENDANT_BUDGET = 0
-MIN_DEADLINE_MINUTES = 1
-MAX_DEADLINE_MINUTES = 45
-MIN_GRACE_MINUTES = 1
-MAX_GRACE_MINUTES = 5
-MIN_DESCENDANT_BUDGET = 0
-MAX_DESCENDANT_BUDGET = 0
+DEFAULT_STATUS_CHECK_MINUTES = 15
+DEFAULT_UNRESPONSIVE_GRACE_MINUTES = 3
+MIN_STATUS_CHECK_MINUTES = 1
+MAX_STATUS_CHECK_MINUTES = 45
+MIN_UNRESPONSIVE_GRACE_MINUTES = 1
+MAX_UNRESPONSIVE_GRACE_MINUTES = 5
 TERMINAL_PROFILES = frozenset({"spark_scanner", "luna_scanner", "sol_advisor"})
 # The adversarial gate's sol_reviewer identity is not a plan-review route.
 REJECTED_PROFILES = frozenset({"sol_reviewer"})
@@ -34,10 +31,11 @@ _REQUIRED_PAYLOAD_FIELDS = (
     "candidate",
     "reviewer_lens",
     "reviewer_profile",
-    "deadline_minutes",
-    "grace_minutes",
-    "descendant_budget",
+    "status_check_minutes",
+    "unresponsive_grace_minutes",
 )
+_RETIRED_PAYLOAD_FIELDS = frozenset({"deadline_minutes", "grace_minutes", "descendant_budget"})
+_ALLOWED_PAYLOAD_FIELDS = frozenset(_REQUIRED_PAYLOAD_FIELDS)
 
 
 class _FrozenDict(dict[str, Any]):
@@ -108,15 +106,14 @@ def _validate_integer(name: str, value: Any, lower: int, upper: int) -> int:
     return value
 
 
-def validate_budgets(
-    deadline_minutes: Any = _MISSING,
-    grace_minutes: Any = _MISSING,
-    descendant_budget: Any = _MISSING,
+def validate_liveness(
+    status_check_minutes: Any = _MISSING,
+    unresponsive_grace_minutes: Any = _MISSING,
     *,
     reviewer_profile: Any = _MISSING,
     use_defaults: bool = True,
 ) -> dict[str, int]:
-    """Validate finite budgets against the dispatcher's reviewer profile."""
+    """Validate finite liveness intervals against the dispatcher's profile."""
 
     if reviewer_profile is _MISSING:
         raise ValueError("reviewer_profile is required before dispatch")
@@ -124,35 +121,29 @@ def validate_budgets(
         raise ValueError(f"{reviewer_profile} is not a plan-review routing profile")
     if not isinstance(reviewer_profile, str) or reviewer_profile not in ALLOWED_PROFILES:
         raise ValueError(f"reviewer_profile is not an allowed planning profile: {reviewer_profile!r}")
-    if deadline_minutes is _MISSING:
+    if status_check_minutes is _MISSING:
         if not use_defaults:
-            raise ValueError("deadline_minutes is required before dispatch")
-        deadline_minutes = DEFAULT_DEADLINE_MINUTES
-    if grace_minutes is _MISSING:
+            raise ValueError("status_check_minutes is required before dispatch")
+        status_check_minutes = DEFAULT_STATUS_CHECK_MINUTES
+    if unresponsive_grace_minutes is _MISSING:
         if not use_defaults:
-            raise ValueError("grace_minutes is required before dispatch")
-        grace_minutes = DEFAULT_GRACE_MINUTES
-    if descendant_budget is _MISSING:
-        if not use_defaults:
-            raise ValueError("descendant_budget is required before dispatch")
-        descendant_budget = DEFAULT_DESCENDANT_BUDGET
-    budgets = {
-        "deadline_minutes": _validate_integer(
-            "deadline_minutes", deadline_minutes, MIN_DEADLINE_MINUTES, MAX_DEADLINE_MINUTES
+            raise ValueError("unresponsive_grace_minutes is required before dispatch")
+        unresponsive_grace_minutes = DEFAULT_UNRESPONSIVE_GRACE_MINUTES
+    intervals = {
+        "status_check_minutes": _validate_integer(
+            "status_check_minutes",
+            status_check_minutes,
+            MIN_STATUS_CHECK_MINUTES,
+            MAX_STATUS_CHECK_MINUTES,
         ),
-        "grace_minutes": _validate_integer(
-            "grace_minutes", grace_minutes, MIN_GRACE_MINUTES, MAX_GRACE_MINUTES
-        ),
-        "descendant_budget": _validate_integer(
-            "descendant_budget",
-            descendant_budget,
-            MIN_DESCENDANT_BUDGET,
-            MAX_DESCENDANT_BUDGET,
+        "unresponsive_grace_minutes": _validate_integer(
+            "unresponsive_grace_minutes",
+            unresponsive_grace_minutes,
+            MIN_UNRESPONSIVE_GRACE_MINUTES,
+            MAX_UNRESPONSIVE_GRACE_MINUTES,
         ),
     }
-    if budgets["descendant_budget"] != 0:
-        raise ValueError(f"{reviewer_profile} requires descendant_budget exactly 0")
-    return budgets
+    return intervals
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -188,8 +179,14 @@ def _validate_payload(packet_payload: Mapping[str, Any], *, apply_defaults: bool
     if not isinstance(packet_payload, Mapping):
         raise ValueError("packet_payload must be a mapping")
     payload = copy.deepcopy(dict(packet_payload))
+    retired = set(payload).intersection(_RETIRED_PAYLOAD_FIELDS)
+    if retired:
+        raise ValueError(f"retired packet fields are rejected: {', '.join(sorted(retired))}")
     if "packet_sha256" in payload:
         raise ValueError("packet_sha256 belongs to the envelope, not packet_payload")
+    unknown = set(payload).difference(_ALLOWED_PAYLOAD_FIELDS)
+    if unknown:
+        raise ValueError(f"packet_payload contains unknown fields: {', '.join(sorted(unknown))}")
     for field in _REQUIRED_PAYLOAD_FIELDS[:5]:
         if field not in payload:
             raise ValueError(f"packet_payload is missing {field}")
@@ -200,10 +197,9 @@ def _validate_payload(packet_payload: Mapping[str, Any], *, apply_defaults: bool
     if "reviewer_profile" not in payload:
         raise ValueError("packet_payload is missing reviewer_profile")
     payload.update(
-        validate_budgets(
-            payload.get("deadline_minutes", _MISSING),
-            payload.get("grace_minutes", _MISSING),
-            payload.get("descendant_budget", _MISSING),
+        validate_liveness(
+            payload.get("status_check_minutes", _MISSING),
+            payload.get("unresponsive_grace_minutes", _MISSING),
             reviewer_profile=payload["reviewer_profile"],
             use_defaults=apply_defaults,
         )

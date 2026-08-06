@@ -1,11 +1,11 @@
-model = "gpt-5.6-sol"
-model_reasoning_effort = "low"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "max"
 
 [agents]
-max_concurrent_threads_per_session = 4
-max_depth = 1
+max_concurrent_threads_per_session = 64
+max_depth = 3
 default_subagent_model = "gpt-5.6-luna"
-default_subagent_reasoning_effort = "max"
+default_subagent_reasoning_effort = "medium"
 
 [agents.spark_scanner]
 description = "Instant terminal read-only leaf for tiny exact checks from bounded self-contained packets."
@@ -16,19 +16,23 @@ description = "Instant terminal writer for small mechanical edits with focused v
 config_file = "./agents/spark_worker.toml"
 
 [agents.luna_scanner]
-description = "Medium-effort read-only leaf for broad discovery and context-heavy evidence work."
+description = "Low-effort read-only leaf for broad discovery and context-heavy evidence work."
 config_file = "./agents/luna_scanner.toml"
 
 [agents.luna_worker]
-description = "Max-effort default implementation leaf for substantial routine delivery work."
+description = "Medium-effort default implementation worker for routine delivery or bounded sub-orchestration."
 config_file = "./agents/luna_worker.toml"
 
+[agents.luna_orchestrator]
+description = "Max-effort bounded multi-area orchestrator for coordinated depth-2 delivery."
+config_file = "./agents/luna_orchestrator.toml"
+
 [agents.sol_worker]
-description = "Deep terminal implementation or diagnosis agent for a genuinely difficult, ambiguous, security-sensitive, or cross-layer depth-1 task that justifies Sol xhigh."
+description = "Deep terminal implementation or diagnosis agent for a genuinely difficult, ambiguous, security-sensitive, or cross-layer depth-1 task that justifies Sol high."
 config_file = "./agents/sol_worker.toml"
 
 [agents.sol_advisor]
-description = "Max-effort terminal adversarial advisor for rare consequential architecture, plans, decisions, or diffs."
+description = "High-effort terminal adversarial advisor for rare consequential architecture, plans, decisions, or diffs."
 config_file = "./agents/sol_advisor.toml"
 
 [agents.sol_reviewer]

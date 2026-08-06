@@ -4,14 +4,15 @@ import copy
 import unittest
 
 from packet_integrity import (
-    DEFAULT_DEADLINE_MINUTES,
-    DEFAULT_GRACE_MINUTES,
     build_packet_envelope,
     canonical_bytes,
     compute_packet_sha256,
     compute_raw_sha256,
     verify_packet_envelope,
 )
+
+DEFAULT_STATUS_CHECK_MINUTES = 15
+DEFAULT_UNRESPONSIVE_GRACE_MINUTES = 3
 
 
 class PacketIntegrityTests(unittest.TestCase):
@@ -29,9 +30,8 @@ class PacketIntegrityTests(unittest.TestCase):
             "candidate": {"route": "Standard", "steps": ["inspect"]},
             "reviewer_lens": "luna-contract-completeness",
             "reviewer_profile": "luna_scanner",
-            "deadline_minutes": 10,
-            "grace_minutes": 2,
-            "descendant_budget": 0,
+            "status_check_minutes": 10,
+            "unresponsive_grace_minutes": 2,
         }
 
     def test_canonical_bytes_sort_nested_keys_without_insignificant_whitespace(self) -> None:
@@ -45,7 +45,7 @@ class PacketIntegrityTests(unittest.TestCase):
         envelope = build_packet_envelope(self.payload)
         self.assertEqual(envelope["packet_sha256"], compute_packet_sha256(self.payload))
         self.assertEqual(envelope["packet_sha256"], envelope["packet_sha256"].lower())
-        self.assertEqual(envelope["packet_payload"]["deadline_minutes"], 10)
+        self.assertEqual(envelope["packet_payload"]["status_check_minutes"], 10)
         with self.assertRaises(TypeError):
             envelope["packet_sha256"] = "0" * 64
         with self.assertRaises(TypeError):
@@ -62,14 +62,16 @@ class PacketIntegrityTests(unittest.TestCase):
 
     def test_defaults_are_frozen_when_budget_values_are_omitted_at_build(self) -> None:
         payload = copy.deepcopy(self.payload)
-        del payload["deadline_minutes"]
-        del payload["grace_minutes"]
+        del payload["status_check_minutes"]
+        del payload["unresponsive_grace_minutes"]
         envelope = build_packet_envelope(payload)
+        self.assertIn("status_check_minutes", envelope["packet_payload"])
+        self.assertIn("unresponsive_grace_minutes", envelope["packet_payload"])
         self.assertEqual(
-            envelope["packet_payload"]["deadline_minutes"], DEFAULT_DEADLINE_MINUTES
+            envelope["packet_payload"]["status_check_minutes"], DEFAULT_STATUS_CHECK_MINUTES
         )
         self.assertEqual(
-            envelope["packet_payload"]["grace_minutes"], DEFAULT_GRACE_MINUTES
+            envelope["packet_payload"]["unresponsive_grace_minutes"], DEFAULT_UNRESPONSIVE_GRACE_MINUTES
         )
 
     def test_mutation_after_hash_is_rejected(self) -> None:
@@ -98,7 +100,7 @@ class PacketIntegrityTests(unittest.TestCase):
         )
 
     def test_missing_or_invalid_budgets_are_rejected_before_dispatch(self) -> None:
-        for field in ("deadline_minutes", "grace_minutes", "descendant_budget"):
+        for field in ("status_check_minutes", "unresponsive_grace_minutes"):
             payload = copy.deepcopy(self.payload)
             del payload[field]
             envelope = {
@@ -108,20 +110,18 @@ class PacketIntegrityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify_packet_envelope(envelope)
         for field, value in (
-            ("deadline_minutes", 0),
-            ("deadline_minutes", 46),
-            ("grace_minutes", 0),
-            ("grace_minutes", 6),
-            ("descendant_budget", -1),
-            ("descendant_budget", 3),
-            ("deadline_minutes", True),
+            ("status_check_minutes", 0),
+            ("status_check_minutes", 46),
+            ("unresponsive_grace_minutes", 0),
+            ("unresponsive_grace_minutes", 6),
+            ("status_check_minutes", True),
         ):
             payload = copy.deepcopy(self.payload)
             payload[field] = value
             with self.assertRaises(ValueError):
                 build_packet_envelope(payload)
 
-    def test_all_supported_profiles_are_terminal_and_have_no_descendant_budget(self) -> None:
+    def test_all_supported_profiles_are_terminal(self) -> None:
         supported_profiles = {
             "spark_scanner",
             "luna_scanner",
@@ -130,16 +130,7 @@ class PacketIntegrityTests(unittest.TestCase):
         for profile in supported_profiles:
             payload = copy.deepcopy(self.payload)
             payload["reviewer_profile"] = profile
-            payload["descendant_budget"] = 0
             self.assertIsNotNone(build_packet_envelope(payload))
-        for profile in supported_profiles:
-            for budget in (1, 2):
-                payload = copy.deepcopy(self.payload)
-                payload["reviewer_profile"] = profile
-                payload["descendant_budget"] = budget
-                with self.assertRaises(ValueError):
-                    build_packet_envelope(payload)
-
         for profile in (
             "spark_worker",
             "luna_worker",
@@ -154,11 +145,10 @@ class PacketIntegrityTests(unittest.TestCase):
         ):
             payload = copy.deepcopy(self.payload)
             payload["reviewer_profile"] = profile
-            payload["descendant_budget"] = 0
             with self.assertRaises(ValueError):
                 build_packet_envelope(payload)
 
-    def test_supported_profile_defaults_select_zero_descendant_budget(self) -> None:
+    def test_supported_profile_defaults_select_new_status_budgets(self) -> None:
         for profile in (
             "spark_scanner",
             "luna_scanner",
@@ -166,9 +156,20 @@ class PacketIntegrityTests(unittest.TestCase):
         ):
             payload = copy.deepcopy(self.payload)
             payload["reviewer_profile"] = profile
-            payload.pop("descendant_budget")
+            payload.pop("status_check_minutes")
+            payload.pop("unresponsive_grace_minutes")
             envelope = build_packet_envelope(payload)
-            self.assertEqual(envelope["packet_payload"]["descendant_budget"], 0)
+            self.assertIn("status_check_minutes", envelope["packet_payload"])
+            self.assertIn("unresponsive_grace_minutes", envelope["packet_payload"])
+            self.assertEqual(envelope["packet_payload"]["status_check_minutes"], DEFAULT_STATUS_CHECK_MINUTES)
+            self.assertEqual(envelope["packet_payload"]["unresponsive_grace_minutes"], DEFAULT_UNRESPONSIVE_GRACE_MINUTES)
+
+    def test_retired_budget_fields_are_rejected_explicitly(self) -> None:
+        for field in ("deadline_minutes", "grace_minutes", "descendant_budget"):
+            payload = copy.deepcopy(self.payload)
+            payload[field] = 1
+            with self.assertRaises(ValueError):
+                build_packet_envelope(payload)
 
 
 if __name__ == "__main__":
