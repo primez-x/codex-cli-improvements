@@ -600,5 +600,31 @@ Preserve this unrelated local instruction.
                     self.assertIsNone(re.search(pattern, text))
 
 
+    def test_repository_contract_roster_examples_and_topology_link(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        for label in (
+            "D0 · Luna/max · Root · Delivery integration",
+            "D1 · Luna/medium · Worker · Component style reviewer",
+            "D1 · Spark/xhigh · Scanner · Locate styling contracts",
+            "D2 · Luna/low · Scanner · Trace inherited theme rules",
+        ):
+            self.assertIn(label, readme)
+        self.assertRegex(readme, r"delegation-topology\.md")
+        self.assertNotIn("Luna worker · Luna/medium", readme)
+
+    def test_owned_contract_tests_are_utf8_and_free_of_mojibake(self) -> None:
+        paths = (
+            ROOT / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py",
+            ROOT / "tests" / "test_repository_contract.py",
+        )
+        for path in paths:
+            raw = path.read_bytes()
+            text = raw.decode("utf-8").replace("\r\n", "\n")
+            self.assertNotIn(chr(0xC2), text)
+            with tempfile.TemporaryDirectory() as temporary:
+                roundtrip = Path(temporary) / path.name
+                roundtrip.write_text(text, encoding="utf-8")
+                self.assertEqual(roundtrip.read_text(encoding="utf-8"), text)
+
 if __name__ == "__main__":
     unittest.main()

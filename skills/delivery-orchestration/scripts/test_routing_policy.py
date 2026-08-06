@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
+import unicodedata
 import tomllib
 import unittest
 
@@ -29,6 +31,75 @@ REVIEWER_PROFILE_NAME = "sol_reviewer"
 REVIEWER_PROFILE = ("gpt-5.6-sol", "max")
 
 
+def normalize_task_slug(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    normalized = "".join(
+        char for char in normalized
+        if not unicodedata.combining(char) and ord(char) < 128
+    ).lower()
+    normalized = re.sub(r"[^a-z0-9]+", "_", normalized)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    if not normalized:
+        raise ValueError("purpose must produce a non-empty ASCII slug")
+    return normalized
+
+
+def parse_depth_spec(value: str) -> set[int]:
+    token = value.strip().lower()
+    if "-d" in token:
+        start, end = [part.strip("d") for part in token.split("-", 1)]
+        return set(range(int(start), int(end) + 1))
+    if token.startswith("d"):
+        return {int(token[1:])}
+    if token == "terminal":
+        return set()
+    raise ValueError(token)
+
+
+OBSERVABLE_IDENTITY_EXAMPLES = (
+    {
+        "depth": 0,
+        "display_label": "D0 · Luna/max · Root · Delivery integration",
+        "profile": None,
+        "topology_profile": None,
+        "role": "Root",
+        "purpose": "Delivery integration",
+        "effort": "max",
+        "task_name": None,
+    },
+    {
+        "depth": 1,
+        "display_label": "D1 · Luna/medium · Worker · Component style reviewer",
+        "profile": "luna_worker",
+        "topology_profile": "Luna worker",
+        "role": "Worker",
+        "purpose": "Component style reviewer",
+        "effort": "medium",
+        "task_name": "d1_luna_worker_component_style_reviewer",
+    },
+    {
+        "depth": 1,
+        "display_label": "D1 · Spark/xhigh · Scanner · Locate styling contracts",
+        "profile": "spark_scanner",
+        "topology_profile": "Spark scanner",
+        "role": "Scanner",
+        "purpose": "Locate styling contracts",
+        "effort": "xhigh",
+        "task_name": "d1_spark_scanner_locate_styling_contracts",
+    },
+    {
+        "depth": 2,
+        "display_label": "D2 · Luna/low · Scanner · Trace inherited theme rules",
+        "profile": "luna_scanner",
+        "topology_profile": "Luna scanner",
+        "role": "Scanner",
+        "purpose": "Trace inherited theme rules",
+        "effort": "low",
+        "task_name": "d2_luna_scanner_trace_inherited_theme_rules",
+    },
+)
+
+
 class RoutingPolicyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -36,9 +107,163 @@ class RoutingPolicyTests(unittest.TestCase):
         cls.config = load_toml(cls.config_path)
         cls.agents = cls.config["agents"]
 
+    @staticmethod
+    def _read_routing_sources(config_path: Path) -> tuple[str, str, str]:
+        skill_root = config_path.parent / "skills" / "delivery-orchestration"
+        topology = (
+            skill_root / "references" / "delegation-topology.md"
+        ).read_text(encoding="utf-8")
+        skill = (skill_root / "SKILL.md").read_text(encoding="utf-8")
+        agents = (config_path.parent / "AGENTS.md").read_text(encoding="utf-8")
+        return skill, topology, agents
+
     def load_agent(self, name: str) -> dict:
         relative_path = self.agents[name]["config_file"]
         return load_toml((self.config_path.parent / relative_path).resolve())
+
+    def test_observable_identity_contracts_are_materialized_and_profile_bound(self) -> None:
+        """Validate rows from the canonical structured identity table."""
+        _, topology_text, _ = self._read_routing_sources(self.config_path)
+        table = re.search(r"(?is)\|\s*Task name\s*\|\s*Display label\s*\|\s*Profile\s*\|\s*Allowed depth\s*\|.*?(?=\n\n|\Z)", topology_text)
+        self.assertIsNotNone(table, "canonical structured identity table is missing")
+        rows = {}
+        for line in table.group(0).splitlines()[2:]:
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) >= 4 and cells[0] and not cells[0].startswith("-"):
+                rows[cells[0]] = cells[1:4]
+        for example in OBSERVABLE_IDENTITY_EXAMPLES:
+            if example["task_name"] is None:
+                self.assertIn(example["display_label"], topology_text)
+                self.assertFalse(any(task_name.startswith("d0_") for task_name in rows))
+                self.assertFalse(any(label.startswith("D0 ·") for label, _, _ in rows.values()))
+                continue
+            self.assertIn(example["task_name"], rows)
+            label, profile_name, depth_spec = rows[example["task_name"]]
+            self.assertEqual(label, example["display_label"])
+            self.assertIn(profile_name, self.agents)
+            profile = self.load_agent(profile_name)
+            parts = [part.strip() for part in label.split("·")]
+            expected_model, expected_effort = GENERAL_ROUTING_MATRIX[profile_name]
+            self.assertEqual(profile["model"], expected_model)
+            self.assertEqual(profile["model_reasoning_effort"], expected_effort)
+            self.assertEqual(parts[1].split("/", 1)[0], expected_model.rsplit("-", 1)[-1].title())
+            self.assertEqual(parts[2], profile_name.rsplit("_", 1)[-1].title())
+            self.assertEqual(parts[2], example["role"])
+            self.assertIn(example["depth"], parse_depth_spec(depth_spec))
+            prefix = f"d{example['depth']}_{profile_name}_"
+            self.assertTrue(example["task_name"].startswith(prefix))
+            self.assertEqual(
+                normalize_task_slug(example["purpose"]),
+                example["task_name"][len(prefix):],
+            )
+    def test_observable_label_normalization_contract_examples(self) -> None:
+        slug_cases = (
+            ("Delivery integration", "delivery_integration"),
+            ("Locate styling contracts", "locate_styling_contracts"),
+            ("Component style reviewer", "component_style_reviewer"),
+            ("Trace inherited theme rules", "trace_inherited_theme_rules"),
+            ("Café-style résumé", "cafe_style_resume"),
+            ("  punctuation / spacing!  ", "punctuation_spacing"),
+        )
+        for purpose, expected_slug in slug_cases:
+            with self.subTest(purpose=purpose):
+                self.assertEqual(normalize_task_slug(purpose), expected_slug)
+        for purpose in ("", "   ", "合同"):
+            with self.subTest(purpose=purpose):
+                with self.assertRaises(ValueError):
+                    normalize_task_slug(purpose)
+
+    def test_observable_identity_negative_rows_are_rejected(self) -> None:
+        _, topology, _ = self._read_routing_sources(self.config_path)
+        table = re.search(r"(?is)\|\s*Condition\s*\|\s*Required outcome\s*\|.*?(?=\n\n|\Z)", topology)
+        self.assertIsNotNone(table, "identity decision table is missing")
+        parsed = {}
+        for line in table.group(0).splitlines()[2:]:
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) == 2 and cells[0] and not cells[0].startswith("-"):
+                parsed[cells[0]] = cells[1]
+        expected = {
+            "new_spawn_live_sibling_collision": "reject",
+            "same_agent_followup_fresh_assignment_same_ownership": "accept",
+            "same_agent_followup_reused_assignment_id": "reject",
+            "untyped_or_default_dispatch": "reject",
+            "empty_purpose_slug": "reject",
+            "authorized_model_or_effort_override": "accept_and_show_override_in_display_label",
+            "nested_work_return": "direct_parent_only",
+        }
+        self.assertEqual(parsed, expected)
+
+    def test_luna_parents_require_metadata_only_roster_delta_contract(self) -> None:
+        _, topology, agents_text = self._read_routing_sources(self.config_path)
+        envelope = re.search(r"(?is)```text\s*ROSTER_DELTA_V1\s*(.*?)```", topology)
+        self.assertIsNotNone(envelope, "ROSTER_DELTA_V1 envelope is missing")
+        fields = [line.split(":", 1)[0].strip() for line in envelope.group(1).strip().splitlines() if ":" in line]
+        self.assertEqual(fields, ["canonical_task_path", "task_name", "display_label", "status"])
+        self.assertRegex(envelope.group(1), r"status:\s*<active\|completed\|failed\|terminated>")
+        assignment = re.search(r"(?is)```text\s*WORK_ASSIGNMENT_V1\s*(.*?)```", topology)
+        self.assertIsNotNone(assignment, "WORK_ASSIGNMENT_V1 envelope is missing")
+        assignment_fields = [
+            line.split(":", 1)[0].strip()
+            for line in assignment.group(1).strip().splitlines()
+            if ":" in line
+        ]
+        self.assertEqual(
+            assignment_fields,
+            [
+                "assignment_id",
+                "task_name",
+                "display_label",
+                "owner",
+                "direct_return_target",
+                "owned_paths",
+                "owned_resources",
+                "permitted_actions",
+                "expected_outcome",
+                "checks",
+            ],
+        )
+        return_envelope = re.search(r"(?is)```text\s*WORK_RETURN_V1\s*(.*?)```", topology)
+        self.assertIsNotNone(return_envelope, "WORK_RETURN_V1 envelope is missing")
+        return_fields = [
+            line.split(":", 1)[0].strip()
+            for line in return_envelope.group(1).strip().splitlines()
+            if ":" in line
+        ]
+        self.assertEqual(
+            return_fields,
+            [
+                "assignment_id",
+                "task_name",
+                "display_label",
+                "status",
+                "changed_paths",
+                "changed_resources",
+                "checks",
+                "background_activity",
+                "remaining_risks",
+            ],
+        )
+        self.assertIn("direct_return_target", assignment_fields)
+        for name in ("luna_orchestrator", "luna_worker"):
+            instructions = self.load_agent(name)["developer_instructions"].lower()
+            for phrase in (
+                "roster_delta_v1",
+                "metadata-only",
+                "canonical_task_path",
+                "task_name",
+                "display_label",
+                "direct parent",
+                "direct-parent",
+                "work_return_v1",
+                "active",
+                "terminal",
+                "status",
+            ):
+                self.assertIn(phrase, instructions)
+            self.assertIn("return", instructions)
+
+        for phrase in ("roster_delta_v1", "direct-parent", "work_return_v1"):
+            self.assertIn(phrase, agents_text.lower())
 
     def test_root_and_untyped_subagent_defaults(self) -> None:
         self.assertEqual(self.config["model"], "gpt-5.6-luna")
