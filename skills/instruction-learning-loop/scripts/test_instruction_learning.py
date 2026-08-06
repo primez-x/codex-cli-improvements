@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import io
+import importlib.util
 import json
 import os
 import re
@@ -11,9 +12,160 @@ import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 import audit_instruction_system as audit
 import instruction_learning_hook as hook
+
+
+def load_plan_gap_hook():
+    path = Path(__file__).resolve().parents[3] / "hooks" / "plan_gap_goal_hook.py"
+    spec = importlib.util.spec_from_file_location("plan_gap_goal_hook_under_test", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load plan gap hook from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+plan_gap_hook = load_plan_gap_hook()
+
+
+PLAN_IMPLEMENTATION_ACCEPTED = (
+    "Implement the plan.",
+    "Yes, please implement this plan!",
+    "Implement the plan: update AGENTS.md.",
+    "Implement the plan: No code changes; update AGENTS.md.",
+    "Implement the plan: Review only; implement accepted findings afterward.",
+    "Implement the plan: Review only; review the proposal before updating AGENTS.md.",
+    "Implement the plan: Do not implement this plan before updating AGENTS.md.",
+    "Implement the plan: Do not implement this plan until after applying the approved correction.",
+    "Implement the plan: Review only before running the installer.",
+    "Implement the plan: No code changes before validating the hook.",
+    "Implement the plan: No code changes before testing the hook.",
+    "Implement the plan: Do not implement this plan until after building the package.",
+    "Implement the plan: Review only; build the package afterward.",
+    "Implement the plan: No code changes, but update AGENTS.md.",
+    "Implement the plan: Review only, but build the package.",
+    "Implement the plan: Do not implement this plan before you update AGENTS.md.",
+    "Implement the plan: No code changes; instead update AGENTS.md.",
+    "Implement the plan: Review only; then test the hook.",
+    "Implement the plan: Review only; build the package. Tests are green.",
+    "Implement the plan: No code changes, but update AGENTS.md. Validation is complete.",
+    "Implement the plan: Review only; run tests until they pass.",
+    "Implement the plan: Review only; fix tests that are failing.",
+    "Implement the plan: Review only; document the errors.",
+    "Implement the plan: Review only; fix the crashes.",
+    "Implement the plan: No code changes; update the feed.",
+    "Implement the plan: Review only; implement changes requested.",
+    "Implement the plan: No code changes; update AGENTS.md as discussed.",
+    "Implement the plan: Review only; build package.",
+    "Implement the plan: Review only; run test.",
+    "Implement the plan: Review only; update process that failed.",
+    "Implement the plan: Review only; run tests that failed.",
+    "Implement the plan: Never mind, but update process because it failed.",
+    "Implement the plan: Never mind, then update process because it failed.",
+    "Implement the plan: Review only: but update process because it failed.",
+    "Implement the plan: Proposal only: then update process.",
+    "Implement the plan: Proposal only! But update process because it failed.",
+    "Implement the plan: Review only? Then build the package.",
+    "Implement the plan: Review only -- but build the package.",
+    "Implement the plan: Keep this task read-only -- then update AGENTS.md.",
+    "Implement the plan: Review only — but build the package.",
+    "Implement the plan: Proposal only – then update AGENTS.md.",
+    (
+        "PLEASE IMPLEMENT THIS PLAN:\n"
+        "# Agent hierarchy\n"
+        "Use a read-only reviewer.\n"
+        "`Do not implement this plan` is a parser test.\n"
+        "Do not modify hooks; update AGENTS.md."
+    ),
+    (
+        "Please implement this plan:\n"
+        "Do not implement the original hierarchy plan.\n"
+        "Update AGENTS.md instead."
+    ),
+    (
+        "Implement the plan:\n"
+        "Do not change app code; update AGENTS.md."
+    ),
+    (
+        "Implement the plan:\n"
+        "Review only applies to sol_advisor; implement after review."
+    ),
+    (
+        "Implement the plan:\n"
+        "No instruction changes to the original hierarchy; update AGENTS.md."
+    ),
+    (
+        "Implement the plan:\n"
+        "Do not edit any files in the original hierarchy; update AGENTS.md."
+    ),
+)
+
+
+PLAN_IMPLEMENTATION_REJECTED = (
+    "PLEASE IMPLEMENT THIS PLAN:",
+    "> PLEASE IMPLEMENT THIS PLAN:\n> Update AGENTS.md.",
+    '"PLEASE IMPLEMENT THIS PLAN:"\nUpdate AGENTS.md.',
+    "`PLEASE IMPLEMENT THIS PLAN:`\nUpdate AGENTS.md.",
+    "Please explain how to implement this plan.",
+    "Do not implement this plan; explain it.",
+    "We should implement this plan later.",
+    "PLEASE IMPLEMENT THIS PLAN:\nWait, don't implement it; explain only.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, do not implement this plan.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind.",
+    "PLEASE IMPLEMENT THIS PLAN:\nActually -- don't implement it.",
+    "PLEASE IMPLEMENT THIS PLAN: cancel this request.",
+    "PLEASE IMPLEMENT THIS PLAN:\nDo not implement this plan until I approve it.",
+    "PLEASE IMPLEMENT THIS PLAN:\nWait, don't implement it because I need to review it first.",
+    "PLEASE IMPLEMENT THIS PLAN:\nDo not implement this plan because tests are failing.",
+    "PLEASE IMPLEMENT THIS PLAN:\nWait, don't implement it because applying the patch could corrupt data.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind because the build is broken.",
+    "PLEASE IMPLEMENT THIS PLAN:\nDo not implement this plan until tests pass.",
+    "PLEASE IMPLEMENT THIS PLAN:\nDo not implement this plan until the tests pass.",
+    "PLEASE IMPLEMENT THIS PLAN:\nDo not implement this plan before the build is green.",
+    "PLEASE IMPLEMENT THIS PLAN:\nDo not implement this plan until testing is complete.",
+    "PLEASE IMPLEMENT THIS PLAN:\nDo not implement this plan before building finishes.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, build is broken.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, test results are failing.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, build pipeline failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nWait, don't implement it; patch validation failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, run failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, install failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, update is blocked.",
+    "PLEASE IMPLEMENT THIS PLAN:\nReview only, but test results fail.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, update AGENTS.md is blocked.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, patch config.toml failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, update C:/repo/AGENTS.md is blocked.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, patch https://example.test/config failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, patch https://example.test/config?mode=full failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, build pipeline crashed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, test runner timed out.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, build pipeline explodes.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, test runner freezes.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, build pipeline that crashed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, test runner that timed out.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, patch validation which failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNever mind, update process because it failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nReview only: build pipeline that crashed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nReview only: test runner that timed out.",
+    "PLEASE IMPLEMENT THIS PLAN:\nKeep this task read-only: update process because it failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nProposal only: patch validation which failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nReview only: build pipeline.",
+    "PLEASE IMPLEMENT THIS PLAN:\nProposal only: update process.",
+    "PLEASE IMPLEMENT THIS PLAN:\nProposal only! Update process because it failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nReview only? Build pipeline that crashed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nReview only -- build pipeline that crashed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nKeep this task read-only -- update process because it failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nReview only — build pipeline that crashed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nProposal only – update process because it failed.",
+    "PLEASE IMPLEMENT THIS PLAN:\nKeep this task read-only while I review the proposal.",
+    "PLEASE IMPLEMENT THIS PLAN:\nKeep this read-only.",
+    "PLEASE IMPLEMENT THIS PLAN:\nReview only.",
+    "PLEASE IMPLEMENT THIS PLAN:\nDo not edit any files.",
+    "PLEASE IMPLEMENT THIS PLAN:\nNo instruction changes.",
+)
 
 
 def run_audit(args, env):
@@ -55,6 +207,7 @@ class HookTests(unittest.TestCase):
         self.assertNotIn("Instruction learning:", context)
         self.assertIn("revise", context.lower())
         self.assertIn("resubmit", context.lower())
+        self.assertIn("without renewed user approval", context.lower())
 
         positives = [
             "Please improve this AGENTS.md and this SKILL.md instruction.",
@@ -74,6 +227,63 @@ class HookTests(unittest.TestCase):
             self.assertTrue(hook.is_durable_correction_prompt(text), text)
         for text in negatives:
             self.assertFalse(hook.is_durable_correction_prompt(text), text)
+
+    def test_plan_implementation_predicates_share_directive_scoped_corpus(self):
+        predicates = (
+            hook.is_plan_implementation_prompt,
+            plan_gap_hook.is_plan_implementation_prompt,
+        )
+        for predicate in predicates:
+            for text in PLAN_IMPLEMENTATION_ACCEPTED:
+                self.assertTrue(predicate(text), (predicate.__module__, text))
+            for text in PLAN_IMPLEMENTATION_REJECTED:
+                self.assertFalse(predicate(text), (predicate.__module__, text))
+
+    def test_multiline_approved_plan_is_actionable_despite_scoped_non_goals(self):
+        prompt = PLAN_IMPLEMENTATION_ACCEPTED[2]
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "approved-plan-session",
+            "turn_id": "approved-plan-turn",
+            "prompt": prompt,
+        }
+        result = hook.handle(payload)
+        context = result["hookSpecificOutput"]["additionalContext"].lower()
+        state = json.loads(
+            hook.state_filename(
+                "approved-plan-session", "approved-plan-turn", self.home
+            ).read_text(encoding="utf-8")
+        )
+        self.assertTrue(state["requires_change"])
+        self.assertIn("implement", context)
+        self.assertNotIn("made the task read-only", context)
+
+    def test_plan_gap_main_routes_multiline_acceptance_without_real_goal_mutation(self):
+        for index, prompt in enumerate(PLAN_IMPLEMENTATION_ACCEPTED):
+            calls = []
+            payload = {
+                "hook_event_name": "UserPromptSubmit",
+                "session_id": f"accepted-session-{index}",
+                "prompt": prompt,
+            }
+            with mock.patch.object(
+                plan_gap_hook, "set_goal", side_effect=calls.append
+            ), mock.patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+                self.assertEqual(plan_gap_hook.main(), 0)
+            self.assertEqual(calls, [f"accepted-session-{index}"], prompt)
+
+        for prompt in PLAN_IMPLEMENTATION_REJECTED:
+            calls = []
+            payload = {
+                "hook_event_name": "UserPromptSubmit",
+                "session_id": "rejected-session",
+                "prompt": prompt,
+            }
+            with mock.patch.object(
+                plan_gap_hook, "set_goal", side_effect=calls.append
+            ), mock.patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+                self.assertEqual(plan_gap_hook.main(), 0)
+            self.assertEqual(calls, [], prompt)
 
     def test_behavioral_redirect_is_actionable_unless_explicitly_one_off(self):
         durable = {
@@ -98,6 +308,11 @@ class HookTests(unittest.TestCase):
             ("Can you explain why agents keep getting this wrong?", False),
             ("Do not change app code; update AGENTS.md to prevent recurrence.", True),
             ("No changes to app code; update AGENTS.md to prevent recurrence.", True),
+            ("Review only applies to sol_advisor; update AGENTS.md.", True),
+            ("No instruction changes to the original hierarchy; update AGENTS.md.", True),
+            ("Do not edit any files in the original hierarchy; update AGENTS.md.", True),
+            ("This request is read-only for app code; update AGENTS.md.", True),
+            ("No code changes; update AGENTS.md.", True),
         ]
         for index, (prompt, expected) in enumerate(cases):
             payload = {
@@ -108,6 +323,47 @@ class HookTests(unittest.TestCase):
             self.assertIn("hookSpecificOutput", result, prompt)
             state = json.loads(hook.state_filename("intent-session", f"intent-{index}", self.home).read_text(encoding="utf-8"))
             self.assertEqual(state["requires_change"], expected, prompt)
+
+    def test_global_read_only_directives_remain_read_only(self):
+        prompts = (
+            "Please fix the instruction system, but this task is read-only.",
+            "Please update AGENTS.md. This request is read only.",
+            "Do not change any files; explain why the instruction system keeps failing.",
+        )
+        for index, prompt in enumerate(prompts):
+            payload = {
+                "hook_event_name": "UserPromptSubmit",
+                "session_id": "global-read-only-session",
+                "turn_id": f"global-read-only-{index}",
+                "prompt": prompt,
+            }
+            result = hook.handle(payload)
+            self.assertTrue(hook.is_durable_correction_prompt(prompt), prompt)
+            self.assertTrue(hook.explicitly_read_only(prompt), prompt)
+            self.assertFalse(hook.requires_instruction_change(prompt), prompt)
+            self.assertIn("hookSpecificOutput", result, prompt)
+            self.assertIn(
+                "read-only",
+                result["hookSpecificOutput"]["additionalContext"].lower(),
+                prompt,
+            )
+            state = json.loads(
+                hook.state_filename(
+                    "global-read-only-session",
+                    f"global-read-only-{index}",
+                    self.home,
+                ).read_text(encoding="utf-8")
+            )
+            self.assertFalse(state["requires_change"], prompt)
+            self.assertEqual(
+                hook.handle({
+                    "hook_event_name": "Stop",
+                    "session_id": "global-read-only-session",
+                    "turn_id": f"global-read-only-{index}",
+                }),
+                {},
+                prompt,
+            )
 
     def test_state_file_schema_and_name_safety(self):
         payload = {
@@ -277,6 +533,94 @@ class HookTests(unittest.TestCase):
         })
         self.assertEqual(rejected.get("decision"), "block")
         self.assertTrue(hook.state_filename("reject-session", "reject-turn", self.home).exists())
+
+    def test_revise_then_approve_cannot_become_a_user_checkpoint(self):
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "revise-session",
+            "turn_id": "revise-turn",
+            "prompt": "Please fix the instruction system and update AGENTS.md.",
+        }
+        hook.handle(payload)
+        blocked = hook.handle({
+            "hook_event_name": "Stop",
+            "session_id": "revise-session",
+            "turn_id": "revise-turn",
+            "last_assistant_message": (
+                "Sol verdict: REVISE, then approve. Waiting for renewed user approval."
+            ),
+        })
+        self.assertEqual(blocked.get("decision"), "block")
+        self.assertIn("implement", blocked.get("reason", "").lower())
+
+    def test_test_only_change_does_not_satisfy_instruction_stop_gate(self):
+        skill = self.home / "skills" / "demo" / "SKILL.md"
+        test_file = self.home / "skills" / "demo" / "scripts" / "test_policy.py"
+        self_test_result = (
+            self.home
+            / "skills"
+            / "demo"
+            / "references"
+            / "evaluation-self-test-results.json"
+        )
+        fixture = self.home / "skills" / "demo" / "fixtures" / "policy_cases.json"
+        conftest = self.home / "skills" / "demo" / "scripts" / "conftest.py"
+        test_file.parent.mkdir(parents=True)
+        self_test_result.parent.mkdir(parents=True)
+        fixture.parent.mkdir(parents=True)
+        skill.write_text("---\nname: demo\ndescription: demo\n---\n", encoding="utf-8")
+        test_file.write_text("assert True\n", encoding="utf-8")
+        self_test_result.write_text('{"passed": true}\n', encoding="utf-8")
+        fixture.write_text('{"case": "baseline"}\n', encoding="utf-8")
+        conftest.write_text("VALUE = 'baseline'\n", encoding="utf-8")
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "test-only-session",
+            "turn_id": "test-only-turn",
+            "prompt": "Please fix this instruction behavior and update SKILL.md.",
+        }
+        hook.handle(payload)
+
+        test_file.write_text("assert False\n", encoding="utf-8")
+        self_test_result.write_text('{"passed": false}\n', encoding="utf-8")
+        fixture.write_text('{"case": "changed"}\n', encoding="utf-8")
+        conftest.write_text("VALUE = 'changed'\n", encoding="utf-8")
+        blocked = hook.handle({
+            "hook_event_name": "Stop",
+            "session_id": "test-only-session",
+            "turn_id": "test-only-turn",
+        })
+        self.assertEqual(blocked.get("decision"), "block")
+
+        skill.write_text(
+            "---\nname: demo\ndescription: corrected demo\n---\n", encoding="utf-8"
+        )
+        allowed = hook.handle({
+            "hook_event_name": "Stop",
+            "session_id": "test-only-session",
+            "turn_id": "test-only-turn",
+        })
+        self.assertEqual(allowed, {})
+
+    def test_test_artifact_filtering_is_relative_to_the_codex_home(self):
+        nested_home = self.home / "tests" / "home"
+        agents = nested_home / "AGENTS.md"
+        hooks = nested_home / "hooks.json"
+        skill = nested_home / "skills" / "demo" / "SKILL.md"
+        fixture = nested_home / "skills" / "demo" / "tests" / "case.json"
+        fixture.parent.mkdir(parents=True)
+        agents.parent.mkdir(parents=True, exist_ok=True)
+        skill.parent.mkdir(parents=True, exist_ok=True)
+        agents.write_text("real instruction\n", encoding="utf-8")
+        hooks.write_text("{}\n", encoding="utf-8")
+        skill.write_text("---\nname: demo\ndescription: demo\n---\n", encoding="utf-8")
+        fixture.write_text('{"test": true}\n', encoding="utf-8")
+
+        discovered = {path.resolve() for path in hook.instruction_files(nested_home)}
+        self.assertIn(agents.resolve(), discovered)
+        self.assertIn(hooks.resolve(), discovered)
+        self.assertIn(skill.resolve(), discovered)
+        self.assertNotIn(fixture.resolve(), discovered)
 
     def test_stop_hook_active_pass_through_preserves_pending_state(self):
         payload = {

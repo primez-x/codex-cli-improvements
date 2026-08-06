@@ -54,6 +54,22 @@ category needs one named source-verified owner with coverage score `2`.
 Reviewers judge plan readiness, not implementation completeness, unless the
 latter is explicitly in scope.
 
+## Reusable Instruction-System Authority
+
+For a plan that changes or relies on reusable instruction, configuration, hook,
+or skill surfaces, the Expanded Sol stage satisfies instruction-learning review
+only when its immutable packet contains:
+
+- the concrete smallest proposal submitted through instruction-learning-loop;
+- a canonical-to-installed/runtime authority trace naming the canonical source,
+  installer, registration, manifest, and installed/runtime copies; and
+- drift evidence or explicit N/A for every authority and overwrite path.
+
+The final instruction-system plan must match that reviewed proposal. Any
+material authority or implementation change must refresh `sol_advisor` review
+before sign-off. Treat this as an internal prerequisite: when execution is
+already authorized, it never creates renewed user approval.
+
 ## Deadline, Timeout, And Partial Coverage
 
 Record `timed_out`, elapsed coverage, omitted categories, and the confidence
