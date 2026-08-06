@@ -29,6 +29,15 @@ instructions.
 The complete routing, depth, edge, packet, ownership, and concurrency matrix
 is maintained in [`delegation-topology.md`](skills/delivery-orchestration/references/delegation-topology.md).
 
+Compact roster example:
+
+```text
+D0 · Luna/max · Root · Delivery integration
+D1 · Luna/medium · Worker · Component style reviewer
+D1 · Spark/xhigh · Scanner · Locate styling contracts
+D2 · Luna/low · Scanner · Trace inherited theme rules
+```
+
 ## Repository contents
 
 - [`config.toml`](config.toml) -- portable root settings and agent registry.

@@ -6,6 +6,42 @@ sole delivery routing authority; role descriptions are role-local summaries of
 it. Every child reports through a direct-parent contract, and the root owns
 final integration, Git, external actions, and repository-wide generators.
 
+## Observable identities
+
+Every spawn uses `d<depth>_<profile>_<purpose_slug>` and
+`D<depth> · <family>/<effort> · <role> · <purpose>`. The parent computes child
+depth as parent depth plus one and resolves family, effort, and role from the
+selected registered profile. An authorized runtime model or effort override
+changes only the displayed value; the machine name retains the registered
+profile. Untyped/default dispatch is rejected.
+
+Normalize a purpose by trimming, Unicode NFKD normalization, lowercasing,
+discarding combining marks and non-ASCII characters, replacing each run outside
+`[a-z0-9]` with one underscore, collapsing and trimming underscores, and
+rejecting an empty result. A live sibling collision blocks a new spawn. A
+same-agent revision uses `followup_task` on the existing canonical path with a
+fresh assignment ID and unchanged ownership; never append an implicit random
+suffix or reuse an assignment ID.
+
+| Task name | Display label | Profile | Allowed depth |
+| --- | --- | --- | --- |
+| d1_luna_worker_component_style_reviewer | D1 · Luna/medium · Worker · Component style reviewer | luna_worker | d1-d2 |
+| d1_spark_scanner_locate_styling_contracts | D1 · Spark/xhigh · Scanner · Locate styling contracts | spark_scanner | d1-d3 |
+| d2_luna_scanner_trace_inherited_theme_rules | D2 · Luna/low · Scanner · Trace inherited theme rules | luna_scanner | d1-d3 |
+
+D0 · Luna/max · Root · Delivery integration is a human-label roster entry;
+the root has no `task_name`.
+
+| Condition | Required outcome |
+| --- | --- |
+| new_spawn_live_sibling_collision | reject |
+| same_agent_followup_fresh_assignment_same_ownership | accept |
+| same_agent_followup_reused_assignment_id | reject |
+| untyped_or_default_dispatch | reject |
+| empty_purpose_slug | reject |
+| authorized_model_or_effort_override | accept_and_show_override_in_display_label |
+| nested_work_return | direct_parent_only |
+
 | Profile | Effort | Model | Allowed depth | Child adjacency |
 | --- | --- | --- | --- | --- |
 | Spark scanner | xhigh | gpt-5.3-codex-spark | d1-d3 | scanner-only terminal |
@@ -47,6 +83,8 @@ changed resources, checks, background activity, and remaining risks.
 ```text
 WORK_ASSIGNMENT_V1
 assignment_id: <root-session identity plus unique assignment identity>
+task_name: <d<depth>_<profile>_<purpose_slug>>
+display_label: <D<depth> · <family>/<effort> · <role> · <purpose>>
 owner: <direct parent>
 direct_return_target: <direct parent task path>
 owned_paths: <exclusive paths>
@@ -59,6 +97,8 @@ checks: <focused verification>
 ```text
 WORK_RETURN_V1
 assignment_id: <matching assignment ID>
+task_name: <d<depth>_<profile>_<purpose_slug>>
+display_label: <D<depth> · <family>/<effort> · <role> · <purpose>>
 status: <complete, blocked, or failed>
 changed_paths: <paths or none>
 changed_resources: <resources or none>
@@ -66,6 +106,24 @@ checks: <commands and results>
 background_activity: <processes, ports, jobs, or none>
 remaining_risks: <risks or none>
 ```
+
+Both WORK_ASSIGNMENT_V1 and WORK_RETURN_V1 additionally carry these identity
+fields without changing their existing direct-parent ownership fields:
+
+```text
+ROSTER_DELTA_V1
+canonical_task_path: </root/...>
+task_name: <d<depth>_<profile>_<purpose_slug>>
+display_label: <D<depth> · <family>/<effort> · <role> · <purpose>>
+status: <active|completed|failed|terminated>
+```
+
+ROSTER_DELTA_V1 is metadata-only. Nested Luna parents send an active delta
+after a successful spawn and a terminal delta after reconciliation to the
+root; it carries no work results, transfers no ownership, and never bypasses
+direct-parent WORK_RETURN routing. The root publishes a compact roster on
+start and material delegation changes. Generated Codex aliases remain
+secondary.
 
 ```text
 ADVISOR_REQUEST_V1

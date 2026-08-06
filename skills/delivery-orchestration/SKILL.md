@@ -46,6 +46,23 @@ returns and reconcile them before integration. Same warm worker revisions may
 continue related work only with a fresh assignment and unchanged ownership.
 The root owns Git, external actions, and repository-wide generators.
 
+## Agent identity and roster
+
+For every legal spawn, derive `d<depth>_<profile>_<purpose_slug>` and
+`D<depth> · <family>/<effort> · <role> · <purpose>` from the parent depth,
+selected registered profile, and normalized purpose defined in the topology
+reference. Reject empty or untyped/default identities and live sibling
+collisions. Same-agent revisions use `followup_task` with a fresh assignment ID
+and unchanged ownership; authorized model/effort overrides affect only the
+display label. Both work envelopes retain `task_name` and `display_label`.
+
+Nested Luna parents send the root metadata-only `ROSTER_DELTA_V1` after a
+successful spawn and after terminal reconciliation. It has only the canonical
+task path, task name, display label, and active/completed/failed/terminated
+status; it carries no work results, transfers no ownership, and cannot bypass
+direct-parent `WORK_RETURN_V1` routing. The root publishes a compact roster on
+start and material delegation changes; generated aliases are secondary.
+
 An orchestrator makes no edits in an active child scope and integrates only
 after writers are idle and returns are reconciled. A Sol advisor is a
 risk-triggered sibling handoff from the root: drain and yield active work,
