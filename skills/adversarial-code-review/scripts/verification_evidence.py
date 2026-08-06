@@ -13,9 +13,8 @@ from typing import Any, Callable, Mapping
 
 
 HERE = Path(__file__).resolve().parent
-PACKET_HELPER = HERE.parents[1] / "plan-review-ladder" / "scripts"
-sys.path.insert(0, str(PACKET_HELPER))
-from packet_integrity import canonical_bytes, compute_raw_sha256  # noqa: E402
+sys.path.insert(0, str(HERE))
+from review_contracts import canonical_bytes, compute_raw_sha256  # noqa: E402
 
 
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")

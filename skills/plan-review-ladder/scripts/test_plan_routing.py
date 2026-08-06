@@ -20,15 +20,16 @@ class PlanRoutingTests(unittest.TestCase):
 
     def test_root_and_supported_profile_effort_contract(self) -> None:
         for phrase in (
-            "sol low root",
+            "luna max root",
             "`spark_scanner`, xhigh",
-            "`spark_worker`, xhigh",
-            "`luna_scanner`, medium",
-            "`luna_worker`, max",
-            "`sol_worker`, xhigh",
-            "`sol_advisor`, max",
+            "`luna_scanner`, low",
+            "`sol_advisor`, high",
         ):
             self.assertIn(phrase, self.skill)
+
+        # Delivery-only workers/orchestrators are not plan-review routes.
+        for profile in ("spark_worker", "luna_worker", "luna_orchestrator", "sol_worker"):
+            self.assertNotIn(f"`{profile}`", self.skill)
 
         for retired in ("terra", "coordinator", "sol_coordinator"):
             self.assertNotIn(retired, self.combined)
@@ -72,6 +73,26 @@ class PlanRoutingTests(unittest.TestCase):
         self.assertNotIn("depth 3", self.skill)
         self.assertIn("do not spawn", self.skill)
 
+    def test_plan_reviewers_are_terminal_d1_with_zero_child_count(self) -> None:
+        for phrase in (
+            "terminal d1",
+            "terminal reviewer child count",
+            "descendant count exactly `0`",
+        ):
+            self.assertIn(phrase, self.combined)
+
+    def test_supported_reviewers_have_required_efforts_and_terminal_depth(self) -> None:
+        for phrase in (
+            "spark_scanner",
+            "xhigh",
+            "luna_scanner",
+            "low",
+            "sol_advisor",
+            "high",
+            "terminal d1",
+        ):
+            self.assertIn(phrase, self.skill)
+
     def test_review_lenses_cover_luna_and_root_with_risk_advisor(self) -> None:
         for heading in (
             "### luna contract and completeness",
@@ -101,7 +122,7 @@ class PlanRoutingTests(unittest.TestCase):
         for phrase in (
             "`packet_id`",
             "`packet_sha256`",
-            "`deadline_minutes`",
+            "`status_check_minutes`",
             "steer once",
             "do not automatically restart",
         ):
@@ -130,13 +151,17 @@ class PlanRoutingTests(unittest.TestCase):
         for phrase in (
             "canonical bytes",
             "observed_packet_sha256",
-            "grace_minutes",
+            "status_check_minutes",
+            "unresponsive_grace_minutes",
             "1..45",
             "1..5",
             "reviewer_profile",
             "terminal profiles",
-            "descendant_budget",
-            "exactly `0`",
+            "reject `deadline_minutes`",
+            "reject `grace_minutes`",
+            "reject `descendant_budget`",
+            "terminal reviewer child count",
+            "descendant count exactly `0`",
             "frozen packet",
         ):
             self.assertIn(phrase, self.combined)

@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import copy
 import json
+import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import sys
+import tempfile
 import tomllib
 import unittest
 
@@ -13,10 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 GENERAL_ROUTING_MATRIX = {
     "spark_scanner": ("gpt-5.3-codex-spark", "xhigh"),
     "spark_worker": ("gpt-5.3-codex-spark", "xhigh"),
-    "luna_scanner": ("gpt-5.6-luna", "medium"),
-    "luna_worker": ("gpt-5.6-luna", "max"),
-    "sol_worker": ("gpt-5.6-sol", "xhigh"),
-    "sol_advisor": ("gpt-5.6-sol", "max"),
+    "luna_scanner": ("gpt-5.6-luna", "low"),
+    "luna_worker": ("gpt-5.6-luna", "medium"),
+    "luna_orchestrator": ("gpt-5.6-luna", "max"),
+    "sol_worker": ("gpt-5.6-sol", "high"),
+    "sol_advisor": ("gpt-5.6-sol", "high"),
 }
 REVIEWER_PROFILE_NAME = "sol_reviewer"
 REVIEWER_PROFILE = ("gpt-5.6-sol", "max")
@@ -28,22 +34,22 @@ class RepositoryContractTests(unittest.TestCase):
         with (ROOT / "config.toml").open("rb") as stream:
             cls.config = tomllib.load(stream)
 
-    def test_config_registers_only_the_supported_routing_matrix(self) -> None:
+    def test_config_registers_the_normalized_role_graph(self) -> None:
         agents = self.config["agents"]
         self.assertNotIn(REVIEWER_PROFILE_NAME, GENERAL_ROUTING_MATRIX)
 
         self.assertEqual(
             (self.config["model"], self.config["model_reasoning_effort"]),
-            ("gpt-5.6-sol", "low"),
+            ("gpt-5.6-luna", "max"),
         )
-        self.assertEqual(agents["max_depth"], 1)
-        self.assertEqual(agents["max_concurrent_threads_per_session"], 4)
+        self.assertEqual(agents["max_depth"], 3)
+        self.assertEqual(agents["max_concurrent_threads_per_session"], 64)
         self.assertEqual(
             (
                 agents["default_subagent_model"],
                 agents["default_subagent_reasoning_effort"],
             ),
-            ("gpt-5.6-luna", "max"),
+            ("gpt-5.6-luna", "medium"),
         )
 
         registered = {
@@ -83,7 +89,7 @@ class RepositoryContractTests(unittest.TestCase):
                     wanted,
                 )
 
-    def test_registered_profiles_are_terminal_and_root_coordinates_directly(self) -> None:
+    def test_only_scanners_are_legal_at_depth_three(self) -> None:
         registered = {
             name
             for name, value in self.config["agents"].items()
@@ -93,14 +99,15 @@ class RepositoryContractTests(unittest.TestCase):
             registered,
             set(GENERAL_ROUTING_MATRIX) | {REVIEWER_PROFILE_NAME},
         )
-        self.assertFalse(any(name.endswith("_coordinator") for name in registered))
+        depth_three = set()
+        for name in registered:
+            instructions = (
+                ROOT / self.config["agents"][name]["config_file"]
+            ).read_text(encoding="utf-8").lower()
+            if "terminal leaf at depth 1 through depth 3" in instructions:
+                depth_three.add(name)
 
-        for name in GENERAL_ROUTING_MATRIX:
-            with self.subTest(agent=name):
-                instructions = (
-                    ROOT / self.config["agents"][name]["config_file"]
-                ).read_text(encoding="utf-8").lower()
-                self.assertRegex(instructions, r"do not[^.\n]*spawn")
+        self.assertEqual(depth_three, {"spark_scanner", "luna_scanner"})
 
     def test_on_demand_reviewer_profile_is_read_only_and_evidence_bound(self) -> None:
         agents = self.config["agents"]
@@ -149,58 +156,6 @@ class RepositoryContractTests(unittest.TestCase):
                 with self.subTest(path=path.relative_to(ROOT), profile=profile):
                     self.assertNotIn(profile, text)
 
-    def test_readme_explains_routing_methodology_and_rejected_alternatives(self) -> None:
-        readme = (ROOT / "README.md").read_text(encoding="utf-8").lower()
-        normalized = " ".join(readme.split())
-
-        for heading in (
-            "## routing decision method",
-            "## why terra is not configured",
-            "## why the other model efforts are not configured",
-            "## when to revisit the matrix",
-        ):
-            self.assertIn(heading, readme)
-
-        for phrase in (
-            "hard gates",
-            "pareto",
-            "role-specific weights",
-            "distinct routing region",
-            "benchmark snapshot",
-            "provisional estimates",
-            "not universal pricing",
-            "121,600",
-            "258,400",
-            "terra low",
-            "terra medium",
-            "terra high",
-            "terra xhigh",
-            "terra max",
-            "luna medium scanner",
-            "sol low root",
-            "root-owned synthesis",
-            "direct root path",
-            "luna medium",
-            "luna xhigh",
-            "sol low",
-            "sol high",
-            "sol ultra",
-            "$0.0151",
-            "$0.0289",
-            "$0.1598",
-            "$0.0431",
-            "$0.3041",
-            "$0.0658",
-            "$0.4300",
-            "$0.7328",
-            "$1.1671",
-            "38.5%",
-            "40.2%",
-            "measured operating default",
-            "zero additional critical/high misses",
-        ):
-            self.assertIn(phrase, normalized)
-
     def test_registered_skills_exist_and_use_relative_paths(self) -> None:
         skill_paths = [
             entry["path"] for entry in self.config.get("skills", {}).get("config", [])
@@ -211,6 +166,281 @@ class RepositoryContractTests(unittest.TestCase):
                 path = Path(configured)
                 self.assertFalse(path.is_absolute())
                 self.assertTrue((ROOT / path).is_file())
+
+    def test_readme_distinguishes_full_kit_deployment_from_reviewer_add_on(self) -> None:
+        readme = " ".join((ROOT / "README.md").read_text(encoding="utf-8").lower().split())
+        for phrase in (
+            "adversarial-review add-on",
+            "does not install the normalized hierarchy",
+            "full normalized kit",
+            "existing codex home",
+            "merge the `## delegation` section from `agents.md`",
+            "preserving unrelated local instructions",
+            "exact set of eight source profiles",
+            "remove or archive every other agent toml",
+            "corresponding retired role registrations",
+            "repeat the controlled deployment",
+        ):
+            self.assertIn(phrase, readme)
+
+    def test_documented_full_kit_projection_is_exact_and_idempotent(self) -> None:
+        source_agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        source_config = copy.deepcopy(self.config)
+        source_profiles = {
+            path.name: path.read_bytes() for path in (ROOT / "agents").glob("*.toml")
+        }
+        self.assertEqual(len(source_profiles), 8)
+
+        previous_agents = re.sub(
+            r"(?ms)^## Delegation\n.*?(?=^##\s|\Z)",
+            "## Delegation\n\nUse the retired coordinator hierarchy.\n\n",
+            source_agents,
+            count=1,
+        )
+        previous_agents += """
+## Local Only
+
+Keep this machine-only instruction.
+Preserve this unrelated local instruction.
+"""
+        previous_config = {
+            "model": "retired-root",
+            "model_reasoning_effort": "low",
+            "mcp_servers": {"local": {"url": "http://127.0.0.1:9999"}},
+            "features": {"multi_agent": False, "other_local_feature": True},
+            "agents": {
+                "max_depth": 2,
+                "local_runtime_setting": "preserve-me",
+                "terra_worker": {"config_file": "./agents/terra_worker.toml"},
+            },
+            "skills": {"config": [{"path": "./skills/retired/SKILL.md"}]},
+        }
+
+        def markdown_section(text: str, heading: str) -> str:
+            match = re.search(
+                rf"(?ms)^{re.escape(heading)}\n.*?(?=^##\s|\Z)", text
+            )
+            self.assertIsNotNone(match)
+            return match.group(0).rstrip() + "\n"
+
+        def merge_delegation(target: str) -> str:
+            wanted = markdown_section(source_agents, "## Delegation")
+            current = re.search(r"(?ms)^## Delegation\n.*?(?=^##\s|\Z)", target)
+            self.assertIsNotNone(current)
+            return target[: current.start()] + wanted + "\n" + target[current.end() :]
+
+        def project_config(target: dict[str, object]) -> dict[str, object]:
+            projected = copy.deepcopy(target)
+            for key in ("model", "model_reasoning_effort"):
+                projected[key] = copy.deepcopy(source_config[key])
+
+            target_agents = projected.setdefault("agents", {})
+            self.assertIsInstance(target_agents, dict)
+            for key in tuple(target_agents):
+                value = target_agents[key]
+                if isinstance(value, dict) and "config_file" in value:
+                    del target_agents[key]
+            for key, value in source_config["agents"].items():
+                target_agents[key] = copy.deepcopy(value)
+
+            target_features = projected.setdefault("features", {})
+            self.assertIsInstance(target_features, dict)
+            target_features["multi_agent"] = source_config["features"]["multi_agent"]
+
+            target_skills = projected.setdefault("skills", {})
+            self.assertIsInstance(target_skills, dict)
+            target_skills["config"] = copy.deepcopy(source_config["skills"]["config"])
+            return projected
+
+        with tempfile.TemporaryDirectory() as temporary:
+            target_home = Path(temporary) / ".codex"
+            target_agents_dir = target_home / "agents"
+            archive_dir = Path(temporary) / "retired-agent-profiles"
+            target_home.mkdir()
+            target_agents_dir.mkdir()
+            archive_dir.mkdir()
+            (target_agents_dir / "terra_worker.toml").write_text(
+                'name = "terra_worker"\n', encoding="utf-8"
+            )
+            (target_agents_dir / "local-notes.txt").write_text(
+                "preserve", encoding="utf-8"
+            )
+
+            def reconcile_profiles() -> None:
+                for path in target_agents_dir.glob("*.toml"):
+                    if path.name not in source_profiles:
+                        path.replace(archive_dir / path.name)
+                for name, content in source_profiles.items():
+                    (target_agents_dir / name).write_bytes(content)
+
+            merged_agents = merge_delegation(previous_agents)
+            projected_config = project_config(previous_config)
+            reconcile_profiles()
+
+            target_config_text = (ROOT / "config.toml").read_text(encoding="utf-8")
+            target_config_text = target_config_text.replace(
+                "[agents]\n",
+                '[agents]\nlocal_runtime_setting = "preserve-me"\n',
+                1,
+            ).replace(
+                "[features]\n",
+                "[features]\nother_local_feature = true\n",
+                1,
+            )
+            target_config_text += (
+                "\n[mcp_servers.local]\nurl = \"http://127.0.0.1:9999\"\n"
+            )
+            (target_home / "AGENTS.md").write_text(merged_agents, encoding="utf-8")
+            (target_home / "config.toml").write_text(
+                target_config_text, encoding="utf-8"
+            )
+            for skill_name in (
+                "delivery-orchestration",
+                "plan-review-ladder",
+                "instruction-learning-loop",
+                "adversarial-code-review",
+            ):
+                shutil.copytree(
+                    ROOT / "skills" / skill_name,
+                    target_home / "skills" / skill_name,
+                )
+            shutil.copytree(ROOT / "hooks", target_home / "hooks")
+            shutil.copy2(ROOT / "hooks.json", target_home / "hooks.json")
+
+            first_agents = merged_agents
+            first_config = copy.deepcopy(projected_config)
+            first_profiles = {
+                path.name: path.read_bytes()
+                for path in target_agents_dir.glob("*.toml")
+            }
+
+            merged_agents = merge_delegation(merged_agents)
+            projected_config = project_config(projected_config)
+            reconcile_profiles()
+            (target_home / "AGENTS.md").write_text(merged_agents, encoding="utf-8")
+
+            installed_environment = os.environ.copy()
+            installed_environment.update(
+                {
+                    "CODEX_HOME": str(target_home),
+                    "CODEX_ROUTING_HOME": str(target_home),
+                }
+            )
+            installed_checks = (
+                target_home
+                / "skills"
+                / "delivery-orchestration"
+                / "scripts"
+                / "test_routing_policy.py",
+                target_home
+                / "skills"
+                / "plan-review-ladder"
+                / "scripts"
+                / "test_plan_routing.py",
+                target_home
+                / "skills"
+                / "plan-review-ladder"
+                / "scripts"
+                / "test_packet_integrity.py",
+                target_home
+                / "skills"
+                / "instruction-learning-loop"
+                / "scripts"
+                / "test_instruction_learning.py",
+                target_home
+                / "skills"
+                / "instruction-learning-loop"
+                / "scripts"
+                / "test_global_autonomy_contract.py",
+                target_home
+                / "skills"
+                / "adversarial-code-review"
+                / "scripts"
+                / "test_install_review_gate.py",
+            )
+            for check in installed_checks:
+                result = subprocess.run(
+                    [sys.executable, "-B", str(check)],
+                    cwd=target_home,
+                    env=installed_environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=120,
+                )
+                with self.subTest(installed_check=check.relative_to(target_home)):
+                    self.assertEqual(
+                        result.returncode,
+                        0,
+                        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+                    )
+
+            lifecycle = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(
+                        target_home
+                        / "skills"
+                        / "adversarial-code-review"
+                        / "scripts"
+                        / "lifecycle_gate.py"
+                    ),
+                    "health",
+                ],
+                cwd=target_home,
+                env=installed_environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+            self.assertEqual(
+                lifecycle.returncode,
+                0,
+                f"stdout:\n{lifecycle.stdout}\nstderr:\n{lifecycle.stderr}",
+            )
+
+            self.assertEqual(merged_agents, first_agents)
+            self.assertEqual(projected_config, first_config)
+            self.assertEqual(
+                {
+                    path.name: path.read_bytes()
+                    for path in target_agents_dir.glob("*.toml")
+                },
+                first_profiles,
+            )
+            self.assertEqual(first_profiles, source_profiles)
+            self.assertTrue((archive_dir / "terra_worker.toml").is_file())
+            self.assertEqual(
+                (target_agents_dir / "local-notes.txt").read_text(encoding="utf-8"),
+                "preserve",
+            )
+            self.assertIn("Keep this machine-only instruction.", merged_agents)
+            self.assertIn("Preserve this unrelated local instruction.", merged_agents)
+            self.assertNotIn("retired coordinator hierarchy", merged_agents)
+            self.assertEqual(
+                projected_config["mcp_servers"], previous_config["mcp_servers"]
+            )
+            self.assertTrue(projected_config["features"]["other_local_feature"])
+            self.assertEqual(
+                projected_config["agents"]["local_runtime_setting"], "preserve-me"
+            )
+            self.assertNotIn("terra_worker", projected_config["agents"])
+
+    def test_adversarial_contracts_are_self_contained(self) -> None:
+        contract = (
+            ROOT / "skills" / "adversarial-code-review" / "references" / "contracts.md"
+        ).read_text(encoding="utf-8").lower()
+        self.assertIn("review_contracts.py", contract)
+        self.assertNotIn("plan-review-ladder/scripts/packet_integrity.py", contract)
+
+        for name in ("review_contracts.py", "lifecycle_gate.py", "verification_evidence.py"):
+            source = (
+                ROOT / "skills" / "adversarial-code-review" / "scripts" / name
+            ).read_text(encoding="utf-8").lower()
+            with self.subTest(script=name):
+                self.assertNotIn("plan-review-ladder", source)
 
     def test_hooks_are_portable(self) -> None:
         hooks_path = ROOT / "hooks.json"

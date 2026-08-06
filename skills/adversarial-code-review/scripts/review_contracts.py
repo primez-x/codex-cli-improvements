@@ -19,10 +19,6 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 from urllib.parse import parse_qsl, urlsplit
 
-_PACKET = Path(__file__).resolve().parents[2] / "plan-review-ladder" / "scripts"
-sys.path.insert(0, str(_PACKET))
-from packet_integrity import canonical_bytes, compute_packet_sha256, compute_raw_sha256  # noqa: E402
-
 _HEX = set("0123456789abcdef")
 _BLOCKING = {"critical", "high"}
 _AUTHORITY_KIND = re.compile(r"[a-z][a-z0-9._-]{1,63}\Z")
@@ -45,6 +41,36 @@ MANDATORY_REVIEW_LENSES = (
     "overlap_attribution",
     "author_verification",
 )
+
+
+def canonical_bytes(value: Any) -> bytes:
+    """Serialize JSON using the review contract's canonical UTF-8 form."""
+
+    try:
+        text = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"value cannot be represented as canonical JSON: {exc}") from exc
+    return text.encode("utf-8")
+
+
+def compute_packet_sha256(packet_payload: Mapping[str, Any]) -> str:
+    """Return the lowercase SHA-256 of canonical contract bytes."""
+
+    return hashlib.sha256(canonical_bytes(packet_payload)).hexdigest()
+
+
+def compute_raw_sha256(value: bytes) -> str:
+    """Return the lowercase SHA-256 of exact, uncanonicalized bytes."""
+
+    if not isinstance(value, bytes):
+        raise ValueError("raw SHA-256 input must be bytes")
+    return hashlib.sha256(value).hexdigest()
 
 
 def _nonempty(value: Any, field: str) -> str:

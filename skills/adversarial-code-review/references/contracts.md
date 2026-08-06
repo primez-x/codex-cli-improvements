@@ -1,6 +1,10 @@
 # V1 contract reference
 
-All records reject unknown fields and schema versions other than `1`. Canonical serialization and SHA-256 calculation use `plan-review-ladder/scripts/packet_integrity.py` exclusively.
+All records reject unknown fields and schema versions other than `1`.
+Adversarial V1 canonical JSON serialization and SHA-256 calculation are owned
+by the helpers in [`review_contracts.py`](../scripts/review_contracts.py). The
+plan-review ladder owns a separate planning-envelope helper and is not a runtime
+dependency of this package.
 
 The field-level authority for `ReviewOutputV1` and its finding schema is the
 [`validate_review_output` implementation](../scripts/review_contracts.py).

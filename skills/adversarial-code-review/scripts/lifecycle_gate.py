@@ -28,6 +28,9 @@ from review_contracts import (  # noqa: E402
     build_local_git_resolver,
     build_bundle,
     build_git_snapshot,
+    canonical_bytes,
+    compute_packet_sha256,
+    compute_raw_sha256,
     delivery_address_sha256,
     MANDATORY_REVIEW_LENSES,
     validate_disposition_ledger,
@@ -37,7 +40,6 @@ from review_contracts import (  # noqa: E402
     validate_review_output,
     validate_review_receipt,
 )
-from packet_integrity import canonical_bytes, compute_packet_sha256, compute_raw_sha256  # noqa: E402
 from verification_evidence import build_verification_evidence, load_production_manifest  # noqa: E402
 
 

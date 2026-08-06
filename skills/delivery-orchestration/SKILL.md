@@ -1,233 +1,95 @@
 ---
 name: delivery-orchestration
 description: >-
-  Use when implementing or remediating work that benefits from bounded quick
-  edits, delegated evidence, multiple ownership areas, tests or generated
-  artifacts, cross-layer integration, builds, packaging, deployment, or an
-  independent failure or risk challenge. Skip read-only answers and plan-only
-  requests.
+  Route material implementation through the canonical bounded multi-agent
+  topology with explicit ownership, contracts, recovery, and verification.
 ---
 
 # Delivery Orchestration
 
-Keep the configured Sol Low root focused on the outcome, routing, decisions,
-integration, authorized external actions, and final verification. The root
-directly coordinates terminal depth-1 leaves and chooses the cheapest profile
-that preserves the required context, judgment, ownership, and evidence quality.
+When an advisor packet is received, the root is the only party that dispositions
+each advisor finding as accepted, rejected, or deferred, and each decision must
+be explicitly grounded in primary evidence.
 
-This skill explicitly requests proactive subagent delegation for material
-delivery. Do not wait for the user to select models or manage routing.
+Start with the Luna max root. The root directly coordinates work, decisions,
+integration, authorized external actions, Git, and final verification. The
+canonical exact adjacency/depth matrix in `references/delegation-topology.md`
+is the sole full model/effort/depth/adjacency authority.
 
-## 1. Define The Delivery Contract
+## Routing
 
-Before editing, record a compact working contract:
+Use the direct root path only for one concern with no discovery, no conflicting
+authority, no unapproved or consequential external side effect, one focused
+verification, and a lossless rollback. Delegation overhead is not a reason to
+route material work directly; reclassify immediately when any gate fails.
+External mutation is explicitly authorized only for an exact target with a
+low-impact boundary.
 
-- requested outcome, acceptance criteria, and non-goals;
-- in-scope systems, repositories, paths, and external targets;
-- authorization boundaries and current dirty-worktree baseline;
-- required source, test, build, generated-output, runtime, and release gates;
-- terminal condition, current evidence, assumptions, and blockers.
+Use Spark fast path for tiny bounded localized checks or mechanical edits from
+self-contained packets. Luna is the default for broad/context-heavy scans and
+normal implementation. Escalate the model to Sol only for genuinely difficult
+or consequential risk. Root-routed independent review is reserved for a
+high-risk trigger such as security, privacy, migration, persistence,
+data-integrity, external impact, public-contract change, conflicting evidence,
+or repeated failed verification. If optional review infrastructure fails,
+report the limitation and continue a verified localized, low-risk delivery;
+only a required high-risk review failure blocks delivery.
 
-Treat a plan, edit, passing focused test, commit, push, build, or artifact upload
-as an intermediate state unless it satisfies the complete terminal condition.
+## Assignment and ownership
 
-## 2. Route Work By Task Shape
+Use compact `WORK_ASSIGNMENT_V1`, `WORK_RETURN_V1`, and `ADVISOR_REQUEST_V1`
+contracts defined in the topology reference. Each writer has an exclusive
+direct-parent-owned scope (`owned_paths`, owned resources, permitted actions).
+The assignment ID contains root-session identity, owner, direct return target,
+expected outcome, and checks. Serialize overlapping writers; direct parents own
+returns and reconcile them before integration. Same warm worker revisions may
+continue related work only with a fresh assignment and unchanged ownership.
+The root owns Git, external actions, and repository-wide generators.
 
-### Direct root path
+An orchestrator makes no edits in an active child scope and integrates only
+after writers are idle and returns are reconciled. A Sol advisor is a
+risk-triggered sibling handoff from the root: drain and yield active work,
+validate at root, then use same-agent resume. If that fails, send an explicit
+rehydration fallback packet. Advice never creates a user approval gate; the
+root owns disposition and continuation.
 
-Handle a short command directly at the root only when every gate passes:
+## Recovery and liveness
 
-- it covers one concern and the current authoritative evidence is already in
-  root context;
-- it needs no discovery or independent evidence, and there is no conflicting
-  authority;
-- it has no unapproved or consequential external side effect, destructive
-  action, material risk, or ambiguous authorization;
-- one focused verification proves success; and
-- failure has a cheap, lossless rollback.
+Reject old-session returns. A new root blocks overlapping writers until it
+completes and reconciles the workspace/shared-resource/task-owned-background-process audit.
+Leave unclear state unassigned and escalate it; there is no
+persistent lease or state machine. Active tool use, running work with evidence,
+or concrete progress stays alive indefinitely. A quiet interval triggers only a
+status query; interrupt only idle, unanswered-through-grace, or demonstrably
+stuck work, and reconcile before reclaim.
 
-When external mutation is explicitly authorized, the exact target, expected
-effect, low-impact boundary, rollback, preflight, and postcondition must already
-be known. The root executes that bounded action because leaves cannot mutate
-external systems.
+## Verification and Git
 
-If any gate fails, reclassify immediately and use the appropriate route below.
-Delegation overhead breaks a tie only after these gates pass. Do not delegate
-every trivial command merely because a leaf exists.
+Inspect assigned paths before editing and preserve unrelated changes. Run the
+focused test, TOML/skill validation, and applicable build or runtime checks;
+report exact evidence and residual risks. For authorized implementation or
+remediation that changes a Git repository, the standing terminal condition is
+a safe local task-only commit and push: inspect ahead-of-upstream history, use
+explicit paths or hunks, and use an isolated worktree or clone when needed.
+On an existing task-aligned feature branch, commit the task-owned diff. On a
+default, detached, mismatched, or unsafe branch, create `agent/<task-slug>`.
+Never force-push; never push directly to the default branch. Perform remote-ref verification:
+the remote head must equal the local SHA, or the task commit must be an
+ancestor. Never bypass authentication, branch protection, hooks, or
+non-fast-forward safeguards.
 
-Use Spark instead when a tiny exact task benefits from an isolated fresh
-packet, parallel execution, or independent evidence. Once work becomes
-material, context-heavy, ambiguous, or consequential, use the delegated routes
-below; the direct root path is not an exemption from material-delivery gates.
-Conflicting evidence, consequential synthesis, or an external-impact decision
-routes through the risk-triggered Sol advisor checkpoint before root action.
+Explicit user constraints such as `do not commit`, `leave uncommitted`, `no
+push`, `commit only`, or `keep local` override the standing Git default. Pull
+requests, merges, releases, and deployments remain separately authorized.
+Subagents never commit, push, publish, deploy, or mutate external systems.
 
-A task is material when it likely changes more than one file or concern, aligns
-code with tests or generated output, crosses layers, requires a build/install or
-runtime smoke, would fill root context with discovery/logs, or carries material
-compatibility, security, persistence, concurrency, data-integrity, migration,
-or external-impact risk.
+Reversible startup-setting changes remain subject to the same focused
+verification and rollback gates.
 
-For material delivery, dispatch at least one bounded terminal leaf. Keep normal
-work to one to three active leaves and use the configured ceiling of four only
-for genuinely independent packages. `max_concurrent_threads_per_session = 4`
-counts spawned threads, not the root. Every leaf reports directly to the root
-and must not spawn.
-
-### Spark fast path
-
-Use `spark_scanner`, xhigh, for a tiny exact read-only check and
-`spark_worker`, xhigh, for a small mechanical edit only when every gate passes:
-
-- the target, anchors, owned paths, deliverable, and expected evidence are
-  explicit;
-- the required context is small and localized;
-- no architecture, product, compatibility, security, or ownership decision is
-  unresolved;
-- success is mechanically verifiable with a focused check;
-- failure is cheap, reversible, and cannot silently damage adjacent behavior.
-
-Spark has a materially smaller context window than the 5.6 family. The current
-catalog advertises about 128k tokens for Spark versus 272k for 5.6 profiles,
-with lower usable limits after system overhead. Always dispatch Spark with
-`fork_turns = "none"` and a fresh self-contained bounded packet containing
-exact anchors rather than inherited conversation history. Do not send broad
-discovery or synthesis to Spark. If a gate fails, scope expands, or context
-pressure appears, stop and escalate to Luna.
-
-### Luna default
-
-Luna is the default delegated model:
-
-- use `luna_scanner`, medium, for broad or context-heavy read-only discovery,
-  inventories, comparisons, history, logs, and independent validation;
-- use `luna_worker`, max, for the default implementation path: substantial
-  routine edits, debugging, tests, documentation, and multi-file integration.
-
-The Medium scanner keeps Luna's larger context while prioritizing latency and
-cost for reversible evidence work. It returns exact anchors, uncertainty, and
-unexamined areas; the root owns conflicting evidence and consequential
-interpretation. Escalate the model directly from Luna to Sol when difficulty or
-consequential risk exceeds Luna; there is no intermediate custom model tier.
-
-### Sol escalation
-
-Use `sol_worker`, xhigh, only for genuinely difficult, ambiguous,
-security-sensitive, cross-layer implementation or diagnosis that Luna cannot
-reliably finish. Use `sol_advisor`, max, only for rare consequential
-architecture, risk, plan, or final-diff challenge. Do not use either profile as
-a routine throughput tier.
-
-Only the depth-0 root dispatches `sol_advisor`. An early checkpoint is
-risk-triggered when material architecture, compatibility, migration,
-persistence, security, concurrency, data integrity, external impact, conflicting
-authority, a stuck approach, or a material approach change is present. A final
-checkpoint is risk-triggered after durable changes and fresh evidence when the
-same risks remain or the delivery has four or more substantive stages. Sol is
-not mandatory for localized, low-risk, mechanically prescribed work with
-focused verification. A current Sol-reviewed immutable handoff may satisfy the
-early checkpoint when scope and evidence are unchanged.
-
-Give the advisor the checkpoint type, request and acceptance criteria,
-authority boundaries, concise evidence anchors, hypothesis or diff,
-uncertainties, and specific questions. Final-delivery packets include actual
-applicable test, build, and runtime evidence. Disposition each actionable
-finding as accepted, rejected, or deferred against primary evidence. Fix
-accepted high-severity gaps and rerun affected gates. The advisor never edits,
-expands authorization, owns the user response, or creates a user approval gate.
-
-See [delegation topology](references/delegation-topology.md) for the canonical
-profile matrix, context split, and terminal-leaf rules.
-
-## 3. Assign Ownership Precisely
-
-Give every writer a self-contained packet containing:
-
-- exact exclusive `owned_paths`;
-- requested behavior, non-goals, and authoritative anchors;
-- applicable instructions and interfaces with root-owned work;
-- focused verification, expected evidence, and output format;
-- stop conditions and an explicit zero descendant budget.
-
-One live writer owns a file. Serialize same-file work. Subagents never commit,
-push, publish, deploy, perform destructive actions, or mutate external systems.
-Inspect returned diffs and evidence before integrating or editing a returned
-path.
-
-## 4. Protect Root Context And Recover Deliberately
-
-Delegate broad discovery, long logs, inventories, and repeated test monitoring
-to Luna and require a distilled result. Prefer bounded commands and exact
-anchors. Reuse a useful leaf for a related follow-up. After two repetitions of
-the same command or wait path without new evidence, stop and replan.
-
-For a failure, capture the exact stage and error, identify whether source,
-generated state, environment, authorization, or an external dependency owns it,
-then apply a source-grounded correction or materially different safe path.
-Rerun the affected gate and every downstream gate invalidated by the change.
-
-## 5. Git Completion
-
-For authorized implementation or remediation that changes a Git repository,
-scoped commit and push are a standing terminal condition. On an existing
-task-aligned feature branch, commit the task-owned diff and push its configured
-upstream. On a default, detached, mismatched, or unsafe branch, create
-`agent/<task-slug>` from the correct base and push it. Never force-push, and
-never push directly to the default branch without explicit instruction.
-
-Before staging, inspect dirty files and ahead-of-upstream history. Use explicit
-paths or hunks, never `git add -A` in a mixed tree. If ownership overlaps or
-unrelated commits would be published, use an isolated worktree or clone and
-apply only the task diff.
-
-Completion requires a local task-only commit, successful push, and remote-ref
-verification: the remote head must equal the local SHA, or, if it advanced
-concurrently, the task commit must be an ancestor. Never bypass authentication,
-branch protection, hooks, or non-fast-forward safeguards. Explicit `do not
-commit`, `leave uncommitted`, `no push`, `commit only`, `keep local`, and
-equivalent constraints override this default. Pull requests, merges, releases,
-and deployments remain separately authorized.
-
-## 6. Enforce Terminal Criteria
-
-Before finalizing, require every applicable gate:
-
-- intended source and only intended files changed;
-- focused tests, lint, type checks, formatting, and `git diff --check` pass;
-- generated artifacts, manifests, builds, packages, and runtime smoke match
-  their source and target;
-- realistic negative, compatibility, security, performance, and failure paths
-  are covered in proportion to risk;
-- durable corrections and instruction drift are classified through
-  `instruction-learning-loop` and its disposition is reported;
-- authorized external mutation and remote verification completed;
-- residual risks and intentionally deferred work are explicit.
-
-Root-routed independent review is risk-triggered. After fresh verification,
-use `adversarial-code-review` and the read-only `sol_reviewer` only when the user
-requests review or a high-risk trigger is present: security, authentication,
-credentials, or privacy; destructive or irreversible actions; migrations,
-persistence, data integrity, or concurrency; production or external impact;
-major architecture, compatibility, or public-contract changes; or conflicting
-evidence, a stuck approach, or repeated failed verification. Provide a
-root-prepared evidence packet with the request, acceptance criteria, final diff
-or bounded source snapshot, verification output, risks, and uncertainties, then
-disposition every actionable finding against primary evidence.
-
-Use root verification alone for documentation or `AGENTS.md` wording,
-formatting and renames, localized deterministic configuration, small mechanical
-changes, and reversible startup-setting changes unless a high-risk trigger
-applies. If optional review infrastructure fails, report the limitation and
-continue based on fresh verification. Only a required high-risk review failure
-blocks delivery.
-
-When this skill, `config.toml`, or a custom agent profile changes, run:
+When this skill, `config.toml`, or a custom profile changes, run:
 
 ```powershell
 $env:CODEX_ROUTING_HOME = (Resolve-Path .).Path
 python -B .\skills\delivery-orchestration\scripts\test_routing_policy.py
 Remove-Item Env:CODEX_ROUTING_HOME
 ```
-
-Return a final answer only when the terminal condition is satisfied or a
-concrete external blocker remains after safe recovery paths are exhausted.

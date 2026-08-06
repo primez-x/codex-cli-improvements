@@ -23,13 +23,27 @@ These are personal defaults across Codex projects. Repository and nested
 
 - Default to the best durable solution: correctness, reliability, maintainability, security, performance, operability, user experience, testability, then implementation convenience.
 - Search for existing implementations and established project patterns before adding helpers, abstractions, schemas, workflows, or dependencies.
-- Prefer the simplest implementation that fully handles realistic edge cases and failure modes.
 - State assumptions and material tradeoffs when they affect the result.
 - For multi-step work, use a compact plan with an explicit verification target for each step.
 - Before completion, compare the result with the request, active instructions, runtime expectations, tests, security constraints, and deliverable quality. Fix every required gap found.
 - On material delivery, use `instruction-learning-loop` for source-backed durable
   corrections: update the narrowest user-owned instruction inside current write
   scope and report it. For read-only or out-of-scope work, propose only.
+
+## Simplicity First
+
+Treat every line of code as a maintenance cost.
+
+Every change should improve the codebase. When adding functionality, actively look for opportunities to remove, simplify, or consolidate existing code. Prefer solutions that reduce total complexity over those that merely add new implementation.
+
+- Prefer the simplest solution that fully satisfies the requirements.
+- Before adding new code, first look for existing code that can be reused, consolidated, or removed.
+- Favor refactoring over layering new abstractions on top of old ones.
+- Eliminate duplication, dead code, unnecessary indirection, and obsolete compatibility logic whenever practical.
+- Keep functions, APIs, and control flow as direct as possible.
+- Do not introduce abstractions until they solve a real, recurring problem.
+- Aim for a net reduction in overall code complexity. As a rule of thumb, new functionality should generally leave the codebase smaller or simpler than before whenever possible.
+- Never sacrifice correctness, readability, maintainability, performance, or testability solely to reduce line count.
 
 ## Editing And File Hygiene
 
@@ -66,49 +80,17 @@ These are personal defaults across Codex projects. Repository and nested
 
 ## Delegation
 
-- For material implementation, remediation, build, package, release, or
-  deployment, use `delivery-orchestration`. This explicitly requests proactive
-  subagent delegation; the user does not manage routing.
-- Treat multi-file/cross-layer work, code plus tests or generated output,
-  substantial discovery, and build/install/deploy workflows as material.
-- Use the six configured general-purpose routing profiles plus the on-demand
-  `sol_reviewer` review identity. Spark XHigh handles tiny exact checks
-  and small mechanical edits from fresh self-contained packets dispatched with
-  `fork_turns = "none"`. Do not send Spark broad discovery, synthesis, or
-  inherited full-history context; escalate those tasks to Luna.
-- Luna Medium scanning handles broad and context-heavy read-only evidence with
-  exact anchors, uncertainty, and unexamined areas. The root owns consequential
-  synthesis; Luna Max remains the default delegated implementation profile.
-  Escalate directly to Sol XHigh only for genuinely difficult implementation or
-  diagnosis.
-- Every general-purpose routing profile is a terminal depth-1 leaf. Leaves do
-  not spawn, commit, push, deploy, publish, perform destructive actions, or
-  mutate external systems. The on-demand `sol_reviewer` identity is also depth
-  1 and read-only. The root owns review routing, integration, authorized
-  external actions, and the user response.
-- Only the depth-0 root dispatches `sol_advisor` at Max. Use it for rare,
-  consequential architecture, compatibility, migration, persistence, security,
-  concurrency, data-integrity, external-impact, conflicting-evidence, stuck, or
-  materially changing approaches. Reconsult after fresh delivery evidence when
-  the same risk remains or four or more substantive stages require sign-off.
-  It is not mandatory for localized low-risk work with mechanical verification,
-  and it never creates a user approval gate.
-- Independent review is root-routed and risk-triggered. Use `sol_reviewer` at
-  Max when explicitly requested or when security, authentication, credentials,
-  or privacy; destructive or irreversible actions; migrations, persistence,
-  data integrity, or concurrency; production or external impact; major
-  architecture, compatibility, or public-contract changes; or conflicting
-  evidence, a stuck approach, or repeated failed verification makes an
-  independent final challenge materially useful.
-- Use root verification without independent review for documentation or
-  `AGENTS.md` wording, formatting and renames, localized deterministic
-  configuration, small mechanical changes, and reversible startup-setting
-  changes unless a high-risk trigger applies. If optional review infrastructure
-  fails, report the limitation without converting a verified low-risk delivery
-  into a blocker. Only a required high-risk review failure blocks delivery.
-- Keep normal work to one to three concurrent leaves and use the configured
-  ceiling of four only for genuinely independent packages. Do not ask the user
-  to select a model unless a required profile is unavailable.
+Use `delivery-orchestration` and its canonical delegation-topology reference;
+this section is only the compact behavioral contract. Spark handles
+tiny bounded packets (`fork_turns = "none"`); Luna scanner handles broad
+read-only discovery; Luna worker is the default implementation lane; Luna
+orchestrator handles genuinely multi-area coordination; Sol lanes are rare
+root-routed escalations. Writers have exclusive direct-parent ownership,
+return through that parent, and preserve progress-aware liveness; role edges
+are behavioral while `max_depth` is a runtime constraint. The root owns
+routing, final integration/response, Git, external actions, and
+repository-wide generators. Only the depth-0 root dispatches `sol_advisor` at
+high effort for consequential risk triggers.
 
 ## Communication
 
@@ -116,3 +98,19 @@ These are personal defaults across Codex projects. Repository and nested
 - Be direct, factual, concise, and proportional to the task. Avoid filler, repeated acknowledgements, and generic reassurance.
 - Provide exact commands, paths, evidence, and limitations when they help the user verify the result.
 - Keep progress updates brief and useful during longer work.
+
+<!-- BEGIN MANAGED ADVERSARIAL DELIVERY GATE -->
+## Risk-triggered independent review
+
+The on-demand `sol_reviewer` is a separate root-routed review identity.
+Dispatch the read-only reviewer only when explicitly requested or when
+security, authentication, credentials, privacy; destructive or irreversible
+actions; migrations, persistence, data integrity, concurrency; production or
+external impact; major architecture, compatibility, public-contract changes;
+or conflicting evidence, a stuck approach, or repeated failed verification
+makes independent review consequential. Use focused root verification for
+documentation or `AGENTS.md` wording, formatting and renames, localized
+deterministic configuration, small mechanical changes, and reversible startup
+settings unless a risk trigger applies. Optional review failure must not block
+verified low-risk delivery; only a required review failure blocks delivery.
+<!-- END MANAGED ADVERSARIAL DELIVERY GATE -->

@@ -8,7 +8,7 @@ proportional. Do not invent work to fill the matrix.
 Freeze one immutable envelope for each stage. Its `packet_payload` contains the
 nonempty `packet_id`, the same `request`, `evidence`, and `candidate` for every
 reviewer, the reviewer's lens only, the required `reviewer_profile`, and integer
-`deadline_minutes`, `grace_minutes`, and `descendant_budget` exactly `0`.
+`status_check_minutes` and `unresponsive_grace_minutes` values.
 
 The on-demand `sol_reviewer` delivery-review identity is not a plan-review route;
 packet validation must reject it before dispatch.
@@ -20,12 +20,22 @@ recomputes it and returns `observed_packet_sha256`; the root rejects stale,
 mutated, malformed, or mismatched output. The pure helper in
 `scripts/packet_integrity.py` is the executable contract.
 
-Every stage freezes `deadline_minutes` in `1..45` (default `15`) and
-`grace_minutes` in `1..5` (default `3`). The terminal profiles
-`spark_scanner`, `luna_scanner`, and `sol_advisor` require
-`descendant_budget` exactly `0`. Missing or out-of-range values and any other
-profile block dispatch. On timeout, steer once, wait exactly the frozen grace,
-then interrupt; do not automatically restart an unchanged packet.
+Every stage freezes `status_check_minutes` in `1..45` (default `15`) and
+`unresponsive_grace_minutes` in `1..5` (default `3`). The terminal profiles
+`spark_scanner`, `luna_scanner`, and `sol_advisor` are the only planning routes.
+Reject `deadline_minutes`, reject `grace_minutes`, and reject
+`descendant_budget` during build and verify. Unknown or out-of-range values and
+any other profile block dispatch. Terminal reviewer child count and descendant
+count exactly `0` are behavioral telemetry, not packet fields.
+
+Elapsed time never terminates healthy work. Active tool use, running work with
+evidence, or concrete progress renews indefinitely. Reaching
+`status_check_minutes` causes one status query/steer; a progress reply renews
+the interval indefinitely. Interrupt only after that unanswered steer and
+silence through `unresponsive_grace_minutes`, or demonstrably stuck/idle; then
+run the crash/session audit before ownership reclaim. Preserve partial or
+`timed_out` telemetry and confidence/sign-off limits for genuinely
+unresponsive stages. Do not automatically restart unchanged packets.
 
 Copy this complete field list into every reviewer assignment:
 
@@ -70,7 +80,7 @@ material authority or implementation change must refresh `sol_advisor` review
 before sign-off. Treat this as an internal prerequisite: when execution is
 already authorized, it never creates renewed user approval.
 
-## Deadline, Timeout, And Partial Coverage
+## Liveness, Interruption, And Partial Coverage
 
 Record `timed_out`, elapsed coverage, omitted categories, and the confidence
 limit. If a timed-out stage uniquely owns a critical category, sign-off is

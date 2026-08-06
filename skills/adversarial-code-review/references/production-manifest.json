@@ -18,18 +18,9 @@
     "skills/adversarial-code-review/scripts/install_review_gate.py",
     "skills/adversarial-code-review/scripts/lifecycle_gate.py",
     "skills/adversarial-code-review/scripts/review_contracts.py",
+    "skills/adversarial-code-review/scripts/test_install_review_gate.py",
     "skills/adversarial-code-review/scripts/verification_evidence.py",
-    "skills/delivery-orchestration/SKILL.md",
-    "skills/delivery-orchestration/agents/openai.yaml",
-    "skills/delivery-orchestration/references/delegation-topology.md",
-    "skills/delivery-orchestration/scripts/test_routing_policy.py",
-    "agents/sol_reviewer.toml",
-    "skills/plan-review-ladder/SKILL.md",
-    "skills/plan-review-ladder/agents/openai.yaml",
-    "skills/plan-review-ladder/references/review-lenses.md",
-    "skills/plan-review-ladder/scripts/packet_integrity.py",
-    "skills/plan-review-ladder/scripts/test_packet_integrity.py",
-    "skills/plan-review-ladder/scripts/test_plan_routing.py"
+    "agents/sol_reviewer.toml"
   ],
   "semantic_inputs": [
     {
@@ -59,18 +50,9 @@
     "skills/adversarial-code-review/scripts/install_review_gate.py",
     "skills/adversarial-code-review/scripts/lifecycle_gate.py",
     "skills/adversarial-code-review/scripts/review_contracts.py",
+    "skills/adversarial-code-review/scripts/test_install_review_gate.py",
     "skills/adversarial-code-review/scripts/verification_evidence.py",
-    "skills/delivery-orchestration/SKILL.md",
-    "skills/delivery-orchestration/agents/openai.yaml",
-    "skills/delivery-orchestration/references/delegation-topology.md",
-    "skills/delivery-orchestration/scripts/test_routing_policy.py",
     "agents/sol_reviewer.toml",
-    "skills/plan-review-ladder/SKILL.md",
-    "skills/plan-review-ladder/agents/openai.yaml",
-    "skills/plan-review-ladder/references/review-lenses.md",
-    "skills/plan-review-ladder/scripts/packet_integrity.py",
-    "skills/plan-review-ladder/scripts/test_packet_integrity.py",
-    "skills/plan-review-ladder/scripts/test_plan_routing.py",
     "config.toml",
     "hooks.json"
   ]

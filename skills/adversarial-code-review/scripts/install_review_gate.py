@@ -39,6 +39,7 @@ MANAGED_EVENTS = (
     "SubagentStop",
     "Stop",
 )
+SELF_TEST_PATH = "skills/adversarial-code-review/scripts/test_install_review_gate.py"
 RUNTIME_NAMES = {
     ".git",
     ".superpowers",
@@ -51,11 +52,6 @@ RUNTIME_NAMES = {
     "tmp",
 }
 CREDENTIAL_TOKENS = (".env", "credential", "id_rsa", "private-key", "secret", "token")
-INSTALLABLE_VALIDATORS = {
-    "skills/delivery-orchestration/scripts/test_routing_policy.py",
-    "skills/plan-review-ladder/scripts/test_packet_integrity.py",
-    "skills/plan-review-ladder/scripts/test_plan_routing.py",
-}
 BEGIN = "<!-- BEGIN MANAGED ADVERSARIAL DELIVERY GATE -->"
 END = "<!-- END MANAGED ADVERSARIAL DELIVERY GATE -->"
 TRANSACTION_ID = re.compile(r"[0-9a-f]{32}\Z")
@@ -246,10 +242,7 @@ def validate_source(source: Path) -> None:
         lowered = path.name.casefold()
         if any(token in lowered for token in CREDENTIAL_TOKENS):
             die(f"credential-like source rejected: {relative}")
-        if (
-            path.name.startswith("test_")
-            and relative not in INSTALLABLE_VALIDATORS
-        ) or _is_runtime_path(PurePosixPath(relative)):
+        if (path.name.startswith("test_") and relative != SELF_TEST_PATH) or _is_runtime_path(PurePosixPath(relative)):
             die(f"non-production source rejected: {relative}")
 
     # Runtime and credential material inside a managed skill is a boundary
@@ -266,6 +259,12 @@ def validate_source(source: Path) -> None:
                 die(f"runtime/scratch source rejected: {relative.as_posix()}")
             if candidate.is_file() and any(token in candidate.name.casefold() for token in CREDENTIAL_TOKENS):
                 die(f"credential-like source rejected: {relative.as_posix()}")
+            if (
+                candidate.is_file()
+                and candidate.name.casefold().startswith("test_")
+                and relative.as_posix() != SELF_TEST_PATH
+            ):
+                die(f"non-production source rejected: {relative.as_posix()}")
 
     # Parse all authoritative source formats before producing a preview.
     source_config(source)
@@ -725,10 +724,9 @@ def _managed_extras(home: Path) -> set[str]:
             relative = item.relative_to(home).as_posix()
             if relative in allowed:
                 continue
-            name = item.name.casefold()
             if _is_generated_cache_path(relative):
                 continue
-            if relative in STALE_MANAGED_FILES or name.startswith("test_"):
+            if relative in STALE_MANAGED_FILES:
                 extras.add(relative)
             else:
                 die(f"unowned file exists inside managed destination: {relative}")
@@ -1998,8 +1996,6 @@ def verify(
     try:
         _profile_exact(home)
         _validate_skill(home / "skills" / "adversarial-code-review", "adversarial-code-review")
-        _validate_skill(home / "skills" / "delivery-orchestration", "delivery-orchestration")
-        _validate_skill(home / "skills" / "plan-review-ladder", "plan-review-ladder")
     except ValueError as exc:
         failures.append(f"validator:{exc}")
     try:
@@ -2008,9 +2004,6 @@ def verify(
             failures.extend(f"runtime-exclusion:{path}" for path in sorted(extras))
     except ValueError as exc:
         failures.append(f"runtime-exclusion:{exc}")
-    wrong_packet = home / "skills" / "adversarial-code-review" / "scripts" / "packet_integrity.py"
-    if wrong_packet.exists():
-        failures.append("canonical-packet-helper:duplicate")
     return {"ok": not failures, "failures": failures, "handler_contract_smoke": None}
 
 

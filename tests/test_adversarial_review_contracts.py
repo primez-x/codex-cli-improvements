@@ -48,6 +48,20 @@ def _mutate_gate(path: str) -> None:
 
 
 class AdversarialReviewContractsTests(unittest.TestCase):
+    def test_canonical_json_and_sha256_fixed_vectors_remain_stable(self) -> None:
+        payload = {"z": "x", "a": [1, True, None]}
+        canonical = b'{"a":[1,true,null],"z":"x"}'
+
+        self.assertEqual(review_contracts.canonical_bytes(payload), canonical)
+        self.assertEqual(
+            review_contracts.compute_packet_sha256(payload),
+            "6e5aeb913fc68b439874dfbf513eac8b1d1d55e6b4baec9e9d173423eb0f608f",
+        )
+        self.assertEqual(
+            review_contracts.compute_raw_sha256(b"raw\x00bytes"),
+            "c560da256bb4c68782848cf894e228cc58649bbca864b48e451d66e8ce47fe00",
+        )
+
     def test_strict_versioned_review_records_reject_unknown_fields_and_versions(self) -> None:
         output = {
             "schema_version": 1, "attempt_id": "attempt-1", "packet_sha256": SHA,

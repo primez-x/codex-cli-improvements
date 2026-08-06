@@ -60,7 +60,7 @@ class InstallerTests(unittest.TestCase):
         return home
 
     def make_current_main_home(self, root: Path) -> Path:
-        """Model the current six-profile installation before adding the gate."""
+        """Model normalized routing before adding the reviewer package."""
         home = root / "current-main-home"
         (home / "agents").mkdir(parents=True)
         for name in (
@@ -68,6 +68,7 @@ class InstallerTests(unittest.TestCase):
             "spark_worker",
             "luna_scanner",
             "luna_worker",
+            "luna_orchestrator",
             "sol_worker",
             "sol_advisor",
         ):
@@ -75,7 +76,7 @@ class InstallerTests(unittest.TestCase):
         routing_test = home / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py"
         routing_test.parent.mkdir(parents=True)
         routing_test.write_text(
-            'raise SystemExit("stale six-profile validator")\n',
+            'raise SystemExit("routing sentinel must remain untouched")\n',
             encoding="utf-8",
         )
         (routing_test.parent / "local-validator-helper.py").write_text(
@@ -121,7 +122,7 @@ class InstallerTests(unittest.TestCase):
         (home / "hooks.json").write_text(json.dumps(hooks, indent=2), encoding="utf-8")
         (home / "AGENTS.md").write_text(
             "# existing global agreements\n"
-            "- Use only the six configured custom profiles.\n",
+            "- Preserve this user-owned routing note.\n",
             encoding="utf-8",
         )
         return home
@@ -1015,7 +1016,7 @@ class InstallerTests(unittest.TestCase):
             self.assertIn("composite lifecycle state", (refused.stdout + refused.stderr).lower())
             shutil.rmtree(Path("\\\\?\\" + os.path.abspath(long_state_top)))
 
-    def test_install_rolls_back_when_plan_review_skill_metadata_is_invalid(self) -> None:
+    def test_install_ignores_unowned_plan_review_skill_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
@@ -1034,10 +1035,10 @@ class InstallerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             home = self.make_home(root)
-            originals = {
-                name: (home / name).read_bytes()
-                for name in ("config.toml", "hooks.json", "AGENTS.md")
-            }
+            installed_plan = home / "skills" / "plan-review-ladder" / "SKILL.md"
+            installed_plan.parent.mkdir(parents=True)
+            installed_plan.write_bytes(b"# preserve user-owned plan skill\n")
+            plan_before = installed_plan.read_bytes()
 
             result = self.invoke(
                 "install",
@@ -1047,24 +1048,35 @@ class InstallerTests(unittest.TestCase):
                 str(home),
             )
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("plan-review-ladder", (result.stdout + result.stderr).lower())
-            for name, data in originals.items():
-                self.assertEqual((home / name).read_bytes(), data)
-            self.assertFalse((home / "agents" / "sol_reviewer.toml").exists())
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(installed_plan.read_bytes(), plan_before)
+            self.assertTrue((home / "agents" / "sol_reviewer.toml").is_file())
 
-    def test_install_preserves_current_main_routing_and_adjacent_hooks(self) -> None:
-        """The gate must add one identity without rewriting the six-profile router."""
+    def test_install_preserves_normalized_routing_plan_skills_and_adjacent_hooks(self) -> None:
+        """The reviewer package must not rewrite normalized routing or plan skills."""
         with tempfile.TemporaryDirectory() as temporary:
             home = self.make_current_main_home(Path(temporary))
             before = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
             hooks_before = (home / "hooks.json").read_text(encoding="utf-8")
             routing_test = home / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py"
+            routing_before = routing_test.read_bytes()
             adjacent = routing_test.parent / "local-validator-helper.py"
             adjacent_before = adjacent.read_bytes()
             plan_root = home / "skills" / "plan-review-ladder"
             plan_adjacent = plan_root / "scripts" / "local-plan-helper.py"
             plan_adjacent_before = plan_adjacent.read_bytes()
+            plan_paths = (
+                "SKILL.md",
+                "agents/openai.yaml",
+                "references/review-lenses.md",
+                "scripts/packet_integrity.py",
+                "scripts/test_packet_integrity.py",
+                "scripts/test_plan_routing.py",
+            )
+            plan_before = {
+                relative: plan_root.joinpath(*relative.split("/")).read_bytes()
+                for relative in plan_paths
+            }
 
             result = self.install(home)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -1082,61 +1094,33 @@ class InstallerTests(unittest.TestCase):
                 "spark_worker",
                 "luna_scanner",
                 "luna_worker",
+                "luna_orchestrator",
                 "sol_worker",
                 "sol_advisor",
             ):
                 self.assertEqual(after["agents"][name], before["agents"][name])
             self.assertEqual(after["agents"]["luna_scanner"]["config_file"], "./agents/luna_scanner.toml")
             with (home / "agents" / "luna_scanner.toml").open("rb") as stream:
-                self.assertEqual(tomllib.load(stream)["model_reasoning_effort"], "medium")
+                self.assertEqual(tomllib.load(stream)["model_reasoning_effort"], "low")
             self.assertIn("sol_reviewer", after["agents"])
             self.assertEqual(
                 after["agents"]["sol_reviewer"]["description"],
                 "On-demand read-only Sol reviewer for root-prepared consequential delivery evidence packets.",
             )
             installed_agents = (home / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("Use only the six configured custom profiles.", installed_agents)
+            self.assertIn("Preserve this user-owned routing note.", installed_agents)
             self.assertIn(
-                "The six-profile limit applies only to general-purpose routing",
+                "separate root-routed review identity",
                 installed_agents,
             )
-            self.assertEqual(
-                routing_test.read_bytes(),
-                (ROOT / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py").read_bytes(),
-            )
-            validation = subprocess.run(
-                [sys.executable, "-B", str(routing_test)],
-                capture_output=True,
-                text=True,
-                check=False,
-                env={**os.environ, "CODEX_ROUTING_HOME": str(home)},
-            )
-            self.assertEqual(validation.returncode, 0, validation.stderr)
+            self.assertEqual(routing_test.read_bytes(), routing_before)
             self.assertEqual(adjacent.read_bytes(), adjacent_before)
-            plan_paths = (
-                "SKILL.md",
-                "agents/openai.yaml",
-                "references/review-lenses.md",
-                "scripts/packet_integrity.py",
-                "scripts/test_packet_integrity.py",
-                "scripts/test_plan_routing.py",
-            )
             for relative in plan_paths:
                 with self.subTest(plan_path=relative):
                     self.assertEqual(
                         plan_root.joinpath(*relative.split("/")).read_bytes(),
-                        (ROOT / "skills" / "plan-review-ladder").joinpath(*relative.split("/")).read_bytes(),
+                        plan_before[relative],
                     )
-            for validator_name in ("test_plan_routing.py", "test_packet_integrity.py"):
-                validator = plan_root / "scripts" / validator_name
-                validation = subprocess.run(
-                    [sys.executable, "-B", str(validator)],
-                    cwd=validator.parent,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                self.assertEqual(validation.returncode, 0, validation.stderr)
             self.assertEqual(plan_adjacent.read_bytes(), plan_adjacent_before)
 
             hooks_after = (home / "hooks.json").read_text(encoding="utf-8")
@@ -1155,8 +1139,41 @@ class InstallerTests(unittest.TestCase):
             self.assertIn(marker, merged)
         self.assertNotIn("lifecycle_gate.py", merged)
 
-    def test_payload_is_exact_production_allowlist_with_one_canonical_packet_helper(self) -> None:
-        """Copying tests or a second packet helper must fail this test."""
+    def test_installed_self_test_uses_its_custom_home_as_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = self.make_home(root)
+            installed = self.install(home)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+
+            unrelated_home = root / "unrelated-user-home"
+            unrelated_home.mkdir()
+            self_test = (
+                home
+                / "skills"
+                / "adversarial-code-review"
+                / "scripts"
+                / "test_install_review_gate.py"
+            )
+            result = subprocess.run(
+                [sys.executable, "-B", str(self_test)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=False,
+                env={
+                    **os.environ,
+                    "CODEX_HOME": str(home),
+                    "HOME": str(unrelated_home),
+                    "USERPROFILE": str(unrelated_home),
+                },
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Ran 1 test", result.stderr)
+
+    def test_payload_is_exact_adversarial_production_allowlist(self) -> None:
+        """Cross-skill tests or packet helpers must stay outside this installer."""
         with tempfile.TemporaryDirectory() as temporary:
             home = self.make_home(Path(temporary))
             result = self.install(home)
@@ -1177,14 +1194,12 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(
                 sorted(path for path in expected if Path(path).name.startswith("test_")),
                 [
-                    "skills/delivery-orchestration/scripts/test_routing_policy.py",
-                    "skills/plan-review-ladder/scripts/test_packet_integrity.py",
-                    "skills/plan-review-ladder/scripts/test_plan_routing.py",
+                    "skills/adversarial-code-review/scripts/test_install_review_gate.py",
                 ],
             )
             self.assertEqual(
                 [path for path in expected if Path(path).name == "packet_integrity.py"],
-                ["skills/plan-review-ladder/scripts/packet_integrity.py"],
+                [],
             )
             self.assertFalse((home / "skills" / "adversarial-code-review" / "scripts" / "packet_integrity.py").exists())
             self.assertIn(
@@ -1281,7 +1296,7 @@ class InstallerTests(unittest.TestCase):
             ),
             "managed-block": lambda home: (home / "AGENTS.md").write_text(
                 (home / "AGENTS.md").read_text(encoding="utf-8").replace(
-                    "Only a required high-risk review failure",
+                    "only a required review failure",
                     "Every review failure blocks delivery",
                 ), encoding="utf-8"
             ),
