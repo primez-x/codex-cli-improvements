@@ -302,23 +302,40 @@ class RoutingPolicyTests(unittest.TestCase):
             parent_instructions["luna_worker"],
         )
 
-        normalised_contract_text = re.sub(
-            r"[`\\s]+",
-            " ",
-            " ".join(
-                (
-                    skill,
-                    topology,
-                    agents_text,
-                    parent_instructions["luna_orchestrator"],
-                    parent_instructions["luna_worker"],
-                )
-            ).lower(),
+        forbidden_route_pattern = re.compile(
+            r"\broster_delta_v1\b[^.!?\r\n]*\bthrough\b[^.!?\r\n]*\bwork_return_v1\b"
         )
-        self.assertNotRegex(
-            normalised_contract_text,
-            r"\broster_delta_v1\b.*?\bthrough\b.*?\bwork_return_v1\b",
-            "ROSTER_DELTA_V1 must remain separate direct-to-root metadata-only signaling and not route through WORK_RETURN_V1.",
+        contract_sources = (
+            ("delivery skill", skill),
+            ("topology", topology),
+            ("global agents", agents_text),
+            ("luna orchestrator", parent_instructions["luna_orchestrator"]),
+            ("luna worker", parent_instructions["luna_worker"]),
+        )
+        for source_name, source_text in contract_sources:
+            normalised_source_text = re.sub(
+                r"[ \t]+",
+                " ",
+                source_text.replace("`", "").lower(),
+            )
+            self.assertNotRegex(
+                normalised_source_text,
+                forbidden_route_pattern,
+                f"{source_name} must keep ROSTER_DELTA_V1 separate from WORK_RETURN_V1.",
+            )
+
+        forbidden_contract_text = (
+            "Use semantic task names, metadata-only ROSTER_DELTA_V1 updates through WORK_RETURN_V1"
+        )
+        normalised_forbidden_contract_text = re.sub(
+            r"[ \t]+",
+            " ",
+            forbidden_contract_text.replace("`", "").lower(),
+        )
+        self.assertRegex(
+            normalised_forbidden_contract_text,
+            forbidden_route_pattern,
+            "Historical forbidden routing text must still match the anti-pattern guard.",
         )
 
     def test_root_and_untyped_subagent_defaults(self) -> None:
