@@ -1,6 +1,14 @@
 model = "gpt-5.6-luna"
 model_reasoning_effort = "max"
 
+# Keep the portable kit least-privileged by default while exposing a named
+# workspace-edit profile in the Codex desktop/CLI permission selector.
+default_permissions = "project-edit"
+
+[permissions.project-edit]
+description = "Workspace-only editing"
+extends = ":workspace"
+
 [agents]
 max_concurrent_threads_per_session = 64
 max_depth = 3
