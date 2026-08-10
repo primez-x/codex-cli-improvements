@@ -79,10 +79,14 @@ deployment:
 4. Copy `hooks/plan_gap_goal_hook.py`; semantically merge the plan-gap and
    instruction-learning groups from `hooks.json`, preserving all unrelated
    hook groups and trust metadata.
-5. Semantically merge only the root model/effort, `[agents]` scalar values and
-   exact source role tables, `features.multi_agent`, and managed
-   `skills.config` registrations from `config.toml`. Preserve every unrelated
-   local setting.
+5. Semantically merge only the root model/effort, the
+   `default_permissions`/`[permissions.project-edit]` profile, `[agents]`
+   scalar values and exact source role tables, `features.multi_agent`, and
+   managed `skills.config` registrations from `config.toml`. Remove legacy
+   root `sandbox_mode` or `[sandbox_workspace_write]` settings from the target
+   before restarting; those settings override named permission profiles.
+   Preserve the target's unrelated settings and its intentional
+   `approval_policy` choice.
 6. Apply the adversarial-review add-on below for the reviewer profile, review
    skill, and managed risk-triggered instruction block.
 7. Run the installed routing, packet, instruction, and reviewer checks against
@@ -113,6 +117,10 @@ python -B .\skills\adversarial-code-review\scripts\install_review_gate.py smoke 
 The installer records a recoverable transaction. After a full-kit deployment,
 restart Codex and start a new task so model, agent, skill, and hook changes
 reload. Review user-level hooks through `/hooks`.
+
+The portable config selects `project-edit`, a named profile that extends the
+built-in `:workspace` boundary. The built-in `:danger-full-access` option
+remains available in the selector when unrestricted access is intentional.
 
 ## Validate
 
