@@ -26,7 +26,6 @@ GENERAL_ROUTING_MATRIX = {
 }
 REVIEWER_PROFILE_NAME = "sol_reviewer"
 REVIEWER_PROFILE = ("gpt-5.6-sol", "max")
-PERMISSION_PROFILE_NAME = "project-edit"
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -90,28 +89,15 @@ class RepositoryContractTests(unittest.TestCase):
                     wanted,
                 )
 
-    def test_config_declares_a_named_permission_profile(self) -> None:
-        self.assertEqual(
-            self.config["default_permissions"],
-            PERMISSION_PROFILE_NAME,
-        )
-        self.assertEqual(
-            set(self.config["permissions"]),
-            {PERMISSION_PROFILE_NAME},
-        )
-        self.assertEqual(
-            self.config["permissions"][PERMISSION_PROFILE_NAME],
-            {
-                "description": "Workspace-only editing",
-                "extends": ":workspace",
-            },
-        )
-        for legacy_key in (
+    def test_portable_config_leaves_permission_policy_to_user_config(self) -> None:
+        for permission_key in (
+            "default_permissions",
+            "permissions",
             "sandbox_mode",
             "sandbox_workspace_write",
         ):
-            with self.subTest(legacy_key=legacy_key):
-                self.assertNotIn(legacy_key, self.config)
+            with self.subTest(permission_key=permission_key):
+                self.assertNotIn(permission_key, self.config)
 
     def test_only_scanners_are_legal_at_depth_three(self) -> None:
         registered = {
