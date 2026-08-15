@@ -14,6 +14,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -367,14 +368,27 @@ class InstallerTests(unittest.TestCase):
             preview_data = json.loads(preview.stdout)
             self.assertTrue(preview_data["copy"])
             self.assertEqual(preview_data["semantic"], ["AGENTS.md", "config.toml", "hooks.json"])
+            self.assertEqual(preview_data["global_agents"]["mode"], "preserved_block")
+            self.assertEqual(
+                preview_data["global_agents"]["previous_sha256"],
+                hashlib.sha256(original["AGENTS.md"]).hexdigest(),
+            )
+            self.assertEqual(
+                preview_data["global_agents"]["source_sha256"],
+                hashlib.sha256((ROOT / "AGENTS.md").read_bytes()).hexdigest(),
+            )
 
             installed = self.install(home)
             self.assertEqual(installed.returncode, 0, installed.stderr)
             receipt = json.loads(installed.stdout)
             self.assertIsNone(receipt["handler_contract_smoke"])
             self.assertIn("No adversarial lifecycle hooks are registered", receipt["next"])
-            self.assertNotIn("approve changed handlers", receipt["next"])
+            self.assertIn("approve changed handlers", receipt["next"])
             self.assertNotIn("live provenance smoke", receipt["next"])
+            self.assertEqual(receipt["global_agents"]["mode"], "preserved_block")
+            installed_agents = (home / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertTrue(installed_agents.startswith("# local\nkeep this\n"))
+            self.assertIn(installer_module.BEGIN, installed_agents)
             transaction = home / ".adversarial-review-install" / receipt["transaction_id"]
             self.assertTrue((transaction / "manifest.json").is_file())
             self.assertEqual(json.loads((transaction / "journal.json").read_text(encoding="utf-8"))["status"], "completed")
@@ -439,6 +453,129 @@ class InstallerTests(unittest.TestCase):
             again = self.install(home)
             self.assertEqual(again.returncode, 0, again.stderr)
             self.assertTrue(json.loads(again.stdout)["idempotent"])
+
+    def test_install_updates_plan_and_instruction_learning_runtime_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            runtime_paths = (
+                "hooks/plan_gap_goal_hook.py",
+                "skills/instruction-learning-loop/SKILL.md",
+                "skills/instruction-learning-loop/agents/openai.yaml",
+                "skills/instruction-learning-loop/scripts/audit_instruction_system.py",
+                "skills/instruction-learning-loop/scripts/instruction_learning_hook.py",
+                "skills/instruction-learning-loop/scripts/test_global_autonomy_contract.py",
+                "skills/instruction-learning-loop/scripts/test_instruction_learning.py",
+            )
+            for relative in runtime_paths:
+                target = home.joinpath(*relative.split("/"))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(f"stale {relative}\n", encoding="utf-8")
+
+            result = self.install(home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            installed_files = set(json.loads(result.stdout)["installed_files"])
+            self.assertTrue(set(runtime_paths).issubset(installed_files))
+            for relative in runtime_paths:
+                with self.subTest(relative=relative):
+                    self.assertEqual(
+                        home.joinpath(*relative.split("/")).read_bytes(),
+                        ROOT.joinpath(*relative.split("/")).read_bytes(),
+                    )
+
+    def test_explicit_global_agents_replacement_is_transactional_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            original = (home / "AGENTS.md").read_bytes()
+
+            installed = self.invoke(
+                "install",
+                "--source-root",
+                str(ROOT),
+                "--codex-home",
+                str(home),
+                "--replace-global-agents",
+            )
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            receipt = json.loads(installed.stdout)
+            self.assertEqual((home / "AGENTS.md").read_bytes(), (ROOT / "AGENTS.md").read_bytes())
+            self.assertEqual(receipt["global_agents"]["mode"], "exact_source")
+            self.assertEqual(
+                receipt["global_agents"]["previous_sha256"],
+                hashlib.sha256(original).hexdigest(),
+            )
+            self.assertEqual(
+                receipt["global_agents"]["source_sha256"],
+                hashlib.sha256((ROOT / "AGENTS.md").read_bytes()).hexdigest(),
+            )
+            transaction = home / ".adversarial-review-install" / receipt["transaction_id"]
+            manifest = json.loads((transaction / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                receipt["global_agents"]["previous_sha256"],
+                manifest["paths"]["AGENTS.md"]["sha256"],
+            )
+
+            verified = self.invoke(
+                "verify",
+                "--source-root",
+                str(ROOT),
+                "--codex-home",
+                str(home),
+                "--replace-global-agents",
+            )
+            self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+            again = self.install(home)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            self.assertTrue(json.loads(again.stdout)["idempotent"])
+
+            rolled_back = self.invoke(
+                "rollback",
+                "--codex-home",
+                str(home),
+                "--transaction-id",
+                receipt["transaction_id"],
+            )
+            self.assertEqual(rolled_back.returncode, 0, rolled_back.stderr)
+            self.assertEqual((home / "AGENTS.md").read_bytes(), original)
+
+    def test_explicit_global_agents_replacement_rejects_post_plan_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            original_planned = installer_module.planned
+            concurrent = b"# concurrent user edit\nkeep this exact content\n"
+            config_before = (home / "config.toml").read_bytes()
+            hooks_before = (home / "hooks.json").read_bytes()
+            plan_calls = 0
+
+            def plan_then_mutate(*args, **kwargs):
+                nonlocal plan_calls
+                result = original_planned(*args, **kwargs)
+                plan_calls += 1
+                if plan_calls == 1:
+                    (home / "AGENTS.md").write_bytes(concurrent)
+                return result
+
+            with mock.patch.object(
+                installer_module,
+                "planned",
+                side_effect=plan_then_mutate,
+            ):
+                try:
+                    with self.assertRaisesRegex(ValueError, "changed after planning"):
+                        installer_module.install(ROOT, home, replace_global_agents=True)
+                except TypeError as exc:
+                    self.fail(f"installer lacks explicit replacement support: {exc}")
+
+            self.assertEqual((home / "AGENTS.md").read_bytes(), concurrent)
+            self.assertEqual((home / "config.toml").read_bytes(), config_before)
+            self.assertEqual((home / "hooks.json").read_bytes(), hooks_before)
+            self.assertEqual(plan_calls, 1)
+            state = home / ".adversarial-review-install"
+            completed = [
+                path
+                for path in state.iterdir()
+                if path.is_dir() and installer_module.TRANSACTION_ID.fullmatch(path.name)
+            ]
+            self.assertEqual(completed, [])
 
     def test_config_merge_preserves_header_like_multiline_strings_comments_and_unmanaged_values(self) -> None:
         """Treating header-looking string content as TOML structure must fail."""
@@ -1156,7 +1293,7 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn("lifecycle_gate.py", merged)
 
     def test_payload_is_exact_production_allowlist_with_one_canonical_packet_helper(self) -> None:
-        """Copying tests or a second packet helper must fail this test."""
+        """Copying unapproved tests or a second packet helper must fail this test."""
         with tempfile.TemporaryDirectory() as temporary:
             home = self.make_home(Path(temporary))
             result = self.install(home)
@@ -1167,6 +1304,7 @@ class InstallerTests(unittest.TestCase):
                 for root in (
                     home / "skills" / "adversarial-code-review",
                     home / "skills" / "delivery-orchestration",
+                    home / "skills" / "instruction-learning-loop",
                     home / "skills" / "plan-review-ladder",
                 )
                 for path in root.rglob("*")
@@ -1178,6 +1316,8 @@ class InstallerTests(unittest.TestCase):
                 sorted(path for path in expected if Path(path).name.startswith("test_")),
                 [
                     "skills/delivery-orchestration/scripts/test_routing_policy.py",
+                    "skills/instruction-learning-loop/scripts/test_global_autonomy_contract.py",
+                    "skills/instruction-learning-loop/scripts/test_instruction_learning.py",
                     "skills/plan-review-ladder/scripts/test_packet_integrity.py",
                     "skills/plan-review-ladder/scripts/test_plan_routing.py",
                 ],
@@ -1241,10 +1381,58 @@ class InstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             home = self.make_home(Path(temporary))
             destination = json.loads((home / "hooks.json").read_text(encoding="utf-8"))
+            source_hooks = json.loads((ROOT / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+
+            destination["hooks"]["UserPromptSubmit"][0]["hooks"].append({
+                "type": "command",
+                "command": "python -c \"print('plan_gap_goal_hook.py is documentation')\"",
+            })
+            chained = json.loads(json.dumps(source_hooks["UserPromptSubmit"][0]["hooks"][0]))
+            for field in ("command", "commandWindows"):
+                chained[field] += " && echo preserve-chained"
+            chained["localMetadata"] = "preserve-chained"
+            destination["hooks"]["UserPromptSubmit"][0]["hooks"].append(chained)
+
+            divergent = {
+                "type": "command",
+                "command": source_hooks["UserPromptSubmit"][0]["hooks"][0]["command"],
+                "commandWindows": source_hooks["UserPromptSubmit"][0]["hooks"][1]["commandWindows"],
+                "localMetadata": "preserve-divergent",
+            }
+            destination["hooks"]["UserPromptSubmit"][0]["hooks"].append(divergent)
+
+            lifecycle = json.loads(json.dumps(source_hooks["UserPromptSubmit"][0]["hooks"][0]))
+            for field in ("command", "commandWindows"):
+                lifecycle[field] = lifecycle[field].replace(
+                    "'hooks', 'plan_gap_goal_hook.py'",
+                    "'skills', 'adversarial-code-review', 'scripts', 'lifecycle_gate.py'",
+                ).replace(" -B -c ", " -c ")
             destination["hooks"]["PreToolUse"] = [
-                {"matcher": "^old$", "hooks": [{"type": "command", "command": "old adversarial-code-review lifecycle_gate.py"}]},
+                {
+                    "matcher": "^old$",
+                    "localMetadata": {"position": "before"},
+                    "hooks": [
+                        lifecycle,
+                        {
+                            "type": "command",
+                            "command": "python -c \"print('adversarial-code-review lifecycle_gate.py documentation')\"",
+                            "localMetadata": "preserve-lifecycle-prose",
+                        },
+                    ],
+                },
                 {"matcher": "^keep$", "hooks": [{"type": "command", "command": "keep-pre"}]},
             ]
+            for event in ("UserPromptSubmit", "Stop"):
+                stale_group = json.loads(json.dumps(source_hooks[event][0]))
+                for handler in stale_group["hooks"]:
+                    for field in ("command", "commandWindows"):
+                        handler[field] = handler[field].replace(" -B -c ", " -c ")
+                stale_group["matcher"] = f"^managed-{event.casefold()}$"
+                stale_group["localMetadata"] = {"position": "before" if event == "UserPromptSubmit" else "after"}
+                if event == "UserPromptSubmit":
+                    destination["hooks"][event].insert(0, stale_group)
+                else:
+                    destination["hooks"][event].append(stale_group)
             (home / "hooks.json").write_text(json.dumps(destination, indent=3), encoding="utf-8")
 
             result = self.install(home)
@@ -1255,11 +1443,47 @@ class InstallerTests(unittest.TestCase):
             serialized = json.dumps(installed)
             self.assertIn("keep-prompt", serialized)
             self.assertIn("keep-pre", serialized)
+            self.assertIn("plan_gap_goal_hook.py is documentation", serialized)
+            self.assertIn("preserve-chained", serialized)
+            self.assertIn("preserve-divergent", serialized)
+            self.assertIn("preserve-lifecycle-prose", serialized)
+            self.assertIn("lifecycle_gate.py documentation", serialized)
             self.assertIn('"trust": "keep"', serialized)
-            self.assertNotIn("plan_gap_goal_hook", serialized)
-            self.assertNotIn("instruction_learning_hook", serialized)
-            self.assertNotIn("old adversarial-code-review", serialized)
-            self.assertNotIn("lifecycle_gate.py", serialized)
+            self.assertIn("plan_gap_goal_hook.py", serialized)
+            self.assertIn("instruction_learning_hook.py", serialized)
+            self.assertIn("python -B -c", serialized)
+            self.assertEqual(
+                installed["hooks"]["UserPromptSubmit"][0]["localMetadata"],
+                {"position": "before"},
+            )
+            self.assertEqual(
+                installed["hooks"]["Stop"][-1]["localMetadata"],
+                {"position": "after"},
+            )
+            self.assertEqual(
+                installed["hooks"]["PreToolUse"][0]["localMetadata"],
+                {"position": "before"},
+            )
+            dispatchers = [
+                handler
+                for entries in installed["hooks"].values()
+                for group in entries
+                for handler in group["hooks"]
+                if installer_module._managed_hook_kind(handler)
+                in {"plan-gap", "instruction-learning"}
+            ]
+            self.assertEqual(len(dispatchers), 3)
+            for handler in dispatchers:
+                self.assertIn(" -B -c ", handler["command"])
+                self.assertIn(" -B -c ", handler["commandWindows"])
+            lifecycle_handlers = [
+                handler
+                for entries in installed["hooks"].values()
+                for group in entries
+                for handler in group["hooks"]
+                if installer_module._managed_hook_kind(handler) == "adversarial-lifecycle"
+            ]
+            self.assertEqual(lifecycle_handlers, [])
 
     def test_semantic_corruption_fails_verify(self) -> None:
         """Fail-open semantic comparisons must fail this test."""

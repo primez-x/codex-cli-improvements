@@ -314,8 +314,9 @@ Use the transactional installer instead of manually copying or merging files.
 It uses an explicit production-file allowlist, previews raw copied paths and
 exact managed TOML/JSON/instruction changes, writes a private staged payload and
 recovery journal, authenticates every backup, is idempotent, and can roll back
-a transaction. It preserves unrelated hook groups, hook trust metadata, agents,
-skills, config sections, and instructions:
+a transaction. It updates the managed plan-gap and instruction-learning assets
+and handlers while preserving unrelated hook groups, hook trust metadata,
+agents, skills, config sections, and instructions:
 
 Incomplete-transaction recovery is compare-and-swap safe against its journal:
 only `applied` paths and the in-flight `next_path` are rollback candidates,
@@ -330,6 +331,15 @@ python -B .\skills\adversarial-code-review\scripts\install_review_gate.py instal
 python -B .\skills\adversarial-code-review\scripts\install_review_gate.py verify --source-root . --codex-home $env:CODEX_HOME
 python -B .\skills\adversarial-code-review\scripts\install_review_gate.py smoke --source-root . --codex-home $env:CODEX_HOME
 ```
+
+The default instruction merge preserves unmarked global instructions and
+reports `global_agents.mode` as `preserved_block`. When this repository's
+generic `AGENTS.md` is intentionally authoritative for the whole Codex home,
+add `--replace-global-agents` to `preview`, `install`, and strict `verify`. That
+explicit mode stages the byte-exact source file in the same authenticated
+transaction, reports the previous and source SHA-256 identities, and remains
+fully rollback-safe. Any semantic destination that changes after planning
+causes the transaction to abort before it writes live files.
 
 `install` and `verify` run installed skill validators plus static and semantic
 configuration checks; they do not depend on retired lifecycle behavior. The
