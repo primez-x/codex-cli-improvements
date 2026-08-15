@@ -1138,6 +1138,15 @@ def _verify_bundle_permissions(path: Path, *, user_sid: str | None = None) -> No
     root = Path(path)
     if os.name == "nt":
         sid = user_sid or _current_windows_user_sid()
+        powershell_environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key.casefold() != "psmodulepath"
+        }
+        powershell_environment.update({
+            "CODEX_BUNDLE_ROOT": str(root),
+            "CODEX_BUNDLE_USER_SID": sid,
+        })
         verified = subprocess.run(
             [
                 "powershell.exe", "-NoProfile", "-NonInteractive",
@@ -1146,11 +1155,7 @@ def _verify_bundle_permissions(path: Path, *, user_sid: str | None = None) -> No
             text=True,
             capture_output=True,
             check=False,
-            env={
-                **os.environ,
-                "CODEX_BUNDLE_ROOT": str(root),
-                "CODEX_BUNDLE_USER_SID": sid,
-            },
+            env=powershell_environment,
         )
         if verified.returncode != 0:
             raise RuntimeError("bundle ACL verification failed")

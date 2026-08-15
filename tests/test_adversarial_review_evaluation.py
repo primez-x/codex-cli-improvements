@@ -461,6 +461,43 @@ class EvaluationTests(unittest.TestCase):
                 if final.exists():
                     remove_hardened_tree(final)
 
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell module resolution only")
+    def test_bundle_acl_verifier_ignores_inherited_powershell_core_module_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shadow = root / "modules" / "Microsoft.PowerShell.Security"
+            shadow.mkdir(parents=True)
+            (shadow / "Microsoft.PowerShell.Security.psd1").write_text(
+                "@{ RootModule = 'Microsoft.PowerShell.Security.psm1'; "
+                "ModuleVersion = '99.0.0'; GUID = '11111111-1111-1111-1111-111111111111'; "
+                "FunctionsToExport = @('Get-Acl') }\n",
+                encoding="utf-8",
+            )
+            (shadow / "Microsoft.PowerShell.Security.psm1").write_text(
+                "throw 'incompatible PowerShell Core security module'\n",
+                encoding="utf-8",
+            )
+            store = review_contracts.BundleStore(root / "bundles")
+            original_module_path = os.environ.get("PSModulePath", "")
+            polluted_module_path = os.pathsep.join(
+                part for part in (str(root / "modules"), original_module_path) if part
+            )
+            final: Path | None = None
+            try:
+                with mock.patch.dict(os.environ, {"PSModulePath": polluted_module_path}):
+                    try:
+                        bundle = review_contracts.build_bundle(
+                            store,
+                            {"evidence.txt": b"private\n"},
+                        )
+                    except RuntimeError as exc:
+                        self.fail(f"ACL verification inherited PSModulePath: {exc}")
+                final = store.root / bundle["bundle_sha256"]
+                self.assertEqual(store.read(bundle["bundle_sha256"], "evidence.txt"), b"private\n")
+            finally:
+                if final is not None and final.exists():
+                    remove_hardened_tree(final)
+
     def test_review_output_uses_one_exact_pinned_git_finding_shape(self) -> None:
         generic_reference = {
             "kind": "git_commit",
