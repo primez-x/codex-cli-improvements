@@ -255,7 +255,7 @@ class ProductionManifestTests(unittest.TestCase):
 
         self.assertIn("skills/adversarial-code-review/references/production-manifest.json", copy_paths)
         self.assertIn("skills/adversarial-code-review/scripts/verification_evidence.py", copy_paths)
-        self.assertEqual(set(semantic_paths), {"config.toml", "hooks.json"})
+        self.assertEqual(set(semantic_paths), {"AGENTS.md", "config.toml", "hooks.json"})
         self.assertEqual(set(manifest["review_paths"]), set(copy_paths) | set(semantic_paths))
         for relative in manifest["review_paths"]:
             self.assertTrue((ROOT / relative).is_file(), relative)

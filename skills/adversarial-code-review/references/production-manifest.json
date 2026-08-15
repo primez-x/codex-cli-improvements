@@ -23,6 +23,13 @@
     "skills/delivery-orchestration/agents/openai.yaml",
     "skills/delivery-orchestration/references/delegation-topology.md",
     "skills/delivery-orchestration/scripts/test_routing_policy.py",
+    "hooks/plan_gap_goal_hook.py",
+    "skills/instruction-learning-loop/SKILL.md",
+    "skills/instruction-learning-loop/agents/openai.yaml",
+    "skills/instruction-learning-loop/scripts/audit_instruction_system.py",
+    "skills/instruction-learning-loop/scripts/instruction_learning_hook.py",
+    "skills/instruction-learning-loop/scripts/test_global_autonomy_contract.py",
+    "skills/instruction-learning-loop/scripts/test_instruction_learning.py",
     "agents/sol_reviewer.toml",
     "skills/plan-review-ladder/SKILL.md",
     "skills/plan-review-ladder/agents/openai.yaml",
@@ -39,6 +46,10 @@
     {
       "path": "hooks.json",
       "role": "hook_config_source"
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "global_agents_source"
     }
   ],
   "review_paths": [
@@ -64,6 +75,13 @@
     "skills/delivery-orchestration/agents/openai.yaml",
     "skills/delivery-orchestration/references/delegation-topology.md",
     "skills/delivery-orchestration/scripts/test_routing_policy.py",
+    "hooks/plan_gap_goal_hook.py",
+    "skills/instruction-learning-loop/SKILL.md",
+    "skills/instruction-learning-loop/agents/openai.yaml",
+    "skills/instruction-learning-loop/scripts/audit_instruction_system.py",
+    "skills/instruction-learning-loop/scripts/instruction_learning_hook.py",
+    "skills/instruction-learning-loop/scripts/test_global_autonomy_contract.py",
+    "skills/instruction-learning-loop/scripts/test_instruction_learning.py",
     "agents/sol_reviewer.toml",
     "skills/plan-review-ladder/SKILL.md",
     "skills/plan-review-ladder/agents/openai.yaml",
@@ -72,6 +90,7 @@
     "skills/plan-review-ladder/scripts/test_packet_integrity.py",
     "skills/plan-review-ladder/scripts/test_plan_routing.py",
     "config.toml",
-    "hooks.json"
+    "hooks.json",
+    "AGENTS.md"
   ]
 }

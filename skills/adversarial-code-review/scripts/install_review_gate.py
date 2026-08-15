@@ -1,4 +1,4 @@
-"""Transactional, one-way installer for the adversarial review package.
+"""Transactional installer for the managed Codex orchestration package.
 
 The explicit handler-contract smoke exercises legacy lifecycle scripts. It is
 optional and cannot prove that a running Codex process loaded or trusted hooks.
@@ -53,6 +53,8 @@ RUNTIME_NAMES = {
 CREDENTIAL_TOKENS = (".env", "credential", "id_rsa", "private-key", "secret", "token")
 INSTALLABLE_VALIDATORS = {
     "skills/delivery-orchestration/scripts/test_routing_policy.py",
+    "skills/instruction-learning-loop/scripts/test_global_autonomy_contract.py",
+    "skills/instruction-learning-loop/scripts/test_instruction_learning.py",
     "skills/plan-review-ladder/scripts/test_packet_integrity.py",
     "skills/plan-review-ladder/scripts/test_plan_routing.py",
 }
@@ -80,6 +82,7 @@ SEMANTIC_SOURCE_INPUTS = tuple(
 if SEMANTIC_SOURCE_INPUTS != (
     ("config.toml", "codex_config_source"),
     ("hooks.json", "hook_config_source"),
+    ("AGENTS.md", "global_agents_source"),
 ):
     raise ValueError("production manifest does not match installer semantic source inputs")
 MANAGED_ROOTS = {
@@ -591,10 +594,65 @@ def config_text(existing: bytes, source: Path) -> bytes:
     return encoded
 
 
+_MANAGED_HOOK_PARTS = {
+    "plan-gap": ("hooks", "plan_gap_goal_hook.py"),
+    "instruction-learning": (
+        "skills",
+        "instruction-learning-loop",
+        "scripts",
+        "instruction_learning_hook.py",
+    ),
+    "adversarial-lifecycle": (
+        "skills",
+        "adversarial-code-review",
+        "scripts",
+        "lifecycle_gate.py",
+    ),
+}
+
+
+def _managed_dispatcher_commands() -> dict[str, str]:
+    commands: dict[str, str] = {}
+    prefix = (
+        "import os, runpy; runpy.run_path(os.path.join("
+        "os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), "
+    )
+    suffix = "), run_name='__main__')"
+    for kind, parts in _MANAGED_HOOK_PARTS.items():
+        body = prefix + ", ".join(repr(part) for part in parts) + suffix
+        for executable in ("python", "python3"):
+            for bytecode_flag in ("", "-B "):
+                commands[f'{executable} {bytecode_flag}-c "{body}"'] = kind
+    return commands
+
+
+_MANAGED_DISPATCHER_COMMANDS = _managed_dispatcher_commands()
+
+
+def _managed_hook_kind(value: Any) -> str | None:
+    """Classify only exact supported dispatchers with agreeing platform fields."""
+    if not isinstance(value, Mapping) or value.get("type") != "command":
+        return None
+    kinds: list[str] = []
+    for field in ("command", "commandWindows"):
+        if field not in value:
+            continue
+        command = value[field]
+        if not isinstance(command, str):
+            return None
+        kind = _MANAGED_DISPATCHER_COMMANDS.get(command)
+        if kind is None:
+            return None
+        kinds.append(kind)
+    if not kinds or any(kind != kinds[0] for kind in kinds[1:]):
+        return None
+    return kinds[0]
+
+
 def _contains_gate(value: Any) -> bool:
-    if isinstance(value, str):
-        lowered = value.casefold()
-        return "adversarial-code-review" in lowered and "lifecycle_gate.py" in lowered
+    """Compatibility helper for legacy tests and lifecycle-only classification."""
+    if isinstance(value, Mapping) and _managed_hook_kind(value) == "adversarial-lifecycle":
+        return True
     if isinstance(value, Mapping):
         return any(_contains_gate(item) for item in value.values())
     if isinstance(value, list):
@@ -615,31 +673,40 @@ def managed_hook_contracts(source: Path) -> dict[str, dict[str, Any]]:
         entries = hooks.get(event, [])
         if not isinstance(entries, list):
             die(f"source hooks event is malformed: {event}")
-        matched = [entry for entry in entries if isinstance(entry, dict) and _contains_gate(entry)]
+        matched = [
+            entry
+            for entry in entries
+            if isinstance(entry, dict)
+            and isinstance(entry.get("hooks"), list)
+            and any(_managed_hook_kind(handler) is not None for handler in entry["hooks"])
+        ]
         if len(matched) > 1:
-            die(f"source hooks event has ambiguous review-gate registrations: {event}")
+            die(f"source hooks event has ambiguous managed registrations: {event}")
         if not matched:
             continue
         contract = json.loads(json.dumps(matched[0]))
         handlers = contract.get("hooks")
         if not isinstance(handlers, list):
             die(f"source review-gate hook group is malformed: {event}")
-        managed_handlers = [handler for handler in handlers if _contains_gate(handler)]
-        if len(managed_handlers) != 1:
-            die(f"source review-gate handler is ambiguous: {event}")
+        managed_handlers = [handler for handler in handlers if _managed_hook_kind(handler) is not None]
+        if not managed_handlers:
+            die(f"source managed hook group is empty: {event}")
+        kinds = [_managed_hook_kind(handler) for handler in managed_handlers]
+        if len(kinds) != len(set(kinds)):
+            die(f"source managed hook kind is duplicated: {event}")
         contract["hooks"] = managed_handlers
         result[event] = contract
     return result
 
 
-def _remove_gate_handlers(entry: Any) -> Any | None:
+def _remove_managed_handlers(entry: Any) -> Any | None:
     """Remove only managed handlers, preserving unrelated handlers in a shared group."""
     if not isinstance(entry, dict):
         return entry
     handlers = entry.get("hooks")
     if not isinstance(handlers, list):
         return None if _contains_gate(entry) else entry
-    remaining = [handler for handler in handlers if not _contains_gate(handler)]
+    remaining = [handler for handler in handlers if _managed_hook_kind(handler) is None]
     if len(remaining) == len(handlers):
         return entry
     if not remaining:
@@ -647,6 +714,79 @@ def _remove_gate_handlers(entry: Any) -> Any | None:
     preserved = json.loads(json.dumps(entry))
     preserved["hooks"] = remaining
     return preserved
+
+
+def _remove_gate_handlers(entry: Any) -> Any | None:
+    """Remove only retired lifecycle handlers for legacy migration callers."""
+    if not isinstance(entry, dict):
+        return entry
+    handlers = entry.get("hooks")
+    if not isinstance(handlers, list):
+        return None if _contains_gate(entry) else entry
+    remaining = [
+        handler
+        for handler in handlers
+        if _managed_hook_kind(handler) != "adversarial-lifecycle"
+    ]
+    if len(remaining) == len(handlers):
+        return entry
+    if not remaining:
+        return None
+    preserved = json.loads(json.dumps(entry))
+    preserved["hooks"] = remaining
+    return preserved
+
+
+def _merge_managed_hook_entries(
+    current: list[Any],
+    contract: Mapping[str, Any] | None,
+) -> list[Any]:
+    expected: dict[str, dict[str, Any]] = {}
+    expected_order: list[str] = []
+    if contract is not None:
+        handlers = contract.get("hooks")
+        if not isinstance(handlers, list):
+            die("source managed hook contract is malformed")
+        for handler in handlers:
+            kind = _managed_hook_kind(handler)
+            if kind is None or kind == "adversarial-lifecycle" or not isinstance(handler, dict):
+                die("source managed hook contract contains an unsupported dispatcher")
+            expected[kind] = handler
+            expected_order.append(kind)
+
+    installed: set[str] = set()
+    updated: list[Any] = []
+    for entry in current:
+        if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+            updated.append(entry)
+            continue
+        changed = False
+        handlers: list[Any] = []
+        for handler in entry["hooks"]:
+            kind = _managed_hook_kind(handler)
+            if kind == "adversarial-lifecycle":
+                changed = True
+                continue
+            if kind in expected:
+                changed = True
+                if kind not in installed:
+                    handlers.append(copy.deepcopy(expected[kind]))
+                    installed.add(kind)
+                continue
+            handlers.append(handler)
+        if not changed:
+            updated.append(entry)
+        elif handlers:
+            preserved = copy.deepcopy(entry)
+            preserved["hooks"] = handlers
+            updated.append(preserved)
+
+    missing = [kind for kind in expected_order if kind not in installed]
+    if missing:
+        appended = copy.deepcopy(dict(contract or {}))
+        appended["hooks"] = [copy.deepcopy(expected[kind]) for kind in missing]
+        updated.append(appended)
+    return updated
 
 
 def hooks_text(existing: bytes, source: Path) -> bytes:
@@ -662,11 +802,8 @@ def hooks_text(existing: bytes, source: Path) -> bytes:
         current = target.get(event, [])
         if not isinstance(current, list):
             die(f"unsupported destination hook event format: {event}")
-        preserved = [_remove_gate_handlers(entry) for entry in current]
-        updated = [entry for entry in preserved if entry is not None]
         contract = contracts.get(event)
-        if contract is not None:
-            updated.append(contract)
+        updated = _merge_managed_hook_entries(current, contract)
         if updated:
             target[event] = updated
         else:
@@ -685,7 +822,14 @@ def _managed_instruction(source: Path) -> str:
     ).read_text(encoding="utf-8").strip()
 
 
-def agents_text(existing: bytes, source: Path) -> bytes:
+def _source_agents(source: Path) -> bytes:
+    return _contained(source, "AGENTS.md", existing=True).read_bytes()
+
+
+def agents_text(existing: bytes, source: Path, *, replace_global_agents: bool = False) -> bytes:
+    canonical = _source_agents(source)
+    if existing == canonical or replace_global_agents:
+        return canonical
     content = _managed_instruction(source)
     text = existing.decode("utf-8") if existing else ""
     if text.count(BEGIN) != text.count(END) or text.count(BEGIN) > 1:
@@ -701,11 +845,33 @@ def agents_text(existing: bytes, source: Path) -> bytes:
     return result.encode("utf-8")
 
 
-def _semantic_plan(source: Path, home: Path) -> dict[str, bytes]:
+def _semantic_snapshots(
+    home: Path,
+) -> dict[str, tuple[bytes | None, dict[str, int] | None]]:
     return {
-        "config.toml": config_text((home / "config.toml").read_bytes() if (home / "config.toml").exists() else b"", source),
-        "hooks.json": hooks_text((home / "hooks.json").read_bytes() if (home / "hooks.json").exists() else b"", source),
-        "AGENTS.md": agents_text((home / "AGENTS.md").read_bytes() if (home / "AGENTS.md").exists() else b"", source),
+        relative: _regular_leaf_snapshot(home, relative)
+        for relative in sorted(SEMANTIC_DESTINATIONS)
+    }
+
+
+def _semantic_plan(
+    source: Path,
+    snapshots: Mapping[str, tuple[bytes | None, dict[str, int] | None]],
+    *,
+    replace_global_agents: bool = False,
+) -> dict[str, bytes]:
+    existing = {
+        relative: snapshot[0] or b""
+        for relative, snapshot in snapshots.items()
+    }
+    return {
+        "config.toml": config_text(existing["config.toml"], source),
+        "hooks.json": hooks_text(existing["hooks.json"], source),
+        "AGENTS.md": agents_text(
+            existing["AGENTS.md"],
+            source,
+            replace_global_agents=replace_global_agents,
+        ),
     }
 
 
@@ -735,35 +901,88 @@ def _managed_extras(home: Path) -> set[str]:
     return extras
 
 
-def planned(source: Path, home: Path) -> tuple[dict[str, bytes], dict[str, bytes], set[str]]:
+def planned(
+    source: Path,
+    home: Path,
+    *,
+    replace_global_agents: bool = False,
+) -> tuple[
+    dict[str, bytes],
+    dict[str, bytes],
+    set[str],
+    dict[str, tuple[bytes | None, dict[str, int] | None]],
+]:
     managed_paths = set(COPY_MANIFEST) | set(SEMANTIC_DESTINATIONS) | set(STALE_MANAGED_FILES)
     _reject_managed_leaf_reparses(home, managed_paths)
     copied = source_files(source)
-    semantic = _semantic_plan(source, home)
+    snapshots = _semantic_snapshots(home)
+    semantic = _semantic_plan(
+        source,
+        snapshots,
+        replace_global_agents=replace_global_agents,
+    )
     deletions = _managed_extras(home) | {path for path in STALE_MANAGED_FILES if (home / path).is_file()}
     _reject_managed_leaf_reparses(home, deletions)
-    return copied, semantic, deletions
+    return copied, semantic, deletions, snapshots
 
 
-def preview(source: Path, home: Path) -> dict[str, Any]:
-    copied, semantic, deletions = planned(source, home)
+def _preview_from_plan(
+    source: Path,
+    home: Path,
+    copied: Mapping[str, bytes],
+    semantic: Mapping[str, bytes],
+    deletions: set[str],
+    snapshots: Mapping[str, tuple[bytes | None, dict[str, int] | None]],
+    *,
+    replace_global_agents: bool = False,
+) -> dict[str, Any]:
     changed_copy = sorted(
         path for path, data in copied.items() if not (home / path).is_file() or (home / path).read_bytes() != data
     )
     changed_semantic = sorted(
         path for path, data in semantic.items() if not (home / path).is_file() or (home / path).read_bytes() != data
     )
+    source_agents = _source_agents(source)
+    previous_agents = snapshots["AGENTS.md"][0]
+    agents_mode = "exact_source" if semantic["AGENTS.md"] == source_agents else "preserved_block"
     return {
         "copy": changed_copy,
         "semantic": changed_semantic,
         "semantic_changes": {
             "config": ["agents.sol_reviewer", "skills.config:adversarial-code-review"],
             "hooks": list(MANAGED_EVENTS),
-            "instructions": [BEGIN, END],
+            "instructions": ["AGENTS.md"] if replace_global_agents else [BEGIN, END],
+        },
+        "global_agents": {
+            "mode": agents_mode,
+            "previous_sha256": sha(previous_agents) if previous_agents is not None else None,
+            "source_sha256": sha(source_agents),
         },
         "delete": sorted(deletions),
         "unchanged": not changed_copy and not changed_semantic and not deletions,
     }
+
+
+def preview(
+    source: Path,
+    home: Path,
+    *,
+    replace_global_agents: bool = False,
+) -> dict[str, Any]:
+    copied, semantic, deletions, snapshots = planned(
+        source,
+        home,
+        replace_global_agents=replace_global_agents,
+    )
+    return _preview_from_plan(
+        source,
+        home,
+        copied,
+        semantic,
+        deletions,
+        snapshots,
+        replace_global_agents=replace_global_agents,
+    )
 
 
 def _private_directory(path: Path) -> None:
@@ -984,14 +1203,22 @@ def _prepare_transaction(
     transaction: str,
     writes: Mapping[str, bytes],
     deletions: set[str],
+    *,
+    expected_preimages: Mapping[
+        str,
+        tuple[bytes | None, dict[str, int] | None],
+    ] | None = None,
 ) -> Path:
     root = _transaction_root(home, transaction)
     tracked = sorted(set(writes) | deletions)
     _reject_managed_leaf_reparses(home, tracked)
-    preimages = {
-        relative: _regular_leaf_snapshot(home, relative)
-        for relative in tracked
-    }
+    expected = expected_preimages or {}
+    preimages: dict[str, tuple[bytes | None, dict[str, int] | None]] = {}
+    for relative in tracked:
+        snapshot = _regular_leaf_snapshot(home, relative)
+        if relative in expected and snapshot != expected[relative]:
+            die(f"managed target changed after planning: {relative}")
+        preimages[relative] = snapshot
     predecessor = _active_completed_head(home)
     _private_directory(root)
     _harden_private_tree(root)
@@ -1554,15 +1781,24 @@ def _profile_exact(home: Path) -> None:
             die(f"installed sol_reviewer purpose is incomplete: {phrase}")
 
 
-def _managed_block_exact(home: Path, source: Path) -> bool:
+def _agents_state(home: Path, source: Path) -> str:
     try:
-        text = (home / "AGENTS.md").read_text(encoding="utf-8")
+        data = (home / "AGENTS.md").read_bytes()
+        if data == _source_agents(source):
+            return "exact_source"
+        text = data.decode("utf-8")
     except (OSError, UnicodeDecodeError):
-        return False
+        return "invalid"
     if text.count(BEGIN) != 1 or text.count(END) != 1:
-        return False
+        return "invalid"
     actual = text.split(BEGIN, 1)[1].split(END, 1)[0].strip().replace("\r\n", "\n")
-    return actual == _managed_instruction(source).replace("\r\n", "\n")
+    if actual == _managed_instruction(source).replace("\r\n", "\n"):
+        return "preserved_block"
+    return "invalid"
+
+
+def _managed_block_exact(home: Path, source: Path) -> bool:
+    return _agents_state(home, source) != "invalid"
 
 
 def _hooks_exact(home: Path, source: Path) -> bool:
@@ -1576,9 +1812,31 @@ def _hooks_exact(home: Path, source: Path) -> bool:
         entries = hooks.get(event, [])
         if not isinstance(entries, list):
             return False
-        managed = [entry for entry in entries if _contains_gate(entry)]
         contract = expected.get(event)
-        if managed != ([] if contract is None else [contract]):
+        expected_handlers: dict[str, Any] = {}
+        if contract is not None:
+            for handler in contract["hooks"]:
+                kind = _managed_hook_kind(handler)
+                if kind is None or kind in expected_handlers:
+                    return False
+                expected_handlers[kind] = handler
+        actual_handlers: dict[str, Any] = {}
+        for entry in entries:
+            if not isinstance(entry, Mapping) or not isinstance(entry.get("hooks"), list):
+                continue
+            for handler in entry["hooks"]:
+                kind = _managed_hook_kind(handler)
+                if kind is None:
+                    continue
+                if (
+                    kind == "adversarial-lifecycle"
+                    or kind not in expected_handlers
+                    or kind in actual_handlers
+                    or handler != expected_handlers[kind]
+                ):
+                    return False
+                actual_handlers[kind] = handler
+        if set(actual_handlers) != set(expected_handlers):
             return False
     return True
 
@@ -1968,6 +2226,7 @@ def verify(
     source: Path,
     home: Path,
     *,
+    replace_global_agents: bool = False,
     ignore_transactions: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     failures: list[str] = []
@@ -1993,12 +2252,14 @@ def verify(
         failures.append("parse:config.toml")
     if not _hooks_exact(home, source):
         failures.append("semantic:hooks.json")
-    if not _managed_block_exact(home, source):
+    agents_state = _agents_state(home, source)
+    if agents_state == "invalid" or (replace_global_agents and agents_state != "exact_source"):
         failures.append("semantic:AGENTS.md")
     try:
         _profile_exact(home)
         _validate_skill(home / "skills" / "adversarial-code-review", "adversarial-code-review")
         _validate_skill(home / "skills" / "delivery-orchestration", "delivery-orchestration")
+        _validate_skill(home / "skills" / "instruction-learning-loop", "instruction-learning-loop")
         _validate_skill(home / "skills" / "plan-review-ladder", "plan-review-ladder")
     except ValueError as exc:
         failures.append(f"validator:{exc}")
@@ -2014,7 +2275,12 @@ def verify(
     return {"ok": not failures, "failures": failures, "handler_contract_smoke": None}
 
 
-def install(source: Path, home: Path) -> dict[str, Any]:
+def install(
+    source: Path,
+    home: Path,
+    *,
+    replace_global_agents: bool = False,
+) -> dict[str, Any]:
     # Refuse unsafe topology before even creating the installer lock/state.
     _reject_managed_leaf_reparses(
         home,
@@ -2023,18 +2289,40 @@ def install(source: Path, home: Path) -> dict[str, Any]:
     _managed_extras(home)
     with _install_lock(home):
         recovered = _recover_incomplete(home)
-        outcome = preview(source, home)
+        copied, semantic, deletions, semantic_preimages = planned(
+            source,
+            home,
+            replace_global_agents=replace_global_agents,
+        )
+        outcome = _preview_from_plan(
+            source,
+            home,
+            copied,
+            semantic,
+            deletions,
+            semantic_preimages,
+            replace_global_agents=replace_global_agents,
+        )
         if outcome["unchanged"]:
-            verification = verify(source, home)
+            verification = verify(
+                source,
+                home,
+                replace_global_agents=replace_global_agents,
+            )
             if not verification["ok"]:
                 die("idempotent installation failed verification")
             return {"idempotent": True, "installed_files": sorted(COPY_MANIFEST), "recovered": recovered, **outcome}
-        copied, semantic, deletions = planned(source, home)
         writes = {**copied, **semantic}
         transaction = uuid.uuid4().hex
         root = _transaction_root(home, transaction)
         try:
-            root = _prepare_transaction(home, transaction, writes, deletions)
+            root = _prepare_transaction(
+                home,
+                transaction,
+                writes,
+                deletions,
+                expected_preimages=semantic_preimages,
+            )
             _, manifest, journal = _validated_transaction(home, transaction)
         except Exception:
             if root.exists():
@@ -2077,6 +2365,7 @@ def install(source: Path, home: Path) -> dict[str, Any]:
             verification = verify(
                 source,
                 home,
+                replace_global_agents=replace_global_agents,
                 ignore_transactions=frozenset({transaction}),
             )
             if not verification["ok"]:
@@ -2093,7 +2382,7 @@ def install(source: Path, home: Path) -> dict[str, Any]:
             "handler_contract_smoke": None,
             "recovered": recovered,
             **outcome,
-            "next": "Restart Codex and open a new task to reload the root model, profiles, skills, and remaining user-level hooks. No adversarial lifecycle hooks are registered; /hooks should show only preserved non-review hooks.",
+            "next": "Restart Codex and open a new task to reload the root model, profiles, skills, and remaining user-level hooks. Review and approve changed handlers in /hooks. No adversarial lifecycle hooks are registered.",
         }
 
 
@@ -2103,8 +2392,11 @@ def main() -> int:
     parser.add_argument("--source-root")
     parser.add_argument("--codex-home")
     parser.add_argument("--transaction-id")
+    parser.add_argument("--replace-global-agents", action="store_true")
     args = parser.parse_args()
     try:
+        if args.replace_global_agents and args.action not in {"preview", "install", "verify"}:
+            die("--replace-global-agents is valid only for preview, install, or verify")
         if args.action == "rollback":
             if not args.codex_home or not args.transaction_id:
                 die("rollback requires --codex-home and --transaction-id")
@@ -2120,11 +2412,23 @@ def main() -> int:
             source, home = roots(args)
             validate_source(source)
             if args.action == "preview":
-                result = preview(source, home)
+                result = preview(
+                    source,
+                    home,
+                    replace_global_agents=args.replace_global_agents,
+                )
             elif args.action == "install":
-                result = install(source, home)
+                result = install(
+                    source,
+                    home,
+                    replace_global_agents=args.replace_global_agents,
+                )
             elif args.action == "verify":
-                result = verify(source, home)
+                result = verify(
+                    source,
+                    home,
+                    replace_global_agents=args.replace_global_agents,
+                )
             else:
                 result = smoke(source, home)
         print(json.dumps(result, sort_keys=True))
