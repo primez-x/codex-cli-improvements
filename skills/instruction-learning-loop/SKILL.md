@@ -54,10 +54,16 @@ that expansion is necessary to complete the requested outcome.
 outcome rather than a prose marker:
 
 - on durable behavioral guidance or instruction correction at `UserPromptSubmit`, it snapshots SHA-256 content identities for recognized global and current-project instruction surfaces, records state under `hooks/state/instruction-learning`, and instructs the agent to propose, independently review, then implement and verify the smallest approved durable correction without renewed user approval after in-scope revisions.
+- on matching `PreToolUse` and `PostToolUse` calls, it stores only keyed identities, claims tool completion through an immutable exclusive record, and emits a candidate resolution after a successful exact retry. That candidate asks the agent to distinguish expected probes, test-driven-development red phases, and one-off failures from an unexpected durable mistake; it does not by itself require an instruction change.
+- when the user reports an error, per-session append-only authority state records an opaque generation. Agent-side technical verification remains provisional while that generation is awaiting user confirmation and never expires. A later user report supersedes the active generation; malformed active authority state blocks completion without affecting unrelated sessions.
+- only an explicit later user confirmation advances that generation to the instruction-change gate. A mixed or negative report takes precedence over confirmation, and a tool result captured before the current generation cannot advance it.
 - explicit read-only and one-off prompts do not require mutation.
 - on `Stop`, an actionable correction remains blocked until the instruction snapshot proves a real non-test instruction file change; proposals, test-only edits, claimed rejections, and generic completion phrases cannot satisfy the gate.
-- blocked state is retained across ordinary retries. A `stop_hook_active` continuation passes through without deleting state, as required to prevent recursive Stop-hook loops; the next ordinary Stop re-evaluates the same content gate.
+- blocked state is retained across ordinary retries. A `stop_hook_active` continuation normally passes through without deleting state, but an awaiting-user generation still rejects an unqualified resolution or completion claim and permits only truthful unresolved status or the canonical provisional statement that both real-world resolution and instruction learning await the user's confirmation.
+- tool hooks are a dynamic signal, not a complete enforcement boundary; the origin-aware `AGENTS.md` rule covers changed-input fixes and tool paths that do not emit these events.
 - ignore hook continuation sentinels in your own loop
+
+After changing or installing hook definitions, use `/hooks` to verify exactly one active instruction-learning handler for each managed event, trust the changed definitions, and exercise them in a fresh session. Multiple hook layers accumulate, so duplicate handlers invalidate the single-writer attempt-state assumption.
 
 ## Files
 

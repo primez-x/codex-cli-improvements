@@ -40,7 +40,10 @@ class HooksConfigTests(unittest.TestCase):
 
     def test_registers_plan_gap_and_instruction_learning_events(self) -> None:
         hooks = self.config["hooks"]
-        self.assertEqual(set(hooks), {"UserPromptSubmit", "Stop"})
+        self.assertEqual(
+            set(hooks),
+            {"UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"},
+        )
 
         submit = hooks["UserPromptSubmit"]
         self.assertEqual(len(submit), 1)
@@ -57,11 +60,21 @@ class HooksConfigTests(unittest.TestCase):
             [LEARNING_POSIX],
         )
 
+        for event in ("PreToolUse", "PostToolUse"):
+            with self.subTest(event=event):
+                groups = hooks[event]
+                self.assertEqual(len(groups), 1)
+                self.assertEqual(groups[0]["matcher"], r"^(Bash|apply_patch|mcp__.*)$")
+                self.assertEqual(
+                    [entry["command"] for entry in groups[0]["hooks"]],
+                    [LEARNING_POSIX],
+                )
+
     def test_does_not_register_adversarial_review_lifecycle_hooks(self) -> None:
         serialized = json.dumps(self.config["hooks"]).casefold()
         self.assertNotIn("adversarial-code-review", serialized)
         self.assertNotIn("lifecycle_gate.py", serialized)
-        for event in ("PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop"):
+        for event in ("SubagentStart", "SubagentStop"):
             self.assertNotIn(event, self.config["hooks"])
 
     def test_commands_use_expected_windows_and_posix_home_relative_paths(self) -> None:
