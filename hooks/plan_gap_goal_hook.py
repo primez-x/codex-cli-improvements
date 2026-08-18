@@ -111,7 +111,9 @@ After the implementation appears complete, do not stop. Conduct a plan implement
 - Run focused verification after the fixes.
 - Only finish after reporting the plan recovered, gap checklist, fixes applied, verification, and remaining risk.
 
-Completion means both the implementation and the gap analysis loop are complete."""
+Before marking the goal complete, satisfy all delivery gates applicable under the active repository and project instructions; source changes, a commit, Git push, or artifact upload do not substitute for required build, install or deployment, read-back, or runtime verification. If a required gate remains pending or fails, keep the goal unfinished and use `blocked` only under the goal-status rules. User-excluded or non-applicable gates do not block completion of the authorized scope, but report them and do not claim full delivery or live verification.
+
+Completion means both the implementation and the gap analysis loop are complete, with every applicable delivery gate evidenced."""
 
 
 def action_match_is_unambiguous(

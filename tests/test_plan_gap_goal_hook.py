@@ -55,6 +55,32 @@ class PlanGapGoalHookTests(unittest.TestCase):
     def test_non_acceptance_prompt_does_not_set_goal(self) -> None:
         self.assertEqual(self.run_hook("Please explain the plan first."), [])
 
+    def test_inline_plan_body_sets_goal(self) -> None:
+        self.assertEqual(self.run_hook("Implement the plan: add the regression tests."), ["thread-123"])
+
+    def test_immediate_reversals_and_restrictions_do_not_set_goal(self) -> None:
+        prompts = (
+            "Implement the plan.\nDo not implement the plan because scope changed.",
+            "Implement the plan.\nNo code changes until approved.",
+            "Implement the plan.\nReview only -- do not edit files.",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                self.assertEqual(self.run_hook(prompt), [])
+
+    def test_objective_requires_applicable_delivery_gates(self) -> None:
+        objective = " ".join(plan_gap_goal_hook.OBJECTIVE.casefold().split())
+        for phrase in (
+            "delivery gates applicable under the active repository and project instructions",
+            "commit, git push, or artifact upload do not substitute",
+            "required build, install or deployment, read-back, or runtime verification",
+            "keep the goal unfinished",
+            "user-excluded or non-applicable gates do not block completion",
+            "do not claim full delivery or live verification",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, objective)
+
 
 if __name__ == "__main__":
     unittest.main()
