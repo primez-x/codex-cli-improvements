@@ -217,7 +217,24 @@ class RepositoryContractTests(unittest.TestCase):
         hooks = json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"]
         self.assertIn("UserPromptSubmit", hooks)
         self.assertIn("Stop", hooks)
-        self.assertEqual(set(hooks), {"UserPromptSubmit", "Stop"})
+        self.assertEqual(
+            set(hooks),
+            {"UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"},
+        )
+
+        learning_script = "instruction_learning_hook.py"
+        for event in ("PreToolUse", "PostToolUse"):
+            with self.subTest(event=event):
+                self.assertEqual(len(hooks[event]), 1)
+                self.assertEqual(
+                    hooks[event][0]["matcher"],
+                    r"^(Bash|apply_patch|mcp__.*)$",
+                )
+                self.assertEqual(len(hooks[event][0]["hooks"]), 1)
+                self.assertIn(
+                    learning_script,
+                    hooks[event][0]["hooks"][0]["command"],
+                )
 
         serialized = json.dumps(hooks).lower()
         self.assertNotIn("adversarial-code-review", serialized)
@@ -257,6 +274,36 @@ class RepositoryContractTests(unittest.TestCase):
                 for phrase in ("privacy", "public-contract", "repeated failed verification"):
                     self.assertIn(phrase, policy)
         self.assertNotIn("for every material delivery", normalized)
+
+    def test_error_learning_contract_preserves_user_confirmation_authority(self) -> None:
+        agents = " ".join((ROOT / "AGENTS.md").read_text(encoding="utf-8").lower().split())
+        skill = " ".join(
+            (ROOT / "skills" / "instruction-learning-loop" / "SKILL.md")
+            .read_text(encoding="utf-8")
+            .lower()
+            .split()
+        )
+
+        for phrase in (
+            "root cause is established",
+            "fix is freshly verified",
+            "agent verification remains provisional",
+            "explicitly confirms the issue is resolved in later testing",
+            "later user report supersedes",
+        ):
+            self.assertIn(phrase, agents)
+
+        for phrase in (
+            "candidate resolution",
+            "does not by itself require an instruction change",
+            "awaiting user confirmation",
+            "never expires",
+            "supersedes",
+            "exactly one active instruction-learning handler",
+            "`/hooks`",
+            "fresh session",
+        ):
+            self.assertIn(phrase, skill)
 
     def test_plan_review_docs_exclude_the_on_demand_delivery_reviewer(self) -> None:
         for path in (

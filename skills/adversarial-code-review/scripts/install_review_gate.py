@@ -60,6 +60,8 @@ INSTALLABLE_VALIDATORS = {
 }
 BEGIN = "<!-- BEGIN MANAGED ADVERSARIAL DELIVERY GATE -->"
 END = "<!-- END MANAGED ADVERSARIAL DELIVERY GATE -->"
+LEARNING_BEGIN = "<!-- BEGIN MANAGED INSTRUCTION LEARNING -->"
+LEARNING_END = "<!-- END MANAGED INSTRUCTION LEARNING -->"
 TRANSACTION_ID = re.compile(r"[0-9a-f]{32}\Z")
 HEX_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 LIFECYCLE_GATE_PATH = "skills/adversarial-code-review/scripts/lifecycle_gate.py"
@@ -754,38 +756,28 @@ def _merge_managed_hook_entries(
             expected[kind] = handler
             expected_order.append(kind)
 
-    installed: set[str] = set()
     updated: list[Any] = []
     for entry in current:
         if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
             updated.append(entry)
             continue
-        changed = False
         handlers: list[Any] = []
         for handler in entry["hooks"]:
             kind = _managed_hook_kind(handler)
-            if kind == "adversarial-lifecycle":
-                changed = True
-                continue
-            if kind in expected:
-                changed = True
-                if kind not in installed:
-                    handlers.append(copy.deepcopy(expected[kind]))
-                    installed.add(kind)
+            if kind is not None:
                 continue
             handlers.append(handler)
-        if not changed:
+        if len(handlers) == len(entry["hooks"]):
             updated.append(entry)
         elif handlers:
             preserved = copy.deepcopy(entry)
             preserved["hooks"] = handlers
             updated.append(preserved)
 
-    missing = [kind for kind in expected_order if kind not in installed]
-    if missing:
-        appended = copy.deepcopy(dict(contract or {}))
-        appended["hooks"] = [copy.deepcopy(expected[kind]) for kind in missing]
-        updated.append(appended)
+    if expected_order:
+        # Install one canonical group so a stale matcher or group-level field
+        # cannot survive merely because a managed handler was found there.
+        updated.append(copy.deepcopy(dict(contract)))
     return updated
 
 
@@ -822,6 +814,16 @@ def _managed_instruction(source: Path) -> str:
     ).read_text(encoding="utf-8").strip()
 
 
+def _managed_learning_instruction(source: Path) -> str:
+    return (
+        source
+        / "skills"
+        / "instruction-learning-loop"
+        / "references"
+        / "managed-agents-instruction.md"
+    ).read_text(encoding="utf-8").strip()
+
+
 def _source_agents(source: Path) -> bytes:
     return _contained(source, "AGENTS.md", existing=True).read_bytes()
 
@@ -830,18 +832,25 @@ def agents_text(existing: bytes, source: Path, *, replace_global_agents: bool = 
     canonical = _source_agents(source)
     if existing == canonical or replace_global_agents:
         return canonical
-    content = _managed_instruction(source)
+    review_content = _managed_instruction(source)
+    learning_content = _managed_learning_instruction(source)
     text = existing.decode("utf-8") if existing else ""
-    if text.count(BEGIN) != text.count(END) or text.count(BEGIN) > 1:
-        die("destination AGENTS managed block is malformed")
+    for begin, end in ((BEGIN, END), (LEARNING_BEGIN, LEARNING_END)):
+        if text.count(begin) != text.count(end) or text.count(begin) > 1:
+            die("destination AGENTS managed block is malformed")
     newline = "\r\n" if b"\r\n" in existing else "\n"
-    block = f"{BEGIN}\n{content}\n{END}".replace("\n", newline)
-    if BEGIN in text:
-        before, rest = text.split(BEGIN, 1)
-        _, after = rest.split(END, 1)
-        result = before.rstrip("\r\n") + newline + newline + block + after
-    else:
-        result = text.rstrip("\r\n") + (newline + newline if text else "") + block + newline
+    result = text
+    for begin, end, content in (
+        (BEGIN, END, review_content),
+        (LEARNING_BEGIN, LEARNING_END, learning_content),
+    ):
+        block = f"{begin}\n{content}\n{end}".replace("\n", newline)
+        if begin in result:
+            before, rest = result.split(begin, 1)
+            _, after = rest.split(end, 1)
+            result = before.rstrip("\r\n") + newline + newline + block + after
+        else:
+            result = result.rstrip("\r\n") + (newline + newline if result else "") + block + newline
     return result.encode("utf-8")
 
 
@@ -951,7 +960,9 @@ def _preview_from_plan(
         "semantic_changes": {
             "config": ["agents.sol_reviewer", "skills.config:adversarial-code-review"],
             "hooks": list(MANAGED_EVENTS),
-            "instructions": ["AGENTS.md"] if replace_global_agents else [BEGIN, END],
+            "instructions": ["AGENTS.md"]
+            if replace_global_agents
+            else [BEGIN, END, LEARNING_BEGIN, LEARNING_END],
         },
         "global_agents": {
             "mode": agents_mode,
@@ -1789,12 +1800,16 @@ def _agents_state(home: Path, source: Path) -> str:
         text = data.decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return "invalid"
-    if text.count(BEGIN) != 1 or text.count(END) != 1:
-        return "invalid"
-    actual = text.split(BEGIN, 1)[1].split(END, 1)[0].strip().replace("\r\n", "\n")
-    if actual == _managed_instruction(source).replace("\r\n", "\n"):
-        return "preserved_block"
-    return "invalid"
+    for begin, end, expected in (
+        (BEGIN, END, _managed_instruction(source)),
+        (LEARNING_BEGIN, LEARNING_END, _managed_learning_instruction(source)),
+    ):
+        if text.count(begin) != 1 or text.count(end) != 1:
+            return "invalid"
+        actual = text.split(begin, 1)[1].split(end, 1)[0].strip().replace("\r\n", "\n")
+        if actual != expected.replace("\r\n", "\n"):
+            return "invalid"
+    return "preserved_block"
 
 
 def _managed_block_exact(home: Path, source: Path) -> bool:
@@ -1821,13 +1836,16 @@ def _hooks_exact(home: Path, source: Path) -> bool:
                     return False
                 expected_handlers[kind] = handler
         actual_handlers: dict[str, Any] = {}
+        managed_groups: list[Mapping[str, Any]] = []
         for entry in entries:
             if not isinstance(entry, Mapping) or not isinstance(entry.get("hooks"), list):
                 continue
+            group_managed = False
             for handler in entry["hooks"]:
                 kind = _managed_hook_kind(handler)
                 if kind is None:
                     continue
+                group_managed = True
                 if (
                     kind == "adversarial-lifecycle"
                     or kind not in expected_handlers
@@ -1836,8 +1854,19 @@ def _hooks_exact(home: Path, source: Path) -> bool:
                 ):
                     return False
                 actual_handlers[kind] = handler
+            if group_managed:
+                managed_groups.append(entry)
         if set(actual_handlers) != set(expected_handlers):
             return False
+        if set(expected_handlers):
+            if len(managed_groups) != 1:
+                return False
+            canonical = dict(managed_groups[0])
+            canonical.pop("hooks", None)
+            expected_group = dict(contract or {})
+            expected_group.pop("hooks", None)
+            if canonical != expected_group:
+                return False
     return True
 
 
