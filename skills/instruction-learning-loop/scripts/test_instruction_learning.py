@@ -91,7 +91,7 @@ PLAN_IMPLEMENTATION_ACCEPTED = (
     ),
     (
         "Implement the plan:\n"
-        "Review only applies to sol_advisor; implement after review."
+        "Review only applies to astra_advisor; implement after review."
     ),
     (
         "Implement the plan:\n"
@@ -308,7 +308,7 @@ class HookTests(unittest.TestCase):
             ("Can you explain why agents keep getting this wrong?", False),
             ("Do not change app code; update AGENTS.md to prevent recurrence.", True),
             ("No changes to app code; update AGENTS.md to prevent recurrence.", True),
-            ("Review only applies to sol_advisor; update AGENTS.md.", True),
+            ("Review only applies to astra_advisor; update AGENTS.md.", True),
             ("No instruction changes to the original hierarchy; update AGENTS.md.", True),
             ("Do not edit any files in the original hierarchy; update AGENTS.md.", True),
             ("This request is read-only for app code; update AGENTS.md.", True),

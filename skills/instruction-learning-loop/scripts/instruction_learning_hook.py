@@ -24,12 +24,13 @@ MAX_LOG_LINES = 400
 STATE_TTL_SECONDS = 6 * 60 * 60
 ACTION_CONTEXT = (
     "This prompt contains behavioral guidance or an instruction-system correction. "
-    "Use $instruction-learning-loop to form the smallest durable proposal and send it to an independent "
-    "sol_advisor. If approved, implement it in the applicable user-owned AGENTS.md, skill, hook, agent "
-    "direction, or config surface and verify it before finishing. If rejected, revise or replace the proposal "
-    "from the advisor's rationale and resubmit it until a valid narrow change is approved. Treat valid in-scope "
-    "review findings as implementation inputs, continue without renewed user approval, and reject or defer "
-    "findings that require new scope or authority. "
+    "Use $instruction-learning-loop to form the smallest durable proposal. Apply the global risk trigger: use "
+    "focused root verification for low-risk wording or deterministic instruction changes, and independent "
+    "astra_advisor review only when that rule requires it. If required review rejects the proposal, revise it "
+    "and resubmit internally until approved. Implement the applicable user-owned AGENTS.md, skill, "
+    "hook, agent direction, or config change and verify it before finishing. Treat valid in-scope review findings "
+    "as implementation inputs, continue without renewed user approval, and reject or defer findings that require "
+    "new scope or authority. "
     "A proposal alone is not completion."
 )
 READ_ONLY_CONTEXT = (
@@ -814,7 +815,7 @@ def stop_hook(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     return {
         "decision": "block",
-        "reason": "[instruction-learning-hook] This actionable correction has not changed an instruction file. Obtain independent advisor review, fold valid in-scope findings into the proposal, revise and resubmit internally, then implement and verify the approved durable change without renewed user approval; a proposal or claimed rejection alone is not completion.",
+        "reason": "[instruction-learning-hook] This actionable correction has not changed an instruction file. Apply risk-triggered review when required, fold valid in-scope findings into the proposal, then implement and verify the durable change without renewed user approval; a proposal alone is not completion.",
     }
 
 

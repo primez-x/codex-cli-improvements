@@ -30,13 +30,15 @@
     "skills/instruction-learning-loop/scripts/instruction_learning_hook.py",
     "skills/instruction-learning-loop/scripts/test_global_autonomy_contract.py",
     "skills/instruction-learning-loop/scripts/test_instruction_learning.py",
-    "agents/sol_reviewer.toml",
+    "agents/astra_reviewer.toml",
     "skills/plan-review-ladder/SKILL.md",
     "skills/plan-review-ladder/agents/openai.yaml",
     "skills/plan-review-ladder/references/review-lenses.md",
     "skills/plan-review-ladder/scripts/packet_integrity.py",
     "skills/plan-review-ladder/scripts/test_packet_integrity.py",
-    "skills/plan-review-ladder/scripts/test_plan_routing.py"
+    "skills/plan-review-ladder/scripts/test_plan_routing.py",
+    "skills/instruction-learning-loop/references/managed-agents-instruction.md",
+    "skills/instruction-learning-loop/references/installed-skill-reconciliation.md"
   ],
   "semantic_inputs": [
     {
@@ -82,13 +84,15 @@
     "skills/instruction-learning-loop/scripts/instruction_learning_hook.py",
     "skills/instruction-learning-loop/scripts/test_global_autonomy_contract.py",
     "skills/instruction-learning-loop/scripts/test_instruction_learning.py",
-    "agents/sol_reviewer.toml",
+    "agents/astra_reviewer.toml",
     "skills/plan-review-ladder/SKILL.md",
     "skills/plan-review-ladder/agents/openai.yaml",
     "skills/plan-review-ladder/references/review-lenses.md",
     "skills/plan-review-ladder/scripts/packet_integrity.py",
     "skills/plan-review-ladder/scripts/test_packet_integrity.py",
     "skills/plan-review-ladder/scripts/test_plan_routing.py",
+    "skills/instruction-learning-loop/references/managed-agents-instruction.md",
+    "skills/instruction-learning-loop/references/installed-skill-reconciliation.md",
     "config.toml",
     "hooks.json",
     "AGENTS.md"

@@ -125,7 +125,7 @@ class PacketIntegrityTests(unittest.TestCase):
         supported_profiles = {
             "spark_scanner",
             "luna_scanner",
-            "sol_advisor",
+            "astra_advisor",
         }
         for profile in supported_profiles:
             payload = copy.deepcopy(self.payload)
@@ -143,13 +143,13 @@ class PacketIntegrityTests(unittest.TestCase):
         for profile in (
             "spark_worker",
             "luna_worker",
-            "sol_worker",
+            "astra_worker",
             "terra_worker",
             "terra_coordinator",
             "luna_coordinator",
             "sol_coordinator",
             "spark_coordinator",
-            "sol_reviewer",
+            "astra_reviewer",
             "unknown_profile",
         ):
             payload = copy.deepcopy(self.payload)
@@ -162,7 +162,7 @@ class PacketIntegrityTests(unittest.TestCase):
         for profile in (
             "spark_scanner",
             "luna_scanner",
-            "sol_advisor",
+            "astra_advisor",
         ):
             payload = copy.deepcopy(self.payload)
             payload["reviewer_profile"] = profile

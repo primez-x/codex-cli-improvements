@@ -61,16 +61,18 @@ class InstallerTests(unittest.TestCase):
         return home
 
     def make_current_main_home(self, root: Path) -> Path:
-        """Model the current six-profile installation before adding the gate."""
+        """Model the current routing installation before adding the reviewer."""
         home = root / "current-main-home"
         (home / "agents").mkdir(parents=True)
         for name in (
             "spark_scanner",
             "spark_worker",
             "luna_scanner",
+            "luna_fast_worker",
             "luna_worker",
-            "sol_worker",
-            "sol_advisor",
+            "sol_fast_worker",
+            "astra_worker",
+            "astra_advisor",
         ):
             shutil.copy2(ROOT / "agents" / f"{name}.toml", home / "agents" / f"{name}.toml")
         routing_test = home / "skills" / "delivery-orchestration" / "scripts" / "test_routing_policy.py"
@@ -105,7 +107,7 @@ class InstallerTests(unittest.TestCase):
         kept = [
             segment.rstrip("\r\n")
             for header, segment in segments
-            if header != "[agents.sol_reviewer]"
+            if header != "[agents.astra_reviewer]"
             and not (
                 header == "[[skills.config]]"
                 and "./skills/adversarial-code-review/SKILL.md" in segment
@@ -121,8 +123,7 @@ class InstallerTests(unittest.TestCase):
             hooks["hooks"][event] = [entry for entry in preserved if entry is not None]
         (home / "hooks.json").write_text(json.dumps(hooks, indent=2), encoding="utf-8")
         (home / "AGENTS.md").write_text(
-            "# existing global agreements\n"
-            "- Use only the six configured custom profiles.\n",
+            (ROOT / "AGENTS.md").read_text(encoding="utf-8") + "\nKeep my local instruction.\n",
             encoding="utf-8",
         )
         return home
@@ -400,25 +401,9 @@ class InstallerTests(unittest.TestCase):
             self.assertIsNone(verified_data["handler_contract_smoke"])
 
             smoke = self.invoke("smoke", "--source-root", str(ROOT), "--codex-home", str(home))
-            self.assertEqual(smoke.returncode, 0, smoke.stderr)
-            smoke_data = json.loads(smoke.stdout)
-            self.assertTrue(smoke_data["ok"])
-            self.assertTrue(smoke_data["wrong_profile_rejected"])
-            self.assertTrue(smoke_data["copied_output_rejected"])
-            self.assertTrue(smoke_data["replayed_output_rejected"])
-            self.assertTrue(smoke_data["correct_profile_provenance"])
-            self.assertTrue(smoke_data["final_stop_accepted"])
-            self.assertTrue(smoke_data["prompt_pending_classification"])
-            self.assertTrue(smoke_data["managed_mutation_reserved"])
-            self.assertTrue(smoke_data["managed_mutation_recorded_once"])
-            self.assertEqual(smoke_data["fixture_observations"]["mutation_epoch_before"], 0)
-            self.assertEqual(smoke_data["fixture_observations"]["mutation_epoch_after"], 1)
-            self.assertEqual(smoke_data["fixture_observations"]["inflight_after_pre"], ["fixture-mutation-1"])
-            self.assertEqual(smoke_data["fixture_observations"]["inflight_after_post"], [])
-            self.assertEqual(
-                smoke_data["events"],
-                ["UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"],
-            )
+            self.assertNotEqual(smoke.returncode, 0)
+            self.assertIn("legacy smoke requires", smoke.stdout + smoke.stderr)
+            self.assertNotIn('"correct_profile_provenance": true', smoke.stdout)
 
             again = self.install(home)
             self.assertEqual(again.returncode, 0, again.stderr)
@@ -441,7 +426,8 @@ class InstallerTests(unittest.TestCase):
             verified = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
             self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
             smoked = self.invoke("smoke", "--source-root", str(ROOT), "--codex-home", str(home))
-            self.assertEqual(smoked.returncode, 0, smoked.stdout + smoked.stderr)
+            self.assertNotEqual(smoked.returncode, 0)
+            self.assertIn("legacy smoke requires", smoked.stdout + smoked.stderr)
 
             managed_root = home / "skills" / "adversarial-code-review"
             runtime_leaves = sorted(
@@ -583,23 +569,23 @@ class InstallerTests(unittest.TestCase):
             'model = "x"\r\n'
             'description = """Structural-looking basic string lines:\r\n'
             'escaped delimiter \\""" remains part of the value\r\n'
-            '[agents.sol_reviewer]\r\n'
+            '[agents.astra_reviewer]\r\n'
             'description = "not a table"\r\n'
             '[[skills.config]]\r\n'
             'path = "./skills/adversarial-code-review/SKILL.md"\r\n'
             '"""\r\n'
             "literal = '''Structural-looking literal string lines:\r\n"
-            "[agents.sol_reviewer]\r\n"
+            "[agents.astra_reviewer]\r\n"
             "[[skills.config]]\r\n"
             "path = './skills/adversarial-code-review/SKILL.md'\r\n"
             "'''\r\n"
             'same_line_basic = """same-line close before a real header"""\r\n'
             "same_line_literal = '''same-line literal close before a real header'''\r\n"
-            '# [agents.sol_reviewer]\r\n'
+            '# [agents.astra_reviewer]\r\n'
             '# [[skills.config]]\r\n'
             '[agents]\r\n'
             'max_depth = 2\r\n'
-            '[agents.sol_reviewer]\r\n'
+            '[agents.astra_reviewer]\r\n'
             'description = "stale reviewer"\r\n'
             'config_file = "./agents/stale.toml"\r\n'
             '[[skills.config]]\r\n'
@@ -611,14 +597,14 @@ class InstallerTests(unittest.TestCase):
             'enabled = false\r\n'
             '[unmanaged] # preserve trailing header comment\r\n'
             'answer = 42\r\n'
-            '# [agents.sol_reviewer]\r\n'
+            '# [agents.astra_reviewer]\r\n'
             '# [[skills.config]]\r\n'
         )
         preserved_prefix = original_text.split('[agents]\r\n', 1)[0]
         preserved_suffix = (
             '[unmanaged] # preserve trailing header comment\r\n'
             'answer = 42\r\n'
-            '# [agents.sol_reviewer]\r\n'
+            '# [agents.astra_reviewer]\r\n'
             '# [[skills.config]]\r\n'
         )
         before = tomllib.loads(original_text)
@@ -642,7 +628,7 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(after["same_line_literal"], before["same_line_literal"])
             self.assertEqual(after["agents"]["max_depth"], before["agents"]["max_depth"])
             self.assertEqual(after["unmanaged"], before["unmanaged"])
-            self.assertEqual(after["agents"]["sol_reviewer"]["config_file"], "./agents/sol_reviewer.toml")
+            self.assertEqual(after["agents"]["astra_reviewer"]["config_file"], "./agents/astra_reviewer.toml")
             self.assertIn(
                 {
                     "path": "./skills/unrelated/SKILL.md",
@@ -726,7 +712,7 @@ class InstallerTests(unittest.TestCase):
                     target.unlink()
                     target.symlink_to(outside)
                 else:
-                    target = home / "agents" / "sol_reviewer.toml"
+                    target = home / "agents" / "astra_reviewer.toml"
                     target.parent.mkdir()
                     outside = root / ("missing-profile.toml" if case == "broken" else "outside-profile.toml")
                     if case == "copied":
@@ -751,7 +737,7 @@ class InstallerTests(unittest.TestCase):
             root = Path(temporary)
             home = self.make_home(root)
             originals = {name: (home / name).read_bytes() for name in ("config.toml", "hooks.json", "AGENTS.md")}
-            target = home / "agents" / "sol_reviewer.toml"
+            target = home / "agents" / "astra_reviewer.toml"
             outside = root / "outside-profile.toml"
             outside.write_text("outside profile\n", encoding="utf-8")
             original_validated_transaction = installer_module._validated_transaction
@@ -788,7 +774,7 @@ class InstallerTests(unittest.TestCase):
             result = self.install(home)
             self.assertEqual(result.returncode, 0, result.stderr)
             transaction_id = json.loads(result.stdout)["transaction_id"]
-            target = home / "agents" / "sol_reviewer.toml"
+            target = home / "agents" / "astra_reviewer.toml"
             outside = root / "outside-postimage.toml"
             outside.write_bytes(target.read_bytes())
             target.unlink()
@@ -801,7 +787,7 @@ class InstallerTests(unittest.TestCase):
             self.assertNotEqual(rolled_back.returncode, 0)
             self.assertIn("symlink or reparse", (rolled_back.stdout + rolled_back.stderr).lower())
             self.assertTrue(target.is_symlink())
-            self.assertEqual(outside.read_bytes(), (ROOT / "agents" / "sol_reviewer.toml").read_bytes())
+            self.assertEqual(outside.read_bytes(), (ROOT / "agents" / "astra_reviewer.toml").read_bytes())
 
     @unittest.skipUnless(os.name == "nt", "Windows junction and reparse behavior")
     def test_preview_and_install_reject_managed_leaf_junctions_before_state(self) -> None:
@@ -813,7 +799,7 @@ class InstallerTests(unittest.TestCase):
             outside.mkdir()
             sentinel = outside / "sentinel.txt"
             sentinel.write_text("outside\n", encoding="utf-8")
-            target = home / "agents" / "sol_reviewer.toml"
+            target = home / "agents" / "astra_reviewer.toml"
             target.parent.mkdir()
             created = subprocess.run(
                 ["cmd", "/c", "mklink", "/J", str(target), str(outside)],
@@ -863,7 +849,7 @@ class InstallerTests(unittest.TestCase):
             outside.mkdir()
             sentinel = outside / "sentinel.txt"
             sentinel.write_text("outside\n", encoding="utf-8")
-            target = home / "agents" / "sol_reviewer.toml"
+            target = home / "agents" / "astra_reviewer.toml"
             original_validated_transaction = installer_module._validated_transaction
             swapped = False
 
@@ -908,7 +894,7 @@ class InstallerTests(unittest.TestCase):
             result = self.install(home)
             self.assertEqual(result.returncode, 0, result.stderr)
             transaction_id = json.loads(result.stdout)["transaction_id"]
-            target = home / "agents" / "sol_reviewer.toml"
+            target = home / "agents" / "astra_reviewer.toml"
             target.unlink()
             outside = root / "rollback-outside"
             outside.mkdir()
@@ -938,7 +924,7 @@ class InstallerTests(unittest.TestCase):
             with self.subTest(broken=broken), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 home = self.make_home(root)
-                target = home / "agents" / "sol_reviewer.toml"
+                target = home / "agents" / "astra_reviewer.toml"
                 target.parent.mkdir()
                 outside = root / ("missing-profile.toml" if broken else "outside-profile.toml")
                 if not broken:
@@ -1188,7 +1174,7 @@ class InstallerTests(unittest.TestCase):
             self.assertIn("plan-review-ladder", (result.stdout + result.stderr).lower())
             for name, data in originals.items():
                 self.assertEqual((home / name).read_bytes(), data)
-            self.assertFalse((home / "agents" / "sol_reviewer.toml").exists())
+            self.assertFalse((home / "agents" / "astra_reviewer.toml").exists())
 
     def test_install_preserves_current_main_routing_and_adjacent_hooks(self) -> None:
         """The gate must add one identity without rewriting the six-profile router."""
@@ -1219,22 +1205,22 @@ class InstallerTests(unittest.TestCase):
                 "spark_worker",
                 "luna_scanner",
                 "luna_worker",
-                "sol_worker",
-                "sol_advisor",
+                "astra_worker",
+                "astra_advisor",
             ):
                 self.assertEqual(after["agents"][name], before["agents"][name])
             self.assertEqual(after["agents"]["luna_scanner"]["config_file"], "./agents/luna_scanner.toml")
             with (home / "agents" / "luna_scanner.toml").open("rb") as stream:
                 self.assertEqual(tomllib.load(stream)["model_reasoning_effort"], "medium")
-            self.assertIn("sol_reviewer", after["agents"])
+            self.assertIn("astra_reviewer", after["agents"])
             self.assertEqual(
-                after["agents"]["sol_reviewer"]["description"],
-                "On-demand read-only Sol reviewer for root-prepared consequential delivery evidence packets.",
+                after["agents"]["astra_reviewer"]["description"],
+                "On-demand read-only Astra high reviewer for root-prepared consequential delivery evidence packets.",
             )
             installed_agents = (home / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("Use only the six configured custom profiles.", installed_agents)
+            self.assertIn("Keep my local instruction.", installed_agents)
             self.assertIn(
-                "The six-profile limit applies only to general-purpose routing",
+                "Every final deliverable requires engineering review and approval",
                 installed_agents,
             )
             self.assertEqual(
@@ -1365,7 +1351,7 @@ class InstallerTests(unittest.TestCase):
         workflow = (ROOT / "skills" / "adversarial-code-review" / "references" / "evaluation-replay-workflow.md").read_text(encoding="utf-8")
         for phrase in (
             "freeze the case",
-            "Dispatch `sol_reviewer`",
+            "Dispatch `astra_reviewer`",
             "export-replay",
             "Capture stdout unchanged",
             "Do not hand-create or edit",
@@ -1490,7 +1476,7 @@ class InstallerTests(unittest.TestCase):
         mutators = {
             "config-agent": lambda home: (home / "config.toml").write_text(
                 (home / "config.toml").read_text(encoding="utf-8").replace(
-                    './agents/sol_reviewer.toml', './agents/wrong.toml'
+                    './agents/astra_reviewer.toml', './agents/wrong.toml'
                 ), encoding="utf-8"
             ),
             "config-skill": lambda home: (home / "config.toml").write_text(
@@ -1498,15 +1484,15 @@ class InstallerTests(unittest.TestCase):
                     './skills/adversarial-code-review/SKILL.md', './skills/wrong/SKILL.md'
                 ), encoding="utf-8"
             ),
-            "profile-purpose": lambda home: (home / "agents" / "sol_reviewer.toml").write_text(
-                (home / "agents" / "sol_reviewer.toml").read_text(encoding="utf-8").replace(
+            "profile-purpose": lambda home: (home / "agents" / "astra_reviewer.toml").write_text(
+                (home / "agents" / "astra_reviewer.toml").read_text(encoding="utf-8").replace(
                     "Review only the root-prepared evidence packet", "Review the mutable workspace"
                 ), encoding="utf-8"
             ),
             "managed-block": lambda home: (home / "AGENTS.md").write_text(
                 (home / "AGENTS.md").read_text(encoding="utf-8").replace(
-                    "Only a required high-risk review failure",
-                    "Every review failure blocks delivery",
+                    installer_module.BEGIN,
+                    installer_module.BEGIN + "\nUnapproved policy corruption.\n",
                 ), encoding="utf-8"
             ),
         }
@@ -1515,7 +1501,11 @@ class InstallerTests(unittest.TestCase):
                 home = self.make_home(Path(temporary))
                 result = self.install(home)
                 self.assertEqual(result.returncode, 0, result.stderr)
+                observed_paths = ("AGENTS.md", "config.toml", "agents/astra_reviewer.toml")
+                before = [hashlib.sha256((home / path).read_bytes()).hexdigest() for path in observed_paths]
                 mutate(home)
+                after = [hashlib.sha256((home / path).read_bytes()).hexdigest() for path in observed_paths]
+                self.assertNotEqual(before, after, "The corruption fixture must alter its target")
                 verified = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
                 self.assertNotEqual(verified.returncode, 0, verified.stdout)
                 self.assertFalse(json.loads(verified.stdout)["ok"])
@@ -1530,7 +1520,7 @@ class InstallerTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 for name, data in originals.items():
                     self.assertEqual((home / name).read_bytes(), data)
-                self.assertFalse((home / "agents" / "sol_reviewer.toml").exists())
+                self.assertFalse((home / "agents" / "astra_reviewer.toml").exists())
 
     def test_lifecycle_regression_fails_explicit_smoke_without_blocking_routine_install(self) -> None:
         """Optional lifecycle evaluation must not gate the non-lifecycle package install."""
@@ -1633,7 +1623,7 @@ class InstallerTests(unittest.TestCase):
             transaction = home / ".adversarial-review-install" / json.loads(result.stdout)["transaction_id"]
             leaves = [
                 transaction / "backup" / "AGENTS.md",
-                transaction / "staging" / "agents" / "sol_reviewer.toml",
+                transaction / "staging" / "agents" / "astra_reviewer.toml",
                 transaction / "journal.json",
             ]
             identity = subprocess.run(

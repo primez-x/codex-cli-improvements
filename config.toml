@@ -1,8 +1,8 @@
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 model_reasoning_effort = "low"
 
 [agents]
-max_concurrent_threads_per_session = 4
+max_concurrent_threads_per_session = 6
 max_depth = 1
 default_subagent_model = "gpt-5.6-luna"
 default_subagent_reasoning_effort = "max"
@@ -23,17 +23,25 @@ config_file = "./agents/luna_scanner.toml"
 description = "Max-effort default implementation leaf for substantial routine delivery work."
 config_file = "./agents/luna_worker.toml"
 
-[agents.sol_worker]
-description = "Deep terminal implementation or diagnosis agent for a genuinely difficult, ambiguous, security-sensitive, or cross-layer depth-1 task that justifies Sol xhigh."
-config_file = "./agents/sol_worker.toml"
+[agents.luna_fast_worker]
+description = "Economical Luna xhigh worker for bounded routine implementation and verification."
+config_file = "./agents/luna_fast_worker.toml"
 
-[agents.sol_advisor]
-description = "Max-effort terminal adversarial advisor for rare consequential architecture, plans, decisions, or diffs."
-config_file = "./agents/sol_advisor.toml"
+[agents.sol_fast_worker]
+description = "Sol low worker for simpler, tightly specified, low-ambiguity critical-path work."
+config_file = "./agents/sol_fast_worker.toml"
 
-[agents.sol_reviewer]
-description = "On-demand read-only Sol reviewer for root-prepared consequential delivery evidence packets."
-config_file = "./agents/sol_reviewer.toml"
+[agents.astra_worker]
+description = "Astra medium terminal implementation or diagnosis agent for difficult, ambiguous, security-sensitive, or cross-layer work."
+config_file = "./agents/astra_worker.toml"
+
+[agents.astra_advisor]
+description = "Astra high terminal adversarial advisor for consequential architecture, plans, decisions, or diffs."
+config_file = "./agents/astra_advisor.toml"
+
+[agents.astra_reviewer]
+description = "On-demand read-only Astra high reviewer for root-prepared consequential delivery evidence packets."
+config_file = "./agents/astra_reviewer.toml"
 
 [features]
 multi_agent = true

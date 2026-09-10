@@ -10,134 +10,82 @@ description: >-
 
 # Delivery Orchestration
 
-Keep the configured Sol Low root focused on the outcome, routing, decisions,
-integration, authorized external actions, and final verification. The root
-directly coordinates terminal depth-1 leaves and chooses the cheapest profile
-that preserves the required context, judgment, ownership, and evidence quality.
+The root coordinates on `gpt-6-astra`/`low` and owns routing, decisions,
+integration, authorized external actions, and final verification. Choose the
+least expensive route that preserves the context, judgment, ownership, and
+evidence needed for a verified result. The root remains accountable for final
+whole-deliverable engineering approval; Astra-high advisor/reviewer findings
+are inputs to root disposition and sign-off.
 
-This skill explicitly requests proactive subagent delegation for material
-delivery. Do not wait for the user to select models or manage routing.
+## 1. Define the delivery contract
 
-## 1. Define The Delivery Contract
-
-Before editing, record a compact working contract:
-
-- requested outcome, acceptance criteria, and non-goals;
-- in-scope systems, repositories, paths, and external targets;
-- authorization boundaries and current dirty-worktree baseline;
-- required source, test, build, generated-output, runtime, and release gates;
-- terminal condition, current evidence, assumptions, and blockers.
-
-Treat a plan, edit, passing focused test, commit, push, build, or artifact upload
-as an intermediate state unless it satisfies the complete terminal condition.
+Before editing, record a compact contract covering outcome, acceptance
+criteria, non-goals, owned paths and targets, authorization boundaries, dirty
+baseline, required gates, terminal condition, assumptions, and blockers. A
+plan, edit, focused test, build, upload, commit, or push is intermediate until
+the terminal condition is met.
 
 ## 2. Route Work By Task Shape
 
-### Direct root path
+At decomposition, when new evidence changes the work, at a bottleneck, and
+before integration, check whether a bounded packet would materially improve
+throughput, isolation, context use, or evidence. Parallelize only genuinely
+independent useful packets. Keep tiny or serial cheaper work inline when
+handoff, packet context, retries, review, or root rework costs more than it
+returns; do not create artificial parallel work to fill a count.
 
-Handle a short command directly at the root only when every gate passes:
+For authorized external mutation, the root confirms the exact target, expected
+effect, low-impact boundary, preflight, postcondition, rollback, and remote
+verification. Leaves cannot mutate external systems.
 
-- it covers one concern and the current authoritative evidence is already in
-  root context;
-- it needs no discovery or independent evidence, and there is no conflicting
-  authority;
-- it has no unapproved or consequential external side effect, destructive
-  action, material risk, or ambiguous authorization;
-- one focused verification proves success; and
-- failure has a cheap, lossless rollback.
-
-When external mutation is explicitly authorized, the exact target, expected
-effect, low-impact boundary, rollback, preflight, and postcondition must already
-be known. The root executes that bounded action because leaves cannot mutate
-external systems.
-
-If any gate fails, reclassify immediately and use the appropriate route below.
-Delegation overhead breaks a tie only after these gates pass. Do not delegate
-every trivial command merely because a leaf exists.
-
-Use Spark instead when a tiny exact task benefits from an isolated fresh
-packet, parallel execution, or independent evidence. Once work becomes
-material, context-heavy, ambiguous, or consequential, use the delegated routes
-below; the direct root path is not an exemption from material-delivery gates.
-Conflicting evidence, consequential synthesis, or an external-impact decision
-routes through the risk-triggered Sol advisor checkpoint before root action.
-
-A task is material when it likely changes more than one file or concern, aligns
-code with tests or generated output, crosses layers, requires a build/install or
-runtime smoke, would fill root context with discovery/logs, or carries material
-compatibility, security, persistence, concurrency, data-integrity, migration,
-or external-impact risk.
-
-For material delivery, dispatch at least one bounded terminal leaf. Keep normal
-work to one to three active leaves and use the configured ceiling of four only
-for genuinely independent packages. `max_concurrent_threads_per_session = 4`
-counts spawned threads, not the root. Every leaf reports directly to the root
-and must not spawn.
+For material delivery, dispatch a bounded terminal leaf when it protects root
+context, advances independent work, or strengthens evidence. Normally use one
+to three active leaves; six spawned threads is the ceiling and the root is not
+counted. Every leaf reports directly to the root and has zero descendant
+budget. Reuse an idle or completed same-purpose leaf before spawning a
+replacement, and preserve the root-owned MCP boundary.
 
 ### Spark fast path
 
-Use `spark_scanner`, xhigh, for a tiny exact read-only check and
-`spark_worker`, xhigh, for a small mechanical edit only when every gate passes:
-
-- the target, anchors, owned paths, deliverable, and expected evidence are
-  explicit;
-- the required context is small and localized;
-- no architecture, product, compatibility, security, or ownership decision is
-  unresolved;
-- success is mechanically verifiable with a focused check;
-- failure is cheap, reversible, and cannot silently damage adjacent behavior.
-
-Spark has a materially smaller context window than the 5.6 family. The current
-catalog advertises about 128k tokens for Spark versus 272k for 5.6 profiles,
-with lower usable limits after system overhead. Always dispatch Spark with
-`fork_turns = "none"` and a fresh self-contained bounded packet containing
-exact anchors rather than inherited conversation history. Do not send broad
-discovery or synthesis to Spark. If a gate fails, scope expands, or context
-pressure appears, stop and escalate to Luna.
+Use `spark_scanner`/`spark_worker` at xhigh only for tiny exact packets with
+explicit anchors, exclusive ownership, focused checks, and cheap rollback.
+Dispatch `fork_turns = "none"` with a fresh self-contained packet; do not send
+broad discovery or synthesis to Spark. Consult the current model catalog for
+context limits instead of hardcoding them. Escalate when scope, ambiguity, or
+context pressure grows.
 
 ### Luna default
 
-Luna is the default delegated model:
-
-- use `luna_scanner`, medium, for broad or context-heavy read-only discovery,
-  inventories, comparisons, history, logs, and independent validation;
-- use `luna_worker`, max, for the default implementation path: substantial
-  routine edits, debugging, tests, documentation, and multi-file integration.
-
-The Medium scanner keeps Luna's larger context while prioritizing latency and
-cost for reversible evidence work. It returns exact anchors, uncertainty, and
+Luna is the default delegated model: use `luna_scanner` at medium for broad or
+context-heavy read-only discovery and independent evidence, `luna_fast_worker`
+at xhigh for bounded routine implementation, and `luna_worker`
+at max for substantial implementation, debugging, tests,
+documentation, and integration. Return exact anchors, uncertainty, and
 unexamined areas; the root owns conflicting evidence and consequential
-interpretation. Escalate the model directly from Luna to Sol when difficulty or
-consequential risk exceeds Luna; there is no intermediate custom model tier.
+interpretation.
 
-### Sol escalation
+### Astra escalation and independent review
 
-Use `sol_worker`, xhigh, only for genuinely difficult, ambiguous,
-security-sensitive, cross-layer implementation or diagnosis that Luna cannot
-reliably finish. Use `sol_advisor`, max, only for rare consequential
-architecture, risk, plan, or final-diff challenge. Do not use either profile as
-a routine throughput tier.
+Use `astra_worker` (Astra medium) for genuinely difficult, ambiguous,
+security-sensitive, or cross-layer work. Move directly when the task warrants
+it; do not require a failed Luna attempt. Use the named `sol_fast_worker`
+(`gpt-5.6-sol`/`low`) for simpler, tightly specified, low-ambiguity work blocking
+the critical path with clear focused verification. Use a fresh self-contained
+packet; never use `astra_worker` as that model selector. Root oversight does not
+justify assigning work beyond the leaf's capability.
 
-Only the depth-0 root dispatches `sol_advisor`. An early checkpoint is
-risk-triggered when material architecture, compatibility, migration,
-persistence, security, concurrency, data integrity, external impact, conflicting
-authority, a stuck approach, or a material approach change is present. A final
-checkpoint is risk-triggered after durable changes and fresh evidence when the
-same risks remain or the delivery has four or more substantive stages. Sol is
-not mandatory for localized, low-risk, mechanically prescribed work with
-focused verification. A current Sol-reviewed immutable handoff may satisfy the
-early checkpoint when scope and evidence are unchanged.
+Only the depth-0 root dispatches `astra_advisor` or `astra_reviewer` (Astra high).
+Use them for an explicit independent-review request or a named consequential
+risk. An early or plan checkpoint reviews the approach without requiring
+implementation evidence. Final-delivery checkpoints follow fresh verification
+and include the integrated diff and
+actual applicable test, build, and runtime evidence. Reviewers return findings
+and an engineering verdict; the root owns disposition, authorization, and whole-deliverable
+approval. Do not trigger review solely from file count, stage count, or an
+instruction-file change.
 
-Give the advisor the checkpoint type, request and acceptance criteria,
-authority boundaries, concise evidence anchors, hypothesis or diff,
-uncertainties, and specific questions. Final-delivery packets include actual
-applicable test, build, and runtime evidence. Disposition each actionable
-finding as accepted, rejected, or deferred against primary evidence. Fix
-accepted high-severity gaps and rerun affected gates. The advisor never edits,
-expands authorization, owns the user response, or creates a user approval gate.
-
-See [delegation topology](references/delegation-topology.md) for the canonical
-profile matrix, context split, and terminal-leaf rules.
+See [delegation topology](references/delegation-topology.md) for the matrix,
+cost observations, packet contract, and risk triggers.
 
 ## 3. Assign Ownership Precisely
 
@@ -158,22 +106,36 @@ path.
 
 Delegate broad discovery, long logs, inventories, and repeated test monitoring
 to Luna and require a distilled result. Prefer bounded commands and exact
-anchors. Reuse a useful leaf for a related follow-up. After two repetitions of
-the same command or wait path without new evidence, stop and replan.
+anchors. Reuse a useful leaf for a related follow-up. Use bounded monitoring
+and replan when progress stalls; do not stop productive long-running work
+solely because a wait or observation repeated. Use the topology's
+cost-to-complete model, including handoff, context, retries, review, root
+rework, and critical-path delay, to choose foreground versus background work.
 
 For a failure, capture the exact stage and error, identify whether source,
 generated state, environment, authorization, or an external dependency owns it,
 then apply a source-grounded correction or materially different safe path.
 Rerun the affected gate and every downstream gate invalidated by the change.
 
+Keep defects and failures required to make the current objective safe in the
+same task. Once the current objective is safe, treat a genuinely distinct
+objective as a fresh task boundary: recommend the boundary, but create a fresh
+task only when the user explicitly requests it. Keep iteration evidence in
+machine-readable verification receipts, not a diary entry for every iteration;
+reserve diary entries for durable discoveries that will help later work.
+
 ## 5. Git Completion
 
 For authorized implementation or remediation that changes a Git repository,
-scoped commit and push are a standing terminal condition. On an existing
-task-aligned feature branch, commit the task-owned diff and push its configured
-upstream. On a default, detached, mismatched, or unsafe branch, create
-`agent/<task-slug>` from the correct base and push it. Never force-push, and
-never push directly to the default branch without explicit instruction.
+scoped commit and push are a standing terminal condition. First apply any
+explicit user or repository branch policy; it takes precedence over this
+generic routing. On an existing task-aligned feature branch, commit the
+task-owned diff and push its configured upstream. Use `agent/<task-slug>` only
+when no applicable policy permits direct default-branch work, or when the
+branch is detached, mismatched, or otherwise unsafe; create it from the
+correct base and push it. Never force-push or silently override a repository
+policy. A policy-permitted default-branch delivery still requires the same
+scoped diff, safeguards, commit, push, and remote-ref verification below.
 
 Before staging, inspect dirty files and ahead-of-upstream history. Use explicit
 paths or hunks, never `git add -A` in a mixed tree. If ownership overlaps or
@@ -203,23 +165,13 @@ Before finalizing, require every applicable gate:
 - authorized external mutation and remote verification completed;
 - residual risks and intentionally deferred work are explicit.
 
-Root-routed independent review is risk-triggered. After fresh verification,
-use `adversarial-code-review` and the read-only `sol_reviewer` only when the user
-requests review or a high-risk trigger is present: security, authentication,
-credentials, or privacy; destructive or irreversible actions; migrations,
-persistence, data integrity, or concurrency; production or external impact;
-major architecture, compatibility, or public-contract changes; or conflicting
-evidence, a stuck approach, or repeated failed verification. Provide a
-root-prepared evidence packet with the request, acceptance criteria, final diff
-or bounded source snapshot, verification output, risks, and uncertainties, then
-disposition every actionable finding against primary evidence.
-
-Use root verification alone for documentation or `AGENTS.md` wording,
-formatting and renames, localized deterministic configuration, small mechanical
-changes, and reversible startup-setting changes unless a high-risk trigger
-applies. If optional review infrastructure fails, report the limitation and
-continue based on fresh verification. Only a required high-risk review failure
-blocks delivery.
+Root-routed independent review is risk-triggered as defined in the topology.
+After fresh verification, use the read-only Astra-high `astra_advisor` or
+`astra_reviewer` for an explicit request or named consequential risk. Provide a
+root-prepared evidence packet; the root owns finding disposition and final
+whole-deliverable approval. Do not review solely for file/stage counts or an
+instruction-file change. Optional review failure is reported; only a required
+high-risk review failure blocks delivery.
 
 When this skill, `config.toml`, or a custom agent profile changes, run:
 

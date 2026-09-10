@@ -20,6 +20,29 @@ spec.loader.exec_module(plan_gap_goal_hook)
 
 
 class PlanGapGoalHookTests(unittest.TestCase):
+    def test_child_launch_preserves_rpc_and_parent_console(self) -> None:
+        for platform, expected in (("nt", 0x08000000), ("posix", 0)):
+            with self.subTest(platform=platform):
+                process = mock.MagicMock()
+                with (
+                    mock.patch.object(plan_gap_goal_hook.os, "name", platform),
+                    mock.patch.object(plan_gap_goal_hook.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True),
+                    mock.patch.object(plan_gap_goal_hook, "find_codex", return_value="codex"),
+                    mock.patch.object(plan_gap_goal_hook.subprocess, "Popen", return_value=process) as launch,
+                    mock.patch.object(plan_gap_goal_hook.threading, "Thread"),
+                    mock.patch.object(plan_gap_goal_hook, "wait_for_response", return_value={"result": {"goal": {"status": "active"}}}),
+                    mock.patch.object(plan_gap_goal_hook, "log"),
+                ):
+                    plan_gap_goal_hook.set_goal("existing-thread")
+                self.assertEqual(launch.call_args.args[0], ["codex", "app-server", "--stdio"])
+                self.assertEqual(launch.call_args.kwargs["creationflags"], expected)
+                for stream in ("stdin", "stdout"):
+                    self.assertIs(launch.call_args.kwargs[stream], plan_gap_goal_hook.subprocess.PIPE)
+                sent = [json.loads(call.args[0]) for call in process.stdin.write.call_args_list]
+                self.assertEqual([item["method"] for item in sent], ["initialize", "initialized", "thread/goal/get"])
+                process.terminate.assert_called_once()
+                process.wait.assert_called_once_with(timeout=2)
+
     def run_hook(self, prompt: str) -> list[str]:
         payload = {"prompt": prompt, "session_id": "thread-123"}
         calls: list[str] = []

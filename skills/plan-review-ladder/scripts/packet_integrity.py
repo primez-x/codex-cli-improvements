@@ -20,9 +20,9 @@ MIN_GRACE_MINUTES = 1
 MAX_GRACE_MINUTES = 5
 MIN_DESCENDANT_BUDGET = 0
 MAX_DESCENDANT_BUDGET = 0
-TERMINAL_PROFILES = frozenset({"spark_scanner", "luna_scanner", "sol_advisor"})
-# The adversarial gate's sol_reviewer identity is not a plan-review route.
-REJECTED_PROFILES = frozenset({"sol_reviewer"})
+TERMINAL_PROFILES = frozenset({"spark_scanner", "luna_scanner", "astra_advisor"})
+# The adversarial gate's astra_reviewer identity is not a plan-review route.
+REJECTED_PROFILES = frozenset({"astra_reviewer"})
 ALLOWED_PROFILES = TERMINAL_PROFILES
 
 _MISSING = object()

@@ -12,9 +12,16 @@ Use independent review for consequential delivery risk, not as a universal
 completion gate. The root decides whether review is required and owns every
 finding disposition.
 
+Every integrated deliverable receives engineering approval from the Astra root
+or an Astra high advisor. Root review satisfies ordinary delivery; independent
+review below provides a separate challenge for consequential risk. Review the
+whole outcome, interfaces, maintainability, and evidence rather than requiring
+a separate reviewer for every task or line. One sufficient final review can
+satisfy overlapping advisor and reviewer checkpoints.
+
 ## Review Triggers
 
-Dispatch the read-only `sol_reviewer` at Sol/max when the user explicitly asks
+Dispatch the read-only `astra_reviewer` at Astra/high when the user explicitly asks
 for independent review or when any high-risk trigger applies:
 
 - security, authentication, credentials, or privacy boundaries;
@@ -35,7 +42,7 @@ startup-setting changes unless one of the risks above is present.
 2. Prepare one task-local, root-prepared evidence packet containing the request,
    acceptance criteria, final diff or bounded source snapshot, exact test or
    read-back evidence, known risks, and unverified areas.
-3. Dispatch `sol_reviewer` with that packet. Require a verdict and findings
+3. Dispatch `astra_reviewer` with that packet. Require a verdict and findings
    ordered by severity, each with a claim, evidence anchors, correction, and
    verification method.
 4. Disposition every actionable finding as accepted, rejected, or deferred

@@ -356,6 +356,7 @@ def set_goal(thread_id: str) -> None:
         text=True,
         encoding="utf-8",
         errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     out: queue.Queue[dict] = queue.Queue()
     thread = threading.Thread(target=reader, args=(proc.stdout, out), daemon=True)

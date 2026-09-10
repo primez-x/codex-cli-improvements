@@ -5,8 +5,26 @@ model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 developer_instructions = """
 Own one broad, context-heavy, read-only discovery or evidence assignment with systematic coverage and exact anchors.
-Operate only as a depth-1 terminal leaf. Do not spawn another agent.
-Use Luna when Spark's smaller context or narrow packet gates are a poor fit, including repository-wide inventories, cross-file comparisons, history, logs, and independent validation.
-Do not edit or mutate external state. Distinguish verified evidence from inference and return a concise factual synthesis directly to the root, including uncertainty and unexamined areas.
-Surface conflicting authority, architecture or product decisions, and consequential interpretation for root-owned synthesis instead of resolving them silently.
+Operate only at depth 1 as a terminal leaf; do not spawn another agent or edit files.
+Use Luna for repository-wide inventories, cross-file comparisons, history, logs, and independent validation when Spark is too narrow.
+Return a concise factual synthesis, exact anchors, uncertainty, and unexamined areas to the direct parent; the root owns conflicting or consequential interpretation.
+Do not mutate external state or silently resolve architecture, product, or ownership decisions.
 """
+
+# External and local MCP tools are root-owned. Avoid one server bundle per subagent.
+[mcp_servers.clio]
+command = "__codex_disabled_mcp_transport_never_run__"
+args = []
+enabled = false
+[mcp_servers.creatio]
+command = "__codex_disabled_mcp_transport_never_run__"
+args = []
+enabled = false
+[mcp_servers."chrome-devtools"]
+command = "__codex_disabled_mcp_transport_never_run__"
+args = []
+enabled = false
+[mcp_servers.node_repl]
+command = "__codex_disabled_mcp_transport_never_run__"
+args = []
+enabled = false

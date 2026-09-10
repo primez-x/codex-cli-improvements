@@ -1,19 +1,7 @@
-## Risk-triggered independent review
+## Independent Review
 
-The six-profile limit applies only to general-purpose routing; the additional
-on-demand `sol_reviewer` is a separate review identity.
+Every final deliverable requires engineering review and approval by the Astra root or an Astra high advisor. Review the integrated outcome against the user's goal, architecture and interfaces, maintainability, verification evidence, and remaining risks. The root owns subagent results and final disposition; a worker's completion claim or passing test alone is not sign-off. For ordinary work the Astra root performs this review directly. Delegate independent challenge when the risks below warrant it, and identify the sign-off owner and any material limitations in the delivery summary.
 
-Independent review is root-routed, not universally hook-enforced. Dispatch the
-read-only `sol_reviewer` at Sol/max only when the user explicitly requests it or
-when security, authentication, credentials, or privacy; destructive or
-irreversible actions; migrations, persistence, data integrity, or concurrency;
-production or external impact; major architecture, compatibility, or
-public-contract changes; or conflicting evidence, a stuck approach, or repeated
-failed verification makes independent review consequential.
+Use an independent read-only Astra high reviewer when explicitly requested or when security/authentication/privacy, destructive actions, migrations/persistence/data integrity/concurrency, production or material external impact, major architecture/compatibility/public contracts, conflicting evidence, or repeated failed verification warrants independent challenge.
 
-Use focused root verification for documentation or `AGENTS.md` wording,
-formatting and renames, localized deterministic configuration, small mechanical
-changes, and reversible startup-setting changes unless a high-risk trigger
-applies. If optional review infrastructure fails, report the limitation without
-blocking a verified low-risk delivery. Only a required high-risk review failure
-blocks delivery.
+The root prepares bounded evidence, owns finding disposition, and continues authorized work after correcting valid findings. Routine wording, mechanical configuration, file count, stage count, or the presence of an instruction file do not independently require an advisor or review ladder. Do not stack planning, task, and final reviews without distinct unresolved risks. An optional review failure does not block a verified low-risk result; a required consequential review remains a delivery gate.

@@ -5,12 +5,14 @@ proportional. Do not invent work to fill the matrix.
 
 ## Shared Review Packet
 
-Freeze one immutable envelope for each stage. Its `packet_payload` contains the
+For explicit auditable replay/evaluation mode, freeze one immutable envelope for
+each stage. Ordinary planning uses a bounded evidence packet without requiring
+ledger/hash ceremony. Its `packet_payload` contains the
 nonempty `packet_id`, the same `request`, `evidence`, and `candidate` for every
 reviewer, the reviewer's lens only, the required `reviewer_profile`, and integer
 `deadline_minutes`, `grace_minutes`, and `descendant_budget` exactly `0`.
 
-The on-demand `sol_reviewer` delivery-review identity is not a plan-review route;
+The on-demand `astra_reviewer` delivery-review identity is not a plan-review route;
 packet validation must reject it before dispatch.
 
 Canonical bytes are UTF-8 JSON with recursively sorted keys,
@@ -20,14 +22,20 @@ recomputes it and returns `observed_packet_sha256`; the root rejects stale,
 mutated, malformed, or mismatched output. The pure helper in
 `scripts/packet_integrity.py` is the executable contract.
 
-Every stage freezes `deadline_minutes` in `1..45` (default `15`) and
-`grace_minutes` in `1..5` (default `3`). The terminal profiles
-`spark_scanner`, `luna_scanner`, and `sol_advisor` require
+Replay/evaluation stages freeze `deadline_minutes` in `1..45` (default `15`) and
+`grace_minutes` in `1..5` (default `3`). Ordinary delegated work still uses
+bounded deadlines and progress-aware liveness, but does not require the replay
+envelope. The terminal profiles
+`spark_scanner`, `luna_scanner`, and `astra_advisor` require
 `descendant_budget` exactly `0`. Missing or out-of-range values and any other
-profile block dispatch. On timeout, steer once, wait exactly the frozen grace,
-then interrupt; do not automatically restart an unchanged packet.
+profile block replay/evaluation dispatch. In replay/evaluation mode, steer once,
+wait exactly the frozen grace, then interrupt; do not automatically restart an
+unchanged packet. For ordinary work, preserve meaningful progress and report
+the confidence limit instead of forcing interruption.
 
-Copy this complete field list into every reviewer assignment:
+For material planning reviews, use this field list in reviewer assignments;
+routine root-direct work need only return the evidence and risks necessary for
+its Astra root sign-off:
 
 1. `Verdict`: `ready`, `revise`, or `blocked`.
 2. `Verified anchors`: exact files, symbols, tests, or authoritative docs.
@@ -57,8 +65,9 @@ latter is explicitly in scope.
 ## Reusable Instruction-System Authority
 
 For a plan that changes or relies on reusable instruction, configuration, hook,
-or skill surfaces, the Expanded Sol stage satisfies instruction-learning review
-only when its immutable packet contains:
+or skill surfaces, a selected Astra advisor stage satisfies instruction-learning
+review only when its bounded packet contains (with an immutable envelope only
+in replay/evaluation mode):
 
 - the concrete smallest proposal submitted through instruction-learning-loop;
 - a canonical-to-installed/runtime authority trace naming the canonical source,
@@ -66,8 +75,8 @@ only when its immutable packet contains:
 - drift evidence or explicit N/A for every authority and overwrite path.
 
 The final instruction-system plan must match that reviewed proposal. Any
-material authority or implementation change must refresh `sol_advisor` review
-before sign-off. Treat this as an internal prerequisite: when execution is
+material authority or implementation change must refresh the selected Astra
+high advisor review before sign-off. Treat this as an internal prerequisite: when execution is
 already authorized, it never creates renewed user approval.
 
 ## Deadline, Timeout, And Partial Coverage
@@ -75,8 +84,8 @@ already authorized, it never creates renewed user approval.
 Record `timed_out`, elapsed coverage, omitted categories, and the confidence
 limit. If a timed-out stage uniquely owns a critical category, sign-off is
 blocked. A stale or mismatched `observed_packet_sha256` is invalid output, not
-partial coverage. A route missing required Sol evidence must be renamed as a
-partial route and cannot claim Full completion.
+partial coverage. A route missing evidence from a selected required Astra high
+stage must be reported as partial and cannot claim Full completion.
 
 ## Stage Telemetry And Output
 
@@ -105,9 +114,9 @@ Challenge duplicated authority, stale compatibility layers, divergent runtime
 and generated state, and rationale for preserving old semantics without a real
 consumer.
 
-### Sol Adversarial Risk
+### Astra High Adversarial Risk
 
-Sol primarily owns:
+Astra high advisor primarily owns:
 
 - counterexamples involving changed inputs, persisted state, indirect
   consumers, inheritance, shared state, and alternate architecture;

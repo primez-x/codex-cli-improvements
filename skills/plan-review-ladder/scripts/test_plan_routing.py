@@ -20,13 +20,15 @@ class PlanRoutingTests(unittest.TestCase):
 
     def test_root_and_supported_profile_effort_contract(self) -> None:
         for phrase in (
-            "sol low root",
+            "astra low root",
+            "configured routing matrix",
             "`spark_scanner`, xhigh",
             "`spark_worker`, xhigh",
             "`luna_scanner`, medium",
             "`luna_worker`, max",
-            "`sol_worker`, xhigh",
-            "`sol_advisor`, max",
+            "`sol_fast_worker` (sol low)",
+            "`astra_worker` (astra medium)",
+            "`astra_advisor` (astra high)",
         ):
             self.assertIn(phrase, self.skill)
 
@@ -41,19 +43,19 @@ class PlanRoutingTests(unittest.TestCase):
             self.assertIn(phrase, self.combined)
         self.assertIn(
             "plan review dispatches only the read-only `spark_scanner`, "
-            "`luna_scanner`, and `sol_advisor` profiles",
+            "`luna_scanner`, and `astra_advisor` profiles",
             self.skill,
         )
         self.assertIn("do not send broad discovery or synthesis to spark", self.skill)
 
     def test_routine_low_risk_review_routes_root_and_luna_scanner(self) -> None:
-        for phrase in ("root", "luna_scanner", "routine", "low-risk"):
+        for phrase in ("root", "luna_scanner", "routine", "low-risk", "bounded"):
             self.assertIn(phrase, self.skill)
-        self.assertIn("dispatch `luna_scanner`", self.skill)
+        self.assertIn("may produce the candidate directly", self.skill)
 
     def test_sol_advisor_is_risk_triggered_and_optional_for_low_risk(self) -> None:
         for phrase in (
-            "sol_advisor",
+            "astra_advisor",
             "risk-triggered",
             "early",
             "final",
@@ -75,7 +77,7 @@ class PlanRoutingTests(unittest.TestCase):
     def test_review_lenses_cover_luna_and_root_with_risk_advisor(self) -> None:
         for heading in (
             "### luna contract and completeness",
-            "### sol adversarial risk",
+            "### astra high adversarial risk",
             "## root residual-risk lens",
         ):
             self.assertIn(heading, self.lenses)
@@ -83,7 +85,7 @@ class PlanRoutingTests(unittest.TestCase):
         self.assertNotIn("coordinator", self.lenses)
 
     def test_gate_only_sol_reviewer_is_rejected_for_plan_review(self) -> None:
-        self.assertIn("sol_reviewer", self.combined)
+        self.assertIn("astra_reviewer", self.combined)
         self.assertIn("not a plan-review route", self.combined)
         self.assertIn("packet validation must reject", self.combined)
 
@@ -97,13 +99,14 @@ class PlanRoutingTests(unittest.TestCase):
         ):
             self.assertIn(phrase, self.combined)
 
-    def test_frozen_review_packet_has_identity_and_stage_budget(self) -> None:
+    def test_auditable_replay_packet_has_identity_and_stage_budget(self) -> None:
         for phrase in (
             "`packet_id`",
             "`packet_sha256`",
             "`deadline_minutes`",
             "steer once",
             "do not automatically restart",
+            "explicit auditable replay/evaluation mode",
         ):
             self.assertIn(phrase, self.combined)
 
@@ -141,28 +144,33 @@ class PlanRoutingTests(unittest.TestCase):
         ):
             self.assertIn(phrase, self.combined)
 
-    def test_reusable_instruction_system_review_finishes_before_approval(self) -> None:
+    def test_reusable_instruction_system_review_preserves_authority_trace(self) -> None:
         for phrase in (
             "reusable instruction",
-            "at least expanded",
             "instruction-learning-loop",
-            "independent `sol_advisor`",
-            "revise/resubmit internally",
-            "before presenting implementation approval",
             "concrete smallest proposal",
             "canonical-to-installed/runtime authority trace",
             "installer",
             "registration",
             "manifest",
             "drift evidence or explicit n/a",
-            "immutable packet",
+            "immutable envelope",
             "final instruction-system plan",
             "material authority or implementation change",
-            "refresh `sol_advisor` review before sign-off",
+            "refresh the selected astra high advisor review before sign-off",
             "already authorized",
             "never creates renewed user approval",
         ):
             self.assertIn(phrase, self.combined)
+        self.assertIn("surface type alone does not force an advisor stage", self.skill)
+
+    def test_routine_route_does_not_force_fresh_luna_or_replay_ceremony(self) -> None:
+        self.assertIn("may remain root-direct", self.skill)
+        self.assertNotIn("always dispatch a fresh `luna_scanner`", self.skill)
+        self.assertNotIn("every packet freezes integer", self.skill)
+        self.assertIn("ordinary planning", self.combined)
+        self.assertNotIn("on timeout, steer once", self.combined)
+        self.assertIn("in replay/evaluation mode, steer once", self.combined)
 
 
 if __name__ == "__main__":

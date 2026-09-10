@@ -1,3 +1,4 @@
+"""Check durable authority boundaries without printing private instructions."""
 import os
 import re
 import unittest
@@ -6,67 +7,35 @@ from pathlib import Path
 
 class GlobalAutonomyContractTests(unittest.TestCase):
     @classmethod
-    def setUpClass(cls) -> None:
-        codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
-        cls.instructions = (codex_home / "AGENTS.md").read_text(encoding="utf-8")
-        cls.normalized = " ".join(cls.instructions.lower().split())
+    def setUpClass(cls):
+        root = Path(os.environ.get("CODEX_AUTONOMY_HOME") or os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+        cls.rules = " ".join((root / "AGENTS.md").read_text(encoding="utf-8").lower().split())
 
-    def test_issue_reports_authorize_end_to_end_remediation(self) -> None:
-        self.assertIn(
-            "reports a defect, failure, regression, undesired behavior, or broken workflow",
-            self.normalized,
-        )
-        self.assertIn("diagnose and remediate it end-to-end", self.normalized)
+    def require(self, pattern, label):
+        self.assertTrue(re.search(pattern, self.rules) is not None, label)
 
-    def test_diagnosis_is_read_only_only_when_explicit(self) -> None:
-        self.assertIn("only treat diagnosis as read-only", self.normalized)
-        for explicit_limit in (
-            "research only",
-            "root cause only",
-            "debug only",
-            "diagnosis only",
-            "no code changes",
-            "no code updates",
-            "read-only",
-            "do not change",
-        ):
-            self.assertIn(explicit_limit, self.normalized)
-        self.assertIn(
-            "conversational requests such as `diagnose`, `investigate`, `take a look`, `see what's going on`, or inspect a reported issue do not withhold authorization to fix it",
-            self.normalized,
-        )
-        self.assertNotRegex(
-            self.normalized,
-            re.compile(r"treat requests to [^.]*diagnose[^.]* as read-only"),
-        )
+    def test_explicit_action_and_read_only_scope_are_distinct(self):
+        self.require(r"reported defect.*authorizes diagnosis and remediation", "Defect remediation authority is missing")
+        self.require(r"honor explicit limits.*root cause only.*read-only.*no changes", "Explicit read-only limits are missing")
+        self.require(r"answer, explain, review, and status requests remain read-only", "Review-only scope is missing")
 
-    def test_process_workflows_cannot_add_feedback_gates(self) -> None:
-        self.assertIn(
-            "must not add user approval, review, or feedback checkpoints",
-            self.normalized,
-        )
-        self.assertIn("continue through implementation and verification", self.normalized)
-        self.assertIn("valid in-scope review findings", self.normalized)
-        self.assertIn("without renewed user approval", self.normalized)
-        self.assertIn("new scope or authority", self.normalized)
+    def test_skill_methodology_cannot_expand_or_withhold_authority(self):
+        self.require(r"user instructions take precedence over skill guidelines", "Instruction precedence is missing")
+        self.require(r"must not invent approval gates", "Methodology gate boundary is missing")
+        self.require(r"reject or defer findings that expand scope", "Scope boundary is missing")
 
-    def test_leading_plan_acceptance_with_attached_body_authorizes_execution(self) -> None:
-        self.assertIn("leading plan-acceptance directive", self.normalized)
-        self.assertIn("attached plan", self.normalized)
+    def test_plan_acceptance_keeps_goal_and_gap_check(self):
+        self.require(r"implement the plan.*plan-implementation gap goal", "Plan goal directive is missing")
+        self.require(r"read the current goal", "Existing goal preservation is missing")
+        self.require(r"checklist-based gap analysis", "Completion gap check is missing")
 
-    def test_autonomy_preserves_high_impact_authorization_boundaries(self) -> None:
-        self.assertIn(
-            "pull requests, merges, releases, and deployments remain separately authorized",
-            self.normalized,
-        )
-        self.assertIn(
-            "perform unrelated material external changes unless explicitly requested or clearly required by the named workflow",
-            self.normalized,
-        )
-        self.assertIn(
-            "keep human approval for financial, legal, regulated, destructive, or other high-impact actions unless the user has explicitly authorized the exact action",
-            self.normalized,
-        )
+    def test_external_and_high_impact_actions_keep_their_own_authority(self):
+        self.require(r"prs, merges, releases, deployments, and messages require explicit authorization", "External-action authority is missing")
+        self.require(r"keep human approval for financial, legal, regulated, destructive", "High-impact authority is missing")
+        self.require(r"unless the user has explicitly authorized the exact action", "Existing exact authorization is missing")
+
+    def test_user_reported_resolution_requires_user_evidence(self):
+        self.require(r"user-reported error.*until the user confirms later testing", "User-observed resolution boundary is missing")
 
 
 if __name__ == "__main__":

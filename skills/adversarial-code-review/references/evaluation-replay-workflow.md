@@ -1,4 +1,13 @@
-# Fresh Sol/max evaluation replay
+# Legacy Sol/max evaluation replay
+
+This optional workflow is a legacy, provenance-bound Sol/max evaluation contract.
+The current registered `astra_reviewer` runs Astra high and cannot be used with
+these Sol-only lifecycle/evaluator validators. The lifecycle hooks are not part
+of the current routine delivery configuration. Use the root-routed Astra review
+in SKILL.md for current delivery; do not install the legacy lifecycle or rewrite
+frozen Sol evidence to claim Astra evaluation. New Astra replay support requires
+a separately versioned contract and matching validation before use. The steps
+below describe the legacy contract only.
 
 `evaluation-self-test-results.json` is curated input for testing evaluator
 mechanics. It has no reviewer provenance and cannot support an empirical claim

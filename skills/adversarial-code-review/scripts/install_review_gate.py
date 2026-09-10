@@ -286,7 +286,7 @@ def source_files(source: Path) -> dict[str, bytes]:
 def source_config(source: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         value = tomllib.loads((source / "config.toml").read_text(encoding="utf-8"))
-        agent = value["agents"]["sol_reviewer"]
+        agent = value["agents"]["astra_reviewer"]
         skills = value["skills"]["config"]
     except (KeyError, OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, TypeError) as exc:
         raise ValueError("unsupported source config format") from exc
@@ -297,10 +297,10 @@ def source_config(source: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     }:
         die("source config has no exact adversarial skill registration")
     if agent != {
-        "description": "On-demand read-only Sol reviewer for root-prepared consequential delivery evidence packets.",
-        "config_file": "./agents/sol_reviewer.toml",
+        "description": "On-demand read-only Astra high reviewer for root-prepared consequential delivery evidence packets.",
+        "config_file": "./agents/astra_reviewer.toml",
     }:
-        die("source config has no exact sol_reviewer registration")
+        die("source config has no exact astra_reviewer registration")
     return dict(agent), dict(desired[0])
 
 
@@ -491,7 +491,7 @@ def _managed_config_segments(
     classified: list[tuple[str, str, bool]] = []
     for header, segment in segments:
         identity = _table_header_identity(header)
-        managed = identity == (("agents", "sol_reviewer"), False)
+        managed = identity == (("agents", "astra_reviewer"), False)
         if identity == (("skills", "config"), True):
             if skill_ordinal >= len(configured_skills):
                 die("TOML array-table spans disagree with parsed skills.config")
@@ -511,7 +511,7 @@ def _source_config_segments(source: Path) -> tuple[str, str]:
     agent = [
         segment
         for header, segment, managed in segments
-        if managed and _table_header_identity(header) == (("agents", "sol_reviewer"), False)
+        if managed and _table_header_identity(header) == (("agents", "astra_reviewer"), False)
     ]
     skill = [
         segment
@@ -525,7 +525,7 @@ def _source_config_segments(source: Path) -> tuple[str, str]:
 
 def _config_managed_exact(value: Mapping[str, Any], source: Path) -> bool:
     agent, skill = source_config(source)
-    actual_agent = value.get("agents", {}).get("sol_reviewer")
+    actual_agent = value.get("agents", {}).get("astra_reviewer")
     actual_skills = [
         entry
         for entry in value.get("skills", {}).get("config", [])
@@ -538,7 +538,7 @@ def _unmanaged_config(value: Mapping[str, Any]) -> dict[str, Any]:
     projected = copy.deepcopy(dict(value))
     agents = projected.get("agents")
     if isinstance(agents, dict):
-        agents.pop("sol_reviewer", None)
+        agents.pop("astra_reviewer", None)
         if not agents:
             projected.pop("agents", None)
     skills = projected.get("skills")
@@ -949,7 +949,7 @@ def _preview_from_plan(
         "copy": changed_copy,
         "semantic": changed_semantic,
         "semantic_changes": {
-            "config": ["agents.sol_reviewer", "skills.config:adversarial-code-review"],
+            "config": ["agents.astra_reviewer", "skills.config:adversarial-code-review"],
             "hooks": list(MANAGED_EVENTS),
             "instructions": ["AGENTS.md"] if replace_global_agents else [BEGIN, END],
         },
@@ -1754,17 +1754,17 @@ def _validate_skill(skill: Path, expected_name: str) -> None:
 
 def _profile_exact(home: Path) -> None:
     try:
-        profile = tomllib.loads((home / "agents" / "sol_reviewer.toml").read_text(encoding="utf-8"))
+        profile = tomllib.loads((home / "agents" / "astra_reviewer.toml").read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
-        raise ValueError("installed sol_reviewer profile is invalid") from exc
+        raise ValueError("installed astra_reviewer profile is invalid") from exc
     required = {
-        "name": "sol_reviewer",
-        "model": "gpt-5.6-sol",
-        "model_reasoning_effort": "max",
+        "name": "astra_reviewer",
+        "model": "gpt-6-astra",
+        "model_reasoning_effort": "high",
         "sandbox_mode": "read-only",
     }
     if any(profile.get(key) != value for key, value in required.items()):
-        die("installed sol_reviewer profile identity is wrong")
+        die("installed astra_reviewer profile identity is wrong")
     instructions = str(profile.get("developer_instructions", "")).casefold()
     for phrase in (
         "depth 1",
@@ -1778,7 +1778,7 @@ def _profile_exact(home: Path) -> None:
         "do not emit a receipt",
     ):
         if phrase not in instructions:
-            die(f"installed sol_reviewer purpose is incomplete: {phrase}")
+            die(f"installed astra_reviewer purpose is incomplete: {phrase}")
 
 
 def _agents_state(home: Path, source: Path) -> str:
@@ -1897,6 +1897,11 @@ def _run_lifecycle_cli(
 
 def smoke(source: Path, home: Path) -> dict[str, Any]:
     """Exercise real installed lifecycle state, not Codex hook loading/trust."""
+    if (home / "agents" / "astra_reviewer.toml").exists():
+        die("legacy smoke requires the historical Sol/max profile; it cannot certify Astra review")
+    profile = tomllib.loads((home / "agents" / "sol_reviewer.toml").read_text(encoding="utf-8"))
+    if (profile.get("model"), profile.get("model_reasoning_effort")) != ("gpt-5.6-sol", "max"):
+        die("legacy smoke requires the historical Sol/max profile; it cannot certify Astra review")
     gate = home / "skills" / "adversarial-code-review" / "scripts" / "lifecycle_gate.py"
     profile = home / "agents" / "sol_reviewer.toml"
     if not gate.is_file() or not profile.is_file():

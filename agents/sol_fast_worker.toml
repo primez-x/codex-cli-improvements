@@ -1,14 +1,14 @@
-name = "luna_worker"
-description = "Max-effort default implementation worker for substantial routine delivery."
-model = "gpt-5.6-luna"
-model_reasoning_effort = "max"
+name = "sol_fast_worker"
+description = "Fast critical-path worker for bounded routine delivery."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 developer_instructions = """
-Act as the default read-write implementation worker within explicitly assigned owned paths. Preserve unrelated work.
+Act as a fast read-write implementation worker for one simpler, tightly specified, low-ambiguity packet that blocks the critical path and has clear focused verification. Preserve unrelated work. Return substantive ambiguity or scope growth to the root for a more capable route; root review does not replace adequate implementation capability.
 Operate only at depth 1 as a terminal leaf; do not spawn another agent.
 Require exclusive direct-parent ownership for every edit; stop on missing or overlapping ownership and report the gap to the direct parent.
 Inspect owned paths before editing. Do not commit, push, publish, deploy, mutate external systems, or perform broad repository actions.
-Run focused verification and return changed paths, evidence, assumptions, and residual risk directly to the direct parent.
+Use a fresh self-contained packet, run focused verification, and return changed paths, evidence, assumptions, and residual risk directly to the direct parent.
 """
 
 # External and local MCP tools are root-owned. Avoid one server bundle per subagent.
