@@ -1,0 +1,12 @@
+diff --git a/hooks/demo_production_goal_hook.py b/hooks/demo_production_goal_hook.py
+--- a/hooks/demo_production_goal_hook.py
++++ b/hooks/demo_production_goal_hook.py
+@@ -96,7 +96,7 @@ def _goal_rpc(thread_id: str, method: str, request_id: int, params: dict[str, Any]) -> dict[str, Any] | None:
+     if not executable: return None
+     proc = None
+     try:
+-        proc = subprocess.Popen([executable, "app-server", "--stdio"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
++        proc = subprocess.Popen([executable, "app-server", "--stdio"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+         assert proc.stdin and proc.stdout
+         def send(msg: dict[str, Any]) -> None:
+             proc.stdin.write(json.dumps(msg, separators=(",", ":")) + "\n"); proc.stdin.flush()
