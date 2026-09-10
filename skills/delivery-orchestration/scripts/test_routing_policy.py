@@ -48,7 +48,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_root_and_default_delegation(self):
         self.assertEqual((self.config["model"], self.config["model_reasoning_effort"]), ("gpt-6-astra", "low"))
         self.assertEqual((self.agents["default_subagent_model"], self.agents["default_subagent_reasoning_effort"]), ("gpt-5.6-luna", "max"))
-        self.assertEqual(self.agents["max_depth"], 3)
+        self.assertEqual(self.agents["max_depth"], 2)
         self.assertEqual(self.agents["max_concurrent_threads_per_session"], 6)
 
     def test_registered_profiles_and_actual_bindings(self):
@@ -88,13 +88,13 @@ class RoutingPolicyTests(unittest.TestCase):
                     self.require_rules(
                         flat,
                         (
-                            "depth 1 or 2",
+                            "at depth 1",
                             "cheaper capable",
                             "within the subset",
                             "exclusive, non-overlapping paths",
                             "descendant outcomes and evidence",
                             "direct parent",
-                            "depth 3",
+                            "at depth 2",
                             "remain terminal",
                             "do not spawn",
                         ),
@@ -109,7 +109,7 @@ class RoutingPolicyTests(unittest.TestCase):
                 else:
                     self.require_rules(
                         flat,
-                        ("depth 1, 2, or 3", "terminal", "do not spawn"),
+                        ("depth 1 or 2", "terminal", "do not spawn"),
                         name,
                     )
 

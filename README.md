@@ -12,7 +12,7 @@ reports belong outside the repository.
 
 - `AGENTS.md`: concise working agreements and plan-completion persistence.
 - `config.toml` and `agents/`: explicit model routing, a shared six-thread
-  ceiling, and delegation up to absolute depth 3.
+  ceiling, and delegation up to absolute depth 2.
 - `skills/delivery-orchestration/`: one planning/delivery workflow and the
   [routing matrix and benchmark snapshot](skills/delivery-orchestration/references/delegation-topology.md).
 - `skills/adversarial-code-review/`: one Astra-high critic for approach or
@@ -41,20 +41,19 @@ Choose using total completion cost, including handoffs and rework.
 ## Depth And Concurrency
 
 Root is depth 0. Luna max and Astra medium workers may subdivide independent
-owned work at depths 1 and 2; all agents at depth 3 are terminal. Scanners,
-fast workers, and Spark are terminal at depths 1–3. Only root dispatches the
+owned work at depth 1; all agents at depth 2 are terminal. Scanners,
+fast workers, and Spark are terminal at depths 1–2. Only root dispatches the
 terminal depth-1 advisor.
 
 All descendants share `max_concurrent_threads_per_session = 6`; the root is
 excluded. This is a ceiling, not a quota. Parent writers suspend edits to child
 paths until ownership returns. Children never gain broader authority.
 
-`max_depth = 3` controls the V1 backend. V2 ignores that field; the same ceiling
-is expressed in the instructions and profiles. Check the active client's
-behavior instead of assuming a parsed setting proves enforcement.
-In a CLI 0.154.0 smoke test, the depth-2 worker reported that spawning was
-unavailable, so depth 3 was not demonstrated. Route remaining bounded packets
-back to root for direct dispatch when the runtime imposes a lower limit.
+The working topology is root → workstream worker → terminal leaf.
+Keep `max_depth = 2` for runtimes that honor it and apply the same ceiling in
+instructions. This matches the demonstrated client behavior without claiming
+a universal product maximum. If a worker cannot spawn, it returns the packet
+to root for direct dispatch.
 See [official subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
 ## Plan Goal Hook

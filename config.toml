@@ -3,7 +3,7 @@ model_reasoning_effort = "low"
 
 [agents]
 max_concurrent_threads_per_session = 6
-max_depth = 3
+max_depth = 2
 default_subagent_model = "gpt-5.6-luna"
 default_subagent_reasoning_effort = "max"
 
@@ -20,7 +20,7 @@ description = "Medium-effort read-only leaf for broad discovery and context-heav
 config_file = "./agents/luna_scanner.toml"
 
 [agents.luna_worker]
-description = "Luna max workstream worker for substantial delivery with bounded delegation through depth 3."
+description = "Luna max workstream worker for substantial delivery with bounded delegation through depth 2."
 config_file = "./agents/luna_worker.toml"
 
 [agents.luna_fast_worker]
@@ -32,7 +32,7 @@ description = "Sol low worker for simpler, tightly specified, low-ambiguity crit
 config_file = "./agents/sol_fast_worker.toml"
 
 [agents.astra_worker]
-description = "Astra medium workstream worker for difficult implementation with bounded delegation through depth 3."
+description = "Astra medium workstream worker for difficult implementation with bounded delegation through depth 2."
 config_file = "./agents/astra_worker.toml"
 
 [agents.astra_low_worker]

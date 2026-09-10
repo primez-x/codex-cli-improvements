@@ -17,8 +17,8 @@ planning and review; do not add methodology approval gates.
   context, or evidence. Luna is the default; choose capability before price.
 - Give each writer exclusive paths, interfaces, constraints, current depth, and
   focused verification. One live writer owns each file.
-- Workstream workers may subdivide at depths 1 and 2 under the
-  [delegation topology](references/delegation-topology.md). Every depth-3 agent
+- Workstream workers may subdivide at depth 1 under the
+  [delegation topology](references/delegation-topology.md). Every depth-2 agent
   is terminal. All descendants share the same six-thread ceiling.
 - Parents suspend edits to delegated paths, integrate returned evidence within
   their scope, and report descendants and results upward. Root owns

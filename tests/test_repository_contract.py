@@ -133,7 +133,7 @@ class RepositoryContractTests(unittest.TestCase):
             (self.config["model"], self.config["model_reasoning_effort"]),
             ("gpt-6-astra", "low"),
         )
-        self.assertEqual(agents["max_depth"], 3)
+        self.assertEqual(agents["max_depth"], 2)
         self.assertEqual(agents["max_concurrent_threads_per_session"], 6)
         self.assertEqual(
             (

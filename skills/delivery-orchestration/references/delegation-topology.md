@@ -1,30 +1,29 @@
 # Delegation Topology
 
-Root is depth 0 on GPT-6 Astra low. The maximum absolute depth is 3, a ceiling
+Root is depth 0 on GPT-6 Astra low. The maximum absolute depth is 2, a ceiling
 rather than a required hierarchy. Normally use one to three useful delegates.
 All branches share six concurrently open spawned threads, excluding root;
 honor any lower runtime limit.
 
-`max_depth = 3` is the V1 runtime setting. V2 ignores that numeric field, so
-apply this behavioral limit on every assignment. Verify nesting on the active
-client before claiming runtime enforcement. A CLI 0.154.0 smoke test reached
-absolute depth 2, where the worker reported that spawning was unavailable;
-depth 3 was not demonstrated. If the client withholds child spawning, return
-the bounded packet to root for direct dispatch rather than stalling.
+Use root (depth 0) → workstream worker (depth 1) → terminal leaf (depth 2).
+This ceiling matches the demonstrated runtime behavior. Keep `max_depth = 2`
+for runtimes that honor the setting; instructions enforce the same limit.
+Do not infer a universal product maximum from one client. If child spawning
+is unavailable, return the bounded packet to root for direct dispatch.
 
 ## Roles
 
 | Profile | Model | Effort | Depth | Delegation |
 | --- | --- | --- | --- | --- |
-| `luna_scanner` | gpt-5.6-luna | medium | 1–3 | Terminal discovery and evidence |
-| `luna_fast_worker` | gpt-5.6-luna | xhigh | 1–3 | Terminal bounded implementation |
-| `luna_worker` | gpt-5.6-luna | max | 1–3 | May subdivide at depths 1–2 |
-| `sol_fast_worker` | gpt-5.6-sol | low | 1–3 | Terminal clear critical-path work |
-| `astra_worker` | gpt-6-astra | medium | 1–3 | May subdivide at depths 1–2 |
-| `astra_low_worker` | gpt-6-astra | low | 1–3 | Terminal bounded implementation needing Astra judgment |
+| `luna_scanner` | gpt-5.6-luna | medium | 1–2 | Terminal discovery and evidence |
+| `luna_fast_worker` | gpt-5.6-luna | xhigh | 1–2 | Terminal bounded implementation |
+| `luna_worker` | gpt-5.6-luna | max | 1–2 | May subdivide at depth 1 |
+| `sol_fast_worker` | gpt-5.6-sol | low | 1–2 | Terminal clear critical-path work |
+| `astra_worker` | gpt-6-astra | medium | 1–2 | May subdivide at depth 1 |
+| `astra_low_worker` | gpt-6-astra | low | 1–2 | Terminal bounded implementation needing Astra judgment |
 | `astra_advisor` | gpt-6-astra | high | 1 | Root-dispatched terminal independent critic |
-| `spark_scanner` | gpt-5.3-codex-spark | xhigh | 1–3 | Preferred tiny exact or bounded instruction check |
-| `spark_worker` | gpt-5.3-codex-spark | xhigh | 1–3 | Preferred small mechanical edit |
+| `spark_scanner` | gpt-5.3-codex-spark | xhigh | 1–2 | Preferred tiny exact or bounded instruction check |
+| `spark_worker` | gpt-5.3-codex-spark | xhigh | 1–2 | Preferred small mechanical edit |
 
 Luna is the default. Use xhigh for bounded routine work and max for substantial
 implementation. Sol low is a latency option for tightly specified work blocking
@@ -49,13 +48,13 @@ bounded Astra judgment without the medium effort cost and remains terminal.
 - Give every assignment its current absolute depth, scope, exclusive paths,
   constraints, interfaces, and expected evidence. Unknown depth must be resolved
   with the parent before spawning.
-- Only `luna_worker` and `astra_worker` may subdelegate at depths 1 or 2.
+- Only `luna_worker` and `astra_worker` may subdelegate at depth 1.
   Select the least expensive capable child for independent useful work;
   a narrower assignment may require terminal execution.
 - Children receive subsets of the parent's scope and authority. The parent
   stops writing delegated paths until the child returns ownership. No live
   writers overlap. Do not build coordinator-only chains.
-- Every depth-3 agent is terminal. Scanners, fast workers, and Spark remain
+- Every depth-2 agent is terminal. Scanners, fast workers, and Spark remain
   terminal at any depth. Advisor requests return to root for direct dispatch.
 - Reserve capacity within the shared six-thread limit before spawning.
   Report child identities, ownership, progress, and evidence to the parent.
