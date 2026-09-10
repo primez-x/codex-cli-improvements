@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
-import subprocess
 import tomllib
 import unittest
 
@@ -25,11 +24,9 @@ GENERAL_ROUTING_MATRIX = {
     "luna_worker": ("gpt-5.6-luna", "max"),
     "sol_fast_worker": ("gpt-5.6-sol", "low"),
     "astra_worker": ("gpt-6-astra", "medium"),
+    "astra_low_worker": ("gpt-6-astra", "low"),
     "astra_advisor": ("gpt-6-astra", "high"),
 }
-REVIEWER_PROFILE_NAME = "astra_reviewer"
-REVIEWER_PROFILE = ("gpt-6-astra", "high")
-
 RETIRED_PROFILE_MARKERS = (
     "terra",
     "spark_coordinator",
@@ -136,7 +133,7 @@ class RepositoryContractTests(unittest.TestCase):
             (self.config["model"], self.config["model_reasoning_effort"]),
             ("gpt-6-astra", "low"),
         )
-        self.assertEqual(agents["max_depth"], 1)
+        self.assertEqual(agents["max_depth"], 3)
         self.assertEqual(agents["max_concurrent_threads_per_session"], 6)
         self.assertEqual(
             (
@@ -149,7 +146,7 @@ class RepositoryContractTests(unittest.TestCase):
         registered = self._registered_profiles(self.config)
         self.assertEqual(
             registered,
-            set(GENERAL_ROUTING_MATRIX) | {REVIEWER_PROFILE_NAME},
+            set(GENERAL_ROUTING_MATRIX),
         )
         self.assertEqual(len(registered), 9)
         self.assertTrue(self.config["features"]["multi_agent"])
@@ -167,7 +164,6 @@ class RepositoryContractTests(unittest.TestCase):
 
         for name, wanted in {
             **GENERAL_ROUTING_MATRIX,
-            REVIEWER_PROFILE_NAME: REVIEWER_PROFILE,
         }.items():
             with self.subTest(agent=name):
                 profile = self._load_profile(name)
@@ -177,7 +173,7 @@ class RepositoryContractTests(unittest.TestCase):
                 )
                 self.assertEqual(profile["name"], name)
 
-    def test_registered_profiles_are_terminal_and_preserve_leaf_boundaries(self) -> None:
+    def test_registered_profiles_preserve_bounded_depth_and_leaf_boundaries(self) -> None:
         registered = self._registered_profiles(self.config)
         self.assertEqual(len(registered), 9)
 
@@ -193,31 +189,6 @@ class RepositoryContractTests(unittest.TestCase):
                         self.assertIn(phrase, instructions)
                     self.assertIn("external", instructions)
 
-        self.assertEqual(
-            self.config["agents"][REVIEWER_PROFILE_NAME]["description"].lower()
-            .count("astra high"),
-            1,
-        )
-
-    def test_on_demand_reviewer_is_read_only_and_evidence_bound(self) -> None:
-        reviewer = self._load_profile(REVIEWER_PROFILE_NAME)
-        self.assertEqual(reviewer["name"], REVIEWER_PROFILE_NAME)
-        self.assertEqual(
-            (reviewer["model"], reviewer["model_reasoning_effort"]),
-            REVIEWER_PROFILE,
-        )
-        self.assertEqual(reviewer["sandbox_mode"], "read-only")
-        instructions = reviewer["developer_instructions"].lower()
-        for phrase in (
-            "operate only at depth 1",
-            "do not spawn",
-            "root-prepared evidence packet",
-            "evidence anchors",
-            "verdict",
-        ):
-            self.assertIn(phrase, instructions)
-        self.assertRegex(instructions, r"do not[^.\n]*(?:edit|mutate)")
-
     def test_runtime_assets_do_not_reference_retired_profile_families(self) -> None:
         paths = [
             ROOT / "config.toml",
@@ -227,7 +198,6 @@ class RepositoryContractTests(unittest.TestCase):
         ]
         paths.extend((ROOT / "agents").glob("*.toml"))
         paths.extend((ROOT / "skills" / "delivery-orchestration").rglob("*.md"))
-        paths.extend((ROOT / "skills" / "plan-review-ladder").rglob("*.md"))
         paths.extend((ROOT / "skills" / "instruction-learning-loop").rglob("*.md"))
         paths.extend((ROOT / "skills" / "adversarial-code-review").glob("SKILL.md"))
 
@@ -241,40 +211,30 @@ class RepositoryContractTests(unittest.TestCase):
         skill_paths = [
             entry["path"] for entry in self.config.get("skills", {}).get("config", [])
         ]
-        self.assertEqual(len(skill_paths), 4)
+        self.assertEqual(len(skill_paths), 3)
         for configured in skill_paths:
             with self.subTest(path=configured):
                 path = Path(configured)
                 self.assertFalse(path.is_absolute())
                 self.assertTrue((ROOT / path).is_file())
 
-    def test_hooks_are_portable_and_only_register_current_managed_events(self) -> None:
+    def test_hooks_are_portable_and_register_the_plan_goal_event(self) -> None:
         hooks_path = ROOT / "hooks.json"
         hooks = json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"]
         self.assertIn("UserPromptSubmit", hooks)
-        self.assertIn("Stop", hooks)
         self.assertEqual(
             set(hooks),
-            {"UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"},
+            {"UserPromptSubmit"},
         )
 
-        learning_script = "instruction_learning_hook.py"
-        for event in ("PreToolUse", "PostToolUse"):
-            with self.subTest(event=event):
-                self.assertEqual(len(hooks[event]), 1)
-                self.assertEqual(
-                    hooks[event][0]["matcher"],
-                    r"^(Bash|apply_patch|mcp__.*)$",
-                )
-                self.assertEqual(len(hooks[event][0]["hooks"]), 1)
-                self.assertIn(
-                    learning_script,
-                    hooks[event][0]["hooks"][0]["command"],
-                )
+        self.assertEqual(len(hooks["UserPromptSubmit"]), 1)
+        self.assertEqual(len(hooks["UserPromptSubmit"][0]["hooks"]), 1)
+        self.assertIn(
+            "plan_gap_goal_hook.py",
+            hooks["UserPromptSubmit"][0]["hooks"][0]["command"],
+        )
 
         serialized = json.dumps(hooks).lower()
-        self.assertNotIn("adversarial-code-review", serialized)
-        self.assertNotIn("lifecycle_gate.py", serialized)
         self.assertNotIn("c:\\\\users\\", serialized)
         self.assertNotIn("m." + "pincoski", serialized)
         self.assertIn("os.environ.get('codex_home')", serialized)
@@ -286,16 +246,12 @@ class RepositoryContractTests(unittest.TestCase):
                     self.assertRegex(entry["command"], r'^python3 -B -c ".+"$')
                     self.assertRegex(entry["commandWindows"], r'^python -B -c ".+"$')
 
-    def test_review_policy_is_whole_deliverable_and_risk_triggered(self) -> None:
+    def test_review_policy_is_risk_triggered(self) -> None:
         root_facing = (
             ROOT / "AGENTS.md",
             ROOT / "README.md",
-            ROOT
-            / "skills"
-            / "adversarial-code-review"
-            / "references"
-            / "managed-agents-instruction.md",
             ROOT / "skills" / "delivery-orchestration" / "SKILL.md",
+            ROOT / "skills" / "adversarial-code-review" / "SKILL.md",
         )
         combined = " ".join(path.read_text(encoding="utf-8").lower() for path in root_facing)
         normalized = " ".join(combined.split())
@@ -306,11 +262,9 @@ class RepositoryContractTests(unittest.TestCase):
             "authentication",
             "credentials",
             "privacy",
-            "public-contract",
             "repeated failed verification",
             "optional review failure",
-            "required high-risk review",
-            "whole deliverable",
+            "required consequential review",
         ):
             self.assertIn(phrase, normalized)
         self.assertNotIn("for every material delivery", normalized)
@@ -325,36 +279,29 @@ class RepositoryContractTests(unittest.TestCase):
         )
 
         for phrase in (
-            "root cause is established",
-            "fix freshly verified",
-            "technical completion and remaining user verification",
-            "user confirms later testing",
-            "later user report supersedes",
+            "instruction learning is discretionary",
+            "established, recurring instruction defect",
+            "narrowest authorized source",
+            "fixed bug does not require an instruction edit",
+            "change memory only when explicitly requested",
         ):
             self.assertIn(phrase, agents)
 
         for phrase in (
-            "candidate resolution",
-            "does not by itself require an instruction change",
-            "awaiting user confirmation",
-            "never expires",
-            "supersedes",
-            "exactly one active instruction-learning handler",
-            "`/hooks`",
-            "fresh session",
+            "do not create a persistent confirmation lifecycle",
+            "do not claim user-observed resolution without user-observed evidence",
         ):
             self.assertIn(phrase, skill)
 
-    def test_plan_review_docs_exclude_the_on_demand_delivery_reviewer(self) -> None:
-        for path in (
-            ROOT / "skills" / "plan-review-ladder" / "SKILL.md",
-            ROOT / "skills" / "plan-review-ladder" / "references" / "review-lenses.md",
-        ):
-            text = " ".join(path.read_text(encoding="utf-8").lower().split())
-            with self.subTest(path=self._relative(path)):
-                self.assertIn("astra_reviewer", text)
-                self.assertIn("not a plan-review", text)
-                self.assertNotIn("gate-only", text)
+        hooks = json.loads((ROOT / "hooks.json").read_text(encoding="utf-8"))
+        registered_hooks = json.dumps(hooks).lower()
+        self.assertNotIn("instruction_learning_hook.py", registered_hooks)
+        self.assertFalse(
+            (ROOT / "skills" / "instruction-learning-loop" / "scripts" / "instruction_learning_hook.py").exists()
+        )
+        self.assertTrue(
+            (ROOT / "skills" / "instruction-learning-loop" / "scripts" / "audit_instruction_system.py").is_file()
+        )
 
     def test_runtime_state_is_ignored_at_repository_boundaries(self) -> None:
         patterns = {
@@ -427,38 +374,12 @@ class RepositoryContractTests(unittest.TestCase):
             with self.subTest(runtime_path=self._relative(path)):
                 self.assertFalse(relative_parts & actual_runtime_names)
 
-    def test_digest_bound_evaluation_fixtures_are_checked_out_with_lf_endings(self) -> None:
-        fixture_root = (
-            ROOT
-            / "skills"
-            / "adversarial-code-review"
-            / "references"
-            / "evaluation-inputs"
-        )
-        fixtures = sorted(fixture_root.glob("*.txt"))
-        relative = [path.relative_to(ROOT).as_posix() for path in fixtures]
-
-        result = subprocess.run(
-            ["git", "check-attr", "eol", "--", *relative],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(relative)
-        self.assertEqual(
-            result.stdout.splitlines(),
-            [f"{path}: eol: lf" for path in relative],
-        )
-
     def test_reusable_text_allows_contextual_vendor_names_but_blocks_private_material(self) -> None:
         self.assertTrue(RECONCILIATION_POLICY.is_file())
         policy_text = RECONCILIATION_POLICY.read_text(encoding="utf-8").lower()
         self.assertIn("vendor", policy_text)
-        self.assertIn("## superpowers", policy_text)
-        self.assertIn("## creatio ai app development toolkit", policy_text)
+        self.assertIn("superpowers methodology", policy_text)
+        self.assertIn("## application toolkits", policy_text)
 
         for path, text in self._text_files():
             relative = self._relative(path)

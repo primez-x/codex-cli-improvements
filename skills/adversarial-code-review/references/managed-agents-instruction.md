@@ -1,7 +1,0 @@
-## Independent Review
-
-Every final deliverable requires engineering review and approval by the Astra root or an Astra high advisor. Review the integrated outcome against the user's goal, architecture and interfaces, maintainability, verification evidence, and remaining risks. The root owns subagent results and final disposition; a worker's completion claim or passing test alone is not sign-off. For ordinary work the Astra root performs this review directly. Delegate independent challenge when the risks below warrant it, and identify the sign-off owner and any material limitations in the delivery summary.
-
-Use an independent read-only Astra high reviewer when explicitly requested or when security/authentication/privacy, destructive actions, migrations/persistence/data integrity/concurrency, production or material external impact, major architecture/compatibility/public contracts, conflicting evidence, or repeated failed verification warrants independent challenge.
-
-The root prepares bounded evidence, owns finding disposition, and continues authorized work after correcting valid findings. Routine wording, mechanical configuration, file count, stage count, or the presence of an instruction file do not independently require an advisor or review ladder. Do not stack planning, task, and final reviews without distinct unresolved risks. An optional review failure does not block a verified low-risk result; a required consequential review remains a delivery gate.

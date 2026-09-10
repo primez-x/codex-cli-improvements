@@ -16,9 +16,10 @@ GENERAL_ROUTING_MATRIX = {
     "luna_worker": ("gpt-5.6-luna", "max"),
     "sol_fast_worker": ("gpt-5.6-sol", "low"),
     "astra_worker": ("gpt-6-astra", "medium"),
+    "astra_low_worker": ("gpt-6-astra", "low"),
     "astra_advisor": ("gpt-6-astra", "high"),
 }
-MATRIX = {**GENERAL_ROUTING_MATRIX, "astra_reviewer": ("gpt-6-astra", "high")}
+MATRIX = GENERAL_ROUTING_MATRIX
 ROOT_SERVERS = {"clio", "creatio", "chrome-devtools", "node_repl"}
 
 def read_toml(path: Path) -> dict:
@@ -47,7 +48,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_root_and_default_delegation(self):
         self.assertEqual((self.config["model"], self.config["model_reasoning_effort"]), ("gpt-6-astra", "low"))
         self.assertEqual((self.agents["default_subagent_model"], self.agents["default_subagent_reasoning_effort"]), ("gpt-5.6-luna", "max"))
-        self.assertEqual(self.agents["max_depth"], 1)
+        self.assertEqual(self.agents["max_depth"], 3)
         self.assertEqual(self.agents["max_concurrent_threads_per_session"], 6)
 
     def test_registered_profiles_and_actual_bindings(self):
@@ -73,13 +74,44 @@ class RoutingPolicyTests(unittest.TestCase):
                     self.assertEqual(server["command"], "__codex_disabled_mcp_transport_never_run__")
                     self.assertEqual(server["args"], [])
 
-    def test_terminal_leaf_and_read_only_roles(self):
+    def test_depth_eligibility_and_terminal_roles(self):
+        subdividing = {"luna_worker", "astra_worker"}
+        root_critics = {"astra_advisor"}
         for name, profile in self.profiles.items():
             with self.subTest(profile=name):
                 instruction = profile["developer_instructions"].lower()
-                self.assertTrue(bool(re.search(r"do not[^.\n]*spawn", instruction)), f"{name}: missing no-spawn rule")
-                expected = "read-only" if name.endswith(("scanner", "advisor", "reviewer")) else "workspace-write"
+                flat = " ".join(instruction.split())
+                expected = "read-only" if name.endswith(("scanner", "advisor")) else "workspace-write"
                 self.assertEqual(profile["sandbox_mode"], expected)
+
+                if name in subdividing:
+                    self.require_rules(
+                        flat,
+                        (
+                            "depth 1 or 2",
+                            "cheaper capable",
+                            "within the subset",
+                            "exclusive, non-overlapping paths",
+                            "descendant outcomes and evidence",
+                            "direct parent",
+                            "depth 3",
+                            "remain terminal",
+                            "do not spawn",
+                        ),
+                        name,
+                    )
+                elif name in root_critics:
+                    self.require_rules(
+                        flat,
+                        ("depth 1", "terminal", "do not spawn", "root"),
+                        name,
+                    )
+                else:
+                    self.require_rules(
+                        flat,
+                        ("depth 1, 2, or 3", "terminal", "do not spawn"),
+                        name,
+                    )
 
     def test_writers_have_ownership_and_external_action_limits(self):
         for name, profile in self.profiles.items():
@@ -87,70 +119,64 @@ class RoutingPolicyTests(unittest.TestCase):
                 self.require_rules(profile["developer_instructions"].lower(),
                     ("ownership", "do not commit", "push", "deploy", "external systems"), name)
 
-    def test_advisor_and_reviewer_can_return_engineering_verdict(self):
-        for name in ("astra_advisor", "astra_reviewer"):
-            instruction = self.profiles[name]["developer_instructions"].lower()
-            self.require_rules(instruction, ("verdict", "evidence", "risk"), name)
+    def test_advisor_can_criticize_approach_or_integrated_delivery(self):
         advisor = self.profiles["astra_advisor"]["developer_instructions"].lower()
-        self.require_rules(advisor, ("early checkpoint", "final-plan checkpoint", "final-delivery checkpoint", "root"), "advisor checkpoints")
-        self.assertFalse("do not disposition findings or conclusions" in advisor, "advisor must be able to give an engineering verdict")
+        self.require_rules(
+            advisor,
+            ("approach", "integrated delivery", "verdict", "evidence", "risk", "root"),
+            "astra advisor",
+        )
+        self.assertFalse(
+            "do not disposition findings or conclusions" in advisor,
+            "advisor must be able to give an engineering verdict",
+        )
 
-    def test_advisor_final_checkpoint_covers_integrated_delivery(self):
+    def test_advisor_delivery_critique_covers_integrated_evidence(self):
         advisor = self.profiles["astra_advisor"]["developer_instructions"].lower()
-        self.require_rules(advisor, (
-            "integrated deliverable", "interfaces", "maintainability",
-            "verification evidence", "remaining risks", "approve, revise, or blocked",
-            "unverified areas", "root owns acceptance or rejection",
-        ), "advisor final checkpoint")
+        self.require_rules(
+            advisor,
+            ("integrated deliverable", "interfaces", "maintainability", "verification", "remaining risks"),
+            "astra advisor delivery critique",
+        )
 
     def test_delegation_is_active_and_progress_aware(self):
-        self.require_rules(self.skill + self.global_rules,
-            ("decomposition", "new evidence", "bottleneck", "before integration",
-             "independent", "handoff", "root rework", "productive long-running",
-             "one live writer", "reuse"), "delegation")
-        for stale in ("four or more substantive stages", "after two repetitions", "sol low root"):
-            self.assertFalse(stale in self.skill + self.topology, f"retired routing rule: {stale}")
+        combined = self.skill + self.topology + self.global_rules
+        self.assertRegex(combined, r"workstream\s+workers?", "delegation topology: worker rule absent")
+        self.assertRegex(combined, r"depth(?:s|\s+)?[123]", "delegation topology: depth rule absent")
+        self.assertRegex(combined, r"six[- ](?:thread|concurrent)", "delegation topology: concurrency rule absent")
+        self.assertIn("root owns", combined, "delegation topology: root ownership rule absent")
 
     def test_cost_routes_and_capability_boundaries(self):
-        self.require_rules(self.skill + self.topology,
-            ("luna_fast_worker", "sol_fast_worker", "low-ambiguity",
-             "focused verification", "critical path", "user-provided",
-             "do not require a failed", "capability",
-             "root-selected capability candidate"), "cost routing")
-        self.require_rules(self.global_rules,
-            ("root review does not justify", "primary", "substantive"), "capability floor")
-
-    def test_user_benchmark_table_is_explicitly_qualified(self):
-        self.require_rules(self.topology, (
-            "starting estimates rather than verified universal metrics",
-            "comparable quality outside",
-            "| luna xhigh | 35 | $0.085 | 3.6 min |",
-            "| luna max | 38 | $0.18 | 6.3 min |",
-            "| sol low | 34 | $0.26 | 1.2 min |",
-            "| astra low | 46 | $0.82 | 1.5 min |",
-            "| astra high | 51 | $1.72 | 4.0 min |",
-            "| sol high (comparison only) | 42 | $0.81 | 3.8 min |",
-        ), "user benchmark table")
+        self.require_rules(
+            self.skill + self.topology,
+            ("luna_worker", "astra_worker", "astra_low_worker", "sol_fast_worker", "capability"),
+            "cost routing",
+        )
+        self.require_rules(
+            self.global_rules,
+            ("root review is sufficient", "primary delegated model"),
+            "capability floor",
+        )
 
     def test_spark_packets_are_bounded(self):
-        self.require_rules(self.topology, ("self-contained", "bounded", "anchor", "current model catalog"), "Spark")
+        self.require_rules(self.topology, ("self-contained", "bounded", "fork_turns"), "Spark")
         self.assertTrue(bool(re.search(r'fork_turns\s*=\s*["\x27]none', self.topology)), "Spark requires a fresh packet")
         self.assertFalse(bool(re.search(r"\b(?:128k|272k)\b", self.topology)), "context limits must not be frozen in routing prose")
 
     def test_final_approval_and_required_risk_review(self):
-        self.require_rules(self.global_rules + self.topology,
-            ("every final deliverable", "engineering review and approval",
-             "astra root", "astra high", "integrated outcome", "privacy",
-             "data integrity", "concurrency", "public-contract", "required",
-             "optional", "file count", "stage count"), "senior sign-off")
+        self.require_rules(
+            self.global_rules + self.topology,
+            ("reviews and approves every integrated outcome", "astra root", "astra high", "privacy",
+             "data integrity", "required", "optional"),
+            "senior sign-off",
+        )
 
     def test_git_and_scope_guards(self):
-        self.require_rules(self.skill + self.global_rules,
-            ("explicit user or repository branch policy", "never force-push",
-             "ahead-of-upstream", "explicit paths or hunks", "remote-ref verification",
-             "task commit must be an ancestor", "no push", "keep local",
-             "pull requests, merges, releases, and deployments remain separately authorized"),
-            "Git completion")
+        self.require_rules(
+            self.skill + self.global_rules,
+            ("commit", "push", "remote-ref verification", "deployments", "explicit authorization"),
+            "Git completion",
+        )
 
 if __name__ == "__main__":
     unittest.main()

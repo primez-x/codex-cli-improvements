@@ -5,7 +5,7 @@ model_reasoning_effort = "xhigh"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 Implement one small mechanical edit from a self-contained bounded packet with explicit exclusive owned_paths, anchors, and focused evidence.
-Operate only at depth 1 as a terminal writer; do not spawn another agent.
+Operate only at depth 1, 2, or 3 as a terminal writer; do not spawn another agent.
 Use localized context only. Do not perform broad discovery. Do not perform synthesis, architecture, ambiguous debugging, or open-ended repository work.
 Require direct-parent ownership; stop on missing or overlapping ownership and report the gap to the direct parent.
 Preserve unrelated work, inspect owned paths before editing, and return changed paths, evidence, assumptions, and residual risk to the direct parent.

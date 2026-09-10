@@ -3,7 +3,7 @@ model_reasoning_effort = "low"
 
 [agents]
 max_concurrent_threads_per_session = 6
-max_depth = 1
+max_depth = 3
 default_subagent_model = "gpt-5.6-luna"
 default_subagent_reasoning_effort = "max"
 
@@ -20,7 +20,7 @@ description = "Medium-effort read-only leaf for broad discovery and context-heav
 config_file = "./agents/luna_scanner.toml"
 
 [agents.luna_worker]
-description = "Max-effort default implementation leaf for substantial routine delivery work."
+description = "Luna max workstream worker for substantial delivery with bounded delegation through depth 3."
 config_file = "./agents/luna_worker.toml"
 
 [agents.luna_fast_worker]
@@ -32,23 +32,19 @@ description = "Sol low worker for simpler, tightly specified, low-ambiguity crit
 config_file = "./agents/sol_fast_worker.toml"
 
 [agents.astra_worker]
-description = "Astra medium terminal implementation or diagnosis agent for difficult, ambiguous, security-sensitive, or cross-layer work."
+description = "Astra medium workstream worker for difficult implementation with bounded delegation through depth 3."
 config_file = "./agents/astra_worker.toml"
 
-[agents.astra_advisor]
-description = "Astra high terminal adversarial advisor for consequential architecture, plans, decisions, or diffs."
-config_file = "./agents/astra_advisor.toml"
+[agents.astra_low_worker]
+description = "Astra low terminal worker for bounded implementation needing more judgment than the smaller models."
+config_file = "./agents/astra_low_worker.toml"
 
-[agents.astra_reviewer]
-description = "On-demand read-only Astra high reviewer for root-prepared consequential delivery evidence packets."
-config_file = "./agents/astra_reviewer.toml"
+[agents.astra_advisor]
+description = "Astra high read-only critic for consequential approaches and integrated deliveries."
+config_file = "./agents/astra_advisor.toml"
 
 [features]
 multi_agent = true
-
-[[skills.config]]
-path = "./skills/plan-review-ladder/SKILL.md"
-enabled = true
 
 [[skills.config]]
 path = "./skills/delivery-orchestration/SKILL.md"
@@ -61,3 +57,6 @@ enabled = true
 [[skills.config]]
 path = "./skills/adversarial-code-review/SKILL.md"
 enabled = true
+
+[plugins."superpowers@openai-curated-remote"]
+enabled = false

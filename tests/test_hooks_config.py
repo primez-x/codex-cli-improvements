@@ -24,13 +24,8 @@ def _dispatcher_code(*relative_parts: str) -> str:
 
 
 PLAN_GAP_CODE = _dispatcher_code("hooks", "plan_gap_goal_hook.py")
-LEARNING_CODE = _dispatcher_code(
-    "skills", "instruction-learning-loop", "scripts", "instruction_learning_hook.py"
-)
 PLAN_GAP_POSIX = f'python3 -B -c "{PLAN_GAP_CODE}"'
 PLAN_GAP_WINDOWS = f'python -B -c "{PLAN_GAP_CODE}"'
-LEARNING_POSIX = f'python3 -B -c "{LEARNING_CODE}"'
-LEARNING_WINDOWS = f'python -B -c "{LEARNING_CODE}"'
 
 
 class HooksConfigTests(unittest.TestCase):
@@ -38,11 +33,11 @@ class HooksConfigTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.config = json.loads(HOOKS_PATH.read_text(encoding="utf-8"))
 
-    def test_registers_plan_gap_and_instruction_learning_events(self) -> None:
+    def test_registers_plan_gap_event(self) -> None:
         hooks = self.config["hooks"]
         self.assertEqual(
             set(hooks),
-            {"UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"},
+            {"UserPromptSubmit"},
         )
 
         submit = hooks["UserPromptSubmit"]
@@ -50,32 +45,8 @@ class HooksConfigTests(unittest.TestCase):
         submit_commands = [entry["command"] for entry in submit[0]["hooks"]]
         self.assertEqual(
             submit_commands,
-            [PLAN_GAP_POSIX, LEARNING_POSIX],
+            [PLAN_GAP_POSIX],
         )
-
-        stop = hooks["Stop"]
-        self.assertEqual(len(stop), 1)
-        self.assertEqual(
-            [entry["command"] for entry in stop[0]["hooks"]],
-            [LEARNING_POSIX],
-        )
-
-        for event in ("PreToolUse", "PostToolUse"):
-            with self.subTest(event=event):
-                groups = hooks[event]
-                self.assertEqual(len(groups), 1)
-                self.assertEqual(groups[0]["matcher"], r"^(Bash|apply_patch|mcp__.*)$")
-                self.assertEqual(
-                    [entry["command"] for entry in groups[0]["hooks"]],
-                    [LEARNING_POSIX],
-                )
-
-    def test_does_not_register_adversarial_review_lifecycle_hooks(self) -> None:
-        serialized = json.dumps(self.config["hooks"]).casefold()
-        self.assertNotIn("adversarial-code-review", serialized)
-        self.assertNotIn("lifecycle_gate.py", serialized)
-        for event in ("SubagentStart", "SubagentStop"):
-            self.assertNotIn(event, self.config["hooks"])
 
     def test_commands_use_expected_windows_and_posix_home_relative_paths(self) -> None:
         commands = [
@@ -86,7 +57,6 @@ class HooksConfigTests(unittest.TestCase):
         ]
         command_pairs = [(entry["command"], entry["commandWindows"]) for entry in commands]
         self.assertIn((PLAN_GAP_POSIX, PLAN_GAP_WINDOWS), command_pairs)
-        self.assertIn((LEARNING_POSIX, LEARNING_WINDOWS), command_pairs)
 
         for entry in commands:
             for command in (entry["command"], entry["commandWindows"]):
@@ -100,24 +70,6 @@ class HooksConfigTests(unittest.TestCase):
         commands = [
             (PLAN_GAP_POSIX, ("hooks", "plan_gap_goal_hook.py")),
             (PLAN_GAP_WINDOWS, ("hooks", "plan_gap_goal_hook.py")),
-            (
-                LEARNING_POSIX,
-                (
-                    "skills",
-                    "instruction-learning-loop",
-                    "scripts",
-                    "instruction_learning_hook.py",
-                ),
-            ),
-            (
-                LEARNING_WINDOWS,
-                (
-                    "skills",
-                    "instruction-learning-loop",
-                    "scripts",
-                    "instruction_learning_hook.py",
-                ),
-            ),
         ]
         payload = b'{"hook_event_name":"UserPromptSubmit"}\n'
 

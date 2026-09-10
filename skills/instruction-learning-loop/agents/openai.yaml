@@ -1,4 +1,4 @@
 interface:
   display_name: "Instruction Learning Loop"
   short_description: "Apply corrections as lean, validated instructions"
-  default_prompt: "Use $instruction-learning-loop to implement this behavioral correction or recurring failure as the smallest evidence-backed user-owned instruction improvement, then verify the change."
+  default_prompt: "Use $instruction-learning-loop when a source-backed instruction correction is warranted; propose or apply the smallest authorized change, then run the explicit audit."

@@ -1,76 +1,83 @@
-# Delegation Topology And Cost Ceilings
+# Delegation Topology
 
-The root coordinates at depth 0 on `gpt-6-astra`/`low`. Eight general-purpose
-profiles remain terminal depth-1 leaves reporting directly to the root. The
-on-demand `astra_reviewer` identity is also depth 1 and is dispatched only for
-explicit or consequential review. `max_depth = 1` is both the configured and
-behavioral boundary: leaves do not spawn.
+Root is depth 0 on GPT-6 Astra low. The maximum absolute depth is 3, a ceiling
+rather than a required hierarchy. Normally use one to three useful delegates.
+All branches share six concurrently open spawned threads, excluding root;
+honor any lower runtime limit.
 
-## Model And Effort Matrix
+`max_depth = 3` is the V1 runtime setting. V2 ignores that numeric field, so
+apply this behavioral limit on every assignment. Verify nesting on the active
+client before claiming runtime enforcement. A CLI 0.154.0 smoke test reached
+absolute depth 2, where the worker reported that spawning was unavailable;
+depth 3 was not demonstrated. If the client withholds child spawning, return
+the bounded packet to root for direct dispatch rather than stalling.
 
-| Profile | Named model | Effort | Allowed depth | Purpose |
+## Roles
+
+| Profile | Model | Effort | Depth | Delegation |
 | --- | --- | --- | --- | --- |
-| Spark scanner | gpt-5.3-codex-spark | xhigh | 1 | Tiny exact read-only evidence from a bounded packet |
-| Spark worker | gpt-5.3-codex-spark | xhigh | 1 | Small localized mechanical edits with focused checks |
-| Luna scanner | gpt-5.6-luna | medium | 1 | Broad discovery, large-context evidence, and validation |
-| Luna fast worker | gpt-5.6-luna | xhigh | 1 | Economical bounded routine implementation |
-| Luna worker | gpt-5.6-luna | max | 1 | Default substantial implementation and verification |
-| Astra worker | gpt-6-astra | medium | 1 | Rare difficult, ambiguous, security-sensitive, or cross-layer work |
-| Sol fast worker | gpt-5.6-sol | low | 1 | Simpler, tightly specified, low-ambiguity critical-path packet with focused verification |
-| Astra advisor | gpt-6-astra | high | 1 | Rare consequential adversarial challenge and sign-off |
-| On-demand `astra_reviewer` | gpt-6-astra | high | 1 | Consequential post-verification review; not routine routing |
+| `luna_scanner` | gpt-5.6-luna | medium | 1–3 | Terminal discovery and evidence |
+| `luna_fast_worker` | gpt-5.6-luna | xhigh | 1–3 | Terminal bounded implementation |
+| `luna_worker` | gpt-5.6-luna | max | 1–3 | May subdivide at depths 1–2 |
+| `sol_fast_worker` | gpt-5.6-sol | low | 1–3 | Terminal clear critical-path work |
+| `astra_worker` | gpt-6-astra | medium | 1–3 | May subdivide at depths 1–2 |
+| `astra_low_worker` | gpt-6-astra | low | 1–3 | Terminal bounded implementation needing Astra judgment |
+| `astra_advisor` | gpt-6-astra | high | 1 | Root-dispatched terminal independent critic |
+| `spark_scanner` | gpt-5.3-codex-spark | xhigh | 1–3 | Preferred tiny exact or bounded instruction check |
+| `spark_worker` | gpt-5.3-codex-spark | xhigh | 1–3 | Preferred small mechanical edit |
 
-Active Astra roles use `astra_worker`, `astra_advisor`, and `astra_reviewer`.
-Luna medium is the discovery route, Luna xhigh handles bounded routine work,
-and Luna max handles more substantial implementation. Astra medium replaces the former Sol
-xhigh worker tier; Astra high replaces former Sol max advice/review. The
-`sol_fast_worker` identity provides the named Sol-low latency route without
-changing the Luna default.
-Former Sol-high work maps to the Astra-low root during migration; treat that
-as a root-selected capability candidate, not a new leaf profile.
+Luna is the default. Use xhigh for bounded routine work and max for substantial
+implementation. Sol low is a latency option for tightly specified work blocking
+progress. Use Astra medium directly when difficult work needs its judgment.
+Use Spark often for eligible bounded work, making productive use of the separate
+allowance reported by the user. It needs a fresh self-contained packet with
+`fork_turns = "none"`, exact anchors, narrow reads, and a short evidence return.
+Do not give it broad discovery, full histories, or large logs. At context pressure
+or scope growth, return the remaining gap for splitting or rerouting; avoid
+repeated compaction or extending a nearly full Spark thread. Capability and
+account availability still govern eligibility.
+Use only profiles/models actually available in the current runtime.
 
-## Optional Leaf Identity Metadata
+Broad coverage can use multiple bounded Spark packets when each is independently
+understandable. Partition once and avoid duplicated discovery. Astra or a capable
+workstream owner reconciles cross-file relationships. Use Luna when partitioning
+would repeat large context or hide dependencies. `astra_low_worker` supplies
+bounded Astra judgment without the medium effort cost and remains terminal.
 
-For observability or an audit packet, the root may attach deterministic identity
-metadata to a direct depth-1 assignment. Use the pure helper in
-`scripts/agent_identity.py` to normalize the purpose and derive a stable
-`d1_<profile>_<purpose_slug>` task name plus a human-readable display label.
-This metadata is optional, carries no ownership or work result, and must not be
-treated as a runtime UI requirement. A roster update, when useful, is a
-separate `ROSTER_DELTA_V1` envelope containing exactly
-`canonical_task_path`, `task_name`, `display_label`, and `status`; statuses are
-`active`, `completed`, `failed`, or `terminated`. Work and evidence still use
-the ordinary direct-parent return path.
+## Ownership And Subdivision
 
-## Delegation Checkpoints And Cost
+- Give every assignment its current absolute depth, scope, exclusive paths,
+  constraints, interfaces, and expected evidence. Unknown depth must be resolved
+  with the parent before spawning.
+- Only `luna_worker` and `astra_worker` may subdelegate at depths 1 or 2.
+  Select the least expensive capable child for independent useful work;
+  a narrower assignment may require terminal execution.
+- Children receive subsets of the parent's scope and authority. The parent
+  stops writing delegated paths until the child returns ownership. No live
+  writers overlap. Do not build coordinator-only chains.
+- Every depth-3 agent is terminal. Scanners, fast workers, and Spark remain
+  terminal at any depth. Advisor requests return to root for direct dispatch.
+- Reserve capacity within the shared six-thread limit before spawning.
+  Report child identities, ownership, progress, and evidence to the parent.
+  If slots are unavailable, continue useful local work or await progress.
+- Reuse compatible agents and monitor meaningful progress. Return distilled
+  results rather than full logs; the root owns consequential synthesis.
+- Root alone owns Git, destructive operations, repository-wide generators,
+  final integration, publication, deployment, and external mutations.
+  Child profiles keep root-owned local MCP servers disabled.
 
-At decomposition, when new evidence changes the work, at a bottleneck, and
-before integration, check whether a bounded packet can move useful independent
-work off the critical path. Parallelize only actual independent packets. Keep a
-tiny or serial cheaper step inline when handoff, context transfer, retries,
-review, or root rework cost more than delegation returns.
+## Cost And Capability
 
-Choose by total cost-to-complete: packet preparation and context, handoff,
-runtime, retries, review, root rework, and elapsed critical-path delay all
-count. Put independent evidence in the background only when it does not delay
-integration. The root owns conflicting evidence, consequential synthesis, and
-final decisions.
+Choose by total cost to a verified result: context preparation, handoffs,
+runtime, retries, review, parent/root rework, and critical-path delay.
+Delegate regularly when it improves time, cost, context, or quality. Keep tiny
+serial work inline when handoff costs more. Root review does not justify
+assigning a task beyond a child's capability.
 
-For a simpler, tightly specified, low-ambiguity packet with clear verification
-blocking the critical path, dispatch the named
-`sol_fast_worker` identity, whose explicit model is `gpt-5.6-sol` at `low`
-effort. Use a fresh self-contained packet. The `astra_worker` identity
-remains registered to Astra medium; do not use that alias as the model
-selector. Luna max has the higher intelligence index in the user's data;
-Sol low is not an interchangeable substitute for all Luna work. Root review
-does not justify underqualified assignments.
+These are user-supplied workload observations, not official prices or universal
+task-quality guarantees:
 
-The following are user-provided workload observations from 2026-09-10, starting
-estimates rather than verified universal metrics. Comparable quality outside
-these observations is unknown; the Sol-high row is comparison data, not a
-routine route.
-
-| Route | Observed intelligence score | Observed cost/task | Observed wall time/task |
+| Route | Intelligence score | Cost/task | Wall time/task |
 | --- | ---: | ---: | ---: |
 | Luna xhigh | 35 | $0.085 | 3.6 min |
 | Luna max | 38 | $0.18 | 6.3 min |
@@ -80,53 +87,14 @@ routine route.
 | Astra high | 51 | $1.72 | 4.0 min |
 | Sol high (comparison only) | 42 | $0.81 | 3.8 min |
 
-On this snapshot, Astra high adds $0.18 and 0.4 minutes over medium for one
-index point. Prefer medium for difficult delegated implementation and reserve
-high for consequential judgment or required review. These index differences
-do not prove task-level quality or justify skipping capability checks. Luna
-remains the primary implementation route; Astra low remains the root default.
+Astra high adds $0.18 and 0.4 minutes over medium in this snapshot. Keep high
+for consequential independent judgment. Revisit routing using actual
+first-pass quality, elapsed time, retries, and cost when available.
 
-## Context And Packet Rules
+## Approval
 
-Spark has a smaller context window than larger profiles; consult the current
-model catalog for usable limits instead of hardcoding sizes. Every Spark
-dispatch uses `fork_turns = "none"` and a fresh self-contained bounded packet
-containing:
-
-- one exact question or small deliverable;
-- explicit paths, symbols, or other anchors;
-- exclusive owned paths for a writer;
-- constraints and non-goals;
-- the focused command or observable evidence expected; and
-- stop conditions requiring Luna escalation when scope, ambiguity, or context
-  grows.
-
-Do not send broad discovery or synthesis to Spark. Use Luna medium for broad
-read-only discovery, Luna xhigh for bounded routine work, and Luna max for
-substantial work. Route directly to Astra medium when evidence indicates
-difficult work needs that capability; do not require a failed cheaper attempt. Use Astra high
-advice/review only for a named consequential risk, explicit request, or the
-independent high-risk triggers: security, authentication, credentials, privacy,
-destructive or irreversible action, migration, persistence, data integrity,
-concurrency, production or external impact, major architecture, compatibility,
-public-contract change, conflicting evidence, a stuck approach, or repeated
-failed verification.
-
-## Final Approval And Ownership
-
-Every whole deliverable receives engineering approval from the Astra-low root or
-an Astra-high advisor/reviewer. The root remains accountable for integration and
-disposition even when independent review is used. Do not trigger review solely
-for file count, stage count, or the presence of an instruction file. Optional
-review infrastructure failure is reported; only a required high-risk review
-failure blocks delivery.
-
-- Normal work uses one to three active leaves.
-- The ceiling is six spawned threads; the root is not counted.
-- Every leaf has descendant budget zero and reports directly to the root.
-- One live writer owns a file; serialize overlaps and reserve integration for
-  the root.
-- Leaves never commit, push, publish, deploy, perform destructive actions, or
-  mutate external systems.
-- Every writer receives a fresh self-contained packet with exclusive paths,
-  constraints, expected evidence, and stop conditions.
+Astra root reviews and approves every integrated outcome. Use one independent
+`astra_advisor` when requested or a concrete consequential risk warrants it,
+following `adversarial-code-review`. Do not add review solely for file count,
+stage count, or instruction-file edits. A required high-risk review remains
+a delivery gate; an optional review failure does not block verified low-risk work.

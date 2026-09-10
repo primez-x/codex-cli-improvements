@@ -1,79 +1,60 @@
 ---
 name: instruction-learning-loop
-description: Turn durable instruction-system corrections into the smallest verified documentation fix.
+description: Evaluate and apply the smallest source-backed instruction correction when one is warranted.
 ---
 
 # Instruction Learning Loop
 
-Use this skill when you need to act on:
+Use this skill when evidence suggests that a durable instruction correction may
+help:
 
-- repeated or explicit user requests about AGENTS.md, SKILL.md, hook scripts, or instruction workflows
-- recurring agent or verification failures where one-off fixes would be ineffective
-- source drift that has impact across sessions or reusable assets
+- the user explicitly asks to change AGENTS.md, SKILL.md, hooks, or an
+  instruction workflow
+- a recurring agent or verification failure is unlikely to be solved by a
+  one-off fix
+- source drift affects later sessions or reusable assets
 
-Use this whenever a durable instruction change may be warranted. A request to
-improve, fix, update, or adjust the instruction system authorizes the narrowest
-applicable user-owned write unless the user explicitly makes the request
-read-only. A request only to review or classify a possible improvement does not
-authorize a write.
-
-1. capture evidence links: paths, IDs, message IDs, and command output
-2. classify one-off preference vs durable rule and form the smallest concrete proposal
-3. when the global risk-triggered review rule applies, send the proposal and evidence to an independent `astra_advisor` (Astra high); otherwise use Astra root engineering review and focused verification
-4. if approved and the request authorizes changes under the rule above, patch the smallest writable surface:
-   - thread message
-   - memory update note only when the user explicitly asks to update memory
-   - global, project, or nested `AGENTS.md` under the user's scope
-   - `.codex/skills` skill entrypoint and helpers
-5. remove/replace obsolete text and keep language short
-6. add or verify executable gates (unit tests, audits, or lint rules)
-7. when review was required and the advisor rejects the proposal, do not implement that version; fold valid in-scope findings into a revised or replacement proposal and resubmit it internally until approved, then continue implementation without renewed user approval
-8. if not authorized, report a proposal and risks instead of writing
-9. report the actual changed instruction path and verification; a proposal alone is not completion
-
-Review advice cannot enlarge the user's accepted scope or authority. Reject or
-defer findings that require new scope or authority, and ask the user only when
-that expansion is necessary to complete the requested outcome.
+This is a discretionary engineering aid, not an automatic completion gate. A
+bug or delivery fix can be complete without changing instructions. Do not turn
+a one-off preference, expected probe, test-first red phase, or temporary
+workaround into durable guidance. Do not invoke a hook as a completion gate.
 
 ## Workflow
 
-1. capture exact failing/correction evidence (paths, messages, IDs, dates, artifacts)
-2. run `scripts/audit_instruction_system.py --project-root <optional>`:
-   - validate required structure
-   - find budget/broken-link/duplicate risks
-   - run `quick_validate.py` for discovered SKILL.md files
-3. apply the global risk trigger: use focused root verification for low-risk wording and deterministic instruction changes; use an independent `astra_advisor` only when that rule requires it
-4. if approved and authorized, patch only the narrowest target surface
-5. if rejected, preserve the current instructions, revise the proposal from the rejection rationale, and repeat review internally until a valid narrow change is approved; a revise-then-approve verdict is not a user checkpoint
-6. preserve source authority and project conventions; avoid adding preference text
-7. do not mutate if trigger is only personal taste or a one-time workaround
+1. Capture exact evidence: paths, messages, IDs, dates, artifacts, and command
+   output.
+2. Classify the finding as one-off guidance, a durable rule, or unresolved
+   source drift, and form the smallest concrete proposal.
+3. Apply the current risk-triggered independent-review rule when the proposed
+   correction is consequential; otherwise use focused root verification.
+4. If the user authorized the change, patch only the narrowest applicable
+   user-owned surface. For read-only or out-of-scope work, propose only.
+5. Remove obsolete wording, keep the rule short, and preserve source authority.
+6. Run `scripts/audit_instruction_system.py --project-root <optional>` and
+   other focused tests or audits relevant to the changed surface.
+7. Report the actual changed paths, evidence, and unverified areas. If no
+   durable correction is warranted, say so rather than forcing a documentation
+   edit.
 
-## Hook behavior
+Review findings may require revising a proposal, but they do not create a
+persistent confirmation lifecycle or block an otherwise verified fix. Do not
+claim user-observed resolution without user-observed evidence; that reporting
+boundary does not require an instruction edit or hold unrelated delivery.
 
-`instruction_learning_hook.py` follows the official hook schema and enforces an
-outcome rather than a prose marker:
+## Runtime and history
 
-- on durable behavioral guidance or instruction correction at `UserPromptSubmit`, it snapshots SHA-256 content identities for recognized global and current-project instruction surfaces, records state under `hooks/state/instruction-learning`, and instructs the agent to propose, apply risk-triggered review when required, then implement and verify the smallest durable correction without renewed user approval after in-scope revisions.
-- on matching `PreToolUse` and `PostToolUse` calls, it stores only keyed identities, claims tool completion through an immutable exclusive record, and emits a candidate resolution after a successful exact retry. That candidate asks the agent to distinguish expected probes, test-driven-development red phases, and one-off failures from an unexpected durable mistake; it does not by itself require an instruction change.
-- when the user reports an error, per-session append-only authority state records an opaque generation. Agent-side technical verification remains provisional while that generation is awaiting user confirmation and never expires. A later user report supersedes the active generation; malformed active authority state blocks completion without affecting unrelated sessions.
-- only an explicit later user confirmation advances that generation to the instruction-change gate. A mixed or negative report takes precedence over confirmation, and a tool result captured before the current generation cannot advance it.
-- explicit read-only and one-off prompts do not require mutation.
-- on `Stop`, an actionable correction remains blocked until the instruction snapshot proves a real non-test instruction file change; proposals, test-only edits, claimed rejections, and generic completion phrases cannot satisfy the gate.
-- blocked state is retained across ordinary retries. A `stop_hook_active` continuation normally passes through without deleting state, but an awaiting-user generation still rejects an unqualified resolution or completion claim and permits only truthful unresolved status or the canonical provisional statement that both real-world resolution and instruction learning await the user's confirmation.
-- tool hooks are a dynamic signal, not a complete enforcement boundary; the origin-aware `AGENTS.md` rule covers changed-input fixes and tool paths that do not emit these events.
-- ignore hook continuation sentinels in your own loop
-
-After changing or installing hook definitions, use `/hooks` to verify exactly one active instruction-learning handler for each managed event, trust the changed definitions, and exercise them in a fresh session. Multiple hook layers accumulate, so duplicate handlers invalidate the single-writer attempt-state assumption.
+Instruction learning is not a runtime hook or completion gate. The explicit
+audit script is the supported read-only check. Preserve existing state and
+history as inert evidence; do not delete it as part of routine learning work.
 
 ## Files
 
 - `agents/openai.yaml`: assistant-facing invocation text
-- `scripts/instruction_learning_hook.py`: hook implementation
 - `scripts/audit_instruction_system.py`: read-only audit command
-- `scripts/test_instruction_learning.py`: unit tests for hook and audit contract
+- `scripts/test_instruction_learning_audit.py`: focused audit tests
 
 ## Deliverable constraints
 
-- keep all changes minimal and deterministic
-- never edit project files outside this scope unless explicitly requested
-- keep warnings explicit; classify duplicate findings as review leads, and escalate real broken links or invalid structures as hard failures
+- keep changes minimal, deterministic, and source-backed
+- never edit project files outside the authorized scope
+- keep warnings explicit and distinguish review leads from hard failures
