@@ -373,7 +373,7 @@ class LifecycleVerificationIntegrationTests(unittest.TestCase):
     def fixture(self, root: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
         hook = SCRIPTS / "lifecycle_gate.py"
         profile = root / "sol_reviewer.toml"
-        shutil.copyfile(ROOT / "agents" / "sol_reviewer.toml", profile)
+        shutil.copyfile(ROOT / "tests" / "fixtures" / "legacy_sol_reviewer.toml", profile)
         state = root / "state"
         workspace = root / "workspace"
         workspace.mkdir()

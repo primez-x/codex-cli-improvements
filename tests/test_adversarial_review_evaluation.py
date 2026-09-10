@@ -24,7 +24,7 @@ CORPUS = SKILL / "references" / "evaluation-corpus.json"
 RESULTS = SKILL / "references" / "evaluation-self-test-results.json"
 IDENTITIES = SKILL / "references" / "evaluation-git-identities.json"
 EVALUATOR = SKILL / "scripts" / "evaluate_review_corpus.py"
-PROFILE = ROOT / "agents" / "sol_reviewer.toml"
+PROFILE = ROOT / "tests" / "fixtures" / "legacy_sol_reviewer.toml"
 CORRECTED_PYTHON = SKILL / "references" / "evaluation-inputs" / "python-shell-boundary-corrected.py.txt"
 sys.path.insert(0, str(EVALUATOR.parent))
 import evaluate_review_corpus as evaluation_module  # noqa: E402

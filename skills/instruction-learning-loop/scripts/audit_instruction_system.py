@@ -12,7 +12,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List, Tuple
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 KNOWN_LINK_PREFIXES = ("http://", "https://", "mailto:", "tel:", "www.")
@@ -22,15 +22,30 @@ SKIP_DIRS = {
     ".git",
     ".local-archives",
     ".local-source",
+    ".local-scratch",
     ".nx",
     ".tmp",
+    "artifacts",
     "bin",
     "build",
     "coverage",
     "dist",
+    "logs",
     "node_modules",
     "obj",
+    "out",
+    "output",
+    "release",
+    "scratch",
+    "site",
+    "sites",
+    "snapshots",
+    "temp",
+    "tmp",
 }
+
+PROJECT_OWNED_CONTAINERS = ("packages", "projects")
+REFERENCE_DIR_NAMES = ("references", "reference")
 
 AGENTS_BUDGET_LINES = 120
 SKILL_BUDGET_LINES = 200
@@ -56,30 +71,40 @@ def line_stats(text: str) -> Tuple[int, int, int]:
     return len(lines), words, len(text.encode("utf-8"))
 
 
-def discover_files(project_root: Path, name: str) -> List[Path]:
-    matches = []
-    if not project_root.exists():
-        return matches
-    for root, dirs, files in os.walk(project_root):
-        dirs[:] = [directory for directory in dirs if directory.lower() not in SKIP_DIRS]
-        if name in files:
-            matches.append(Path(root) / name)
-    return sorted(matches)
-
-
 def discover_project_agents(project_root: Path) -> Dict[str, Path]:
     agents = {}
-    for p in discover_files(project_root, "AGENTS.md"):
-        agents[str(p.relative_to(project_root))] = p
+    root_agent = project_root / "AGENTS.md"
+    if root_agent.is_file():
+        agents[str(root_agent.relative_to(project_root))] = root_agent
+
+    # Package and project repositories are the only nested instruction roots
+    # owned by a project. Do not recursively walk sites, snapshots, scratch,
+    # build output, or other operational trees that may contain stale copies.
+    for container_name in PROJECT_OWNED_CONTAINERS:
+        container = project_root / container_name
+        if not container.is_dir() or container.name.lower() in SKIP_DIRS:
+            continue
+        for child in sorted(container.iterdir(), key=lambda path: path.name.lower()):
+            if not child.is_dir() or child.name.lower() in SKIP_DIRS:
+                continue
+            path = child / "AGENTS.md"
+            if path.is_file():
+                agents[str(path.relative_to(project_root))] = path
     return agents
 
 
 def discover_project_skills(project_root: Path) -> Dict[str, Path]:
     skills = {}
-    for p in discover_files(project_root / ".agents", "SKILL.md"):
-        if p.parent.name == ".system":
+    root = project_root / ".agents" / "skills"
+    if not root.is_dir():
+        return skills
+    for child in sorted(root.iterdir(), key=lambda path: path.name.lower()):
+        if not child.is_dir() or child.name.lower() in SKIP_DIRS:
             continue
-        skills[str(p.parent.relative_to(project_root))] = p.parent
+        if child.name == ".system":
+            continue
+        if (child / "SKILL.md").is_file():
+            skills[str(child.relative_to(project_root))] = child
     return skills
 
 
@@ -97,6 +122,30 @@ def discover_codebase_skills(codex_home: Path) -> Dict[str, Path]:
         if md.exists():
             skills[child.name] = child
     return skills
+
+
+def discover_skill_references(skill_root: Path) -> List[Path]:
+    """Return only reference markdown owned by one skill.
+
+    A skill entrypoint is handled separately. References may be kept as
+    legacy files directly beside SKILL.md or under the conventional
+    references/ directory; operational and generated trees are excluded.
+    """
+    references: List[Path] = []
+    for candidate in sorted(skill_root.iterdir(), key=lambda path: path.name.lower()):
+        if candidate.is_file() and candidate.suffix.lower() == ".md" and candidate.name != "SKILL.md":
+            references.append(candidate)
+
+    for directory_name in REFERENCE_DIR_NAMES:
+        references_root = skill_root / directory_name
+        if not references_root.is_dir():
+            continue
+        for root, dirs, files in os.walk(references_root):
+            dirs[:] = [directory for directory in dirs if directory.lower() not in SKIP_DIRS]
+            for file_name in files:
+                if Path(file_name).suffix.lower() == ".md":
+                    references.append(Path(root) / file_name)
+    return sorted(set(references))
 
 
 def sparse_tracked_target(source: Path, target: Path) -> bool:
@@ -193,13 +242,38 @@ def run_quick_validate(skill_dir: Path, context: AuditContext) -> None:
             f"{skill_dir}: quick_validate.py missing and required for SKILL validation."
         )
         return
-    result = subprocess.run(
-        [sys.executable, "-X", "utf8", str(context.quick_validate_script), str(skill_dir)],
-        capture_output=True,
-        text=True,
-    )
+    command = [
+        sys.executable,
+        "-X",
+        "utf8",
+        str(context.quick_validate_script),
+        str(skill_dir),
+    ]
+    command_display = subprocess.list2cmdline(command)
+    try:
+        # Capture bytes explicitly so diagnostics are deterministic even when
+        # a validator emits non-UTF-8 output or the host locale is different.
+        result = subprocess.run(command, capture_output=True, text=False)
+    except OSError as e:
+        context.errors.append(
+            f"{skill_dir}: quick_validate.py could not run (command: {command_display}): {e}"
+        )
+        return
+
+    def decode(value: bytes | str | None) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value)
+
+    stdout = decode(result.stdout)
+    stderr = decode(result.stderr)
     if result.returncode != 0:
-        context.errors.append(f"{skill_dir}: quick_validate.py failed: {result.stdout.strip() or result.stderr.strip()}")
+        detail = stdout.strip() or stderr.strip() or f"exit code {result.returncode}"
+        context.errors.append(
+            f"{skill_dir}: quick_validate.py failed (command: {command_display}): {detail}"
+        )
 
 
 def validate_duplicate_blocks(contents: Dict[Path, str], context: AuditContext) -> None:
@@ -223,6 +297,9 @@ def validate_duplicate_blocks(contents: Dict[Path, str], context: AuditContext) 
 def safe_read(path: Path, context: AuditContext) -> str | None:
     try:
         return read_text(path)
+    except UnicodeError as e:
+        context.errors.append(f"{path}: invalid UTF-8: {e}")
+        return None
     except OSError as e:
         context.errors.append(f"{path}: failed to read: {e}")
         return None
@@ -234,6 +311,12 @@ def build_report(codex_home: Path, project_root: Path | None, strict: bool) -> A
         quick_validate_script=quick_validate,
         strict=strict,
     )
+
+    if project_root is not None and not project_root.is_dir():
+        context.errors.append(
+            f"{project_root}: project root does not exist or is not a directory."
+        )
+        return context
 
     instructions: Dict[str, Path] = {}
     global_agents = codex_home / "AGENTS.md"
@@ -252,9 +335,7 @@ def build_report(codex_home: Path, project_root: Path | None, strict: bool) -> A
 
     skill_roots = list(code_skills.values()) + list(project_skills.values())
     for skill_root in skill_roots:
-        for reference in sorted(skill_root.rglob("*.md")):
-            if reference.name == "SKILL.md" or not reference.is_file():
-                continue
+        for reference in discover_skill_references(skill_root):
             instructions[f"reference:{reference}"] = reference
 
     if any(str(path).endswith("SKILL.md") for path in instructions.values()) and not quick_validate.exists():
@@ -268,7 +349,11 @@ def build_report(codex_home: Path, project_root: Path | None, strict: bool) -> A
         contents[path] = text
         skill_owner = next((root for root in skill_roots if in_subtree(root, path)), None)
         if skill_owner:
-            owning_root = skill_owner
+            # Skills may intentionally link to a sibling skill's canonical
+            # reference. Keep containment at the authoritative skills root,
+            # not at one package directory, so valid cross-skill ownership is
+            # accepted without permitting links outside the instruction tree.
+            owning_root = skill_owner.parent
         elif path.name == "AGENTS.md" and project_root and in_subtree(project_root, path):
             owning_root = project_root
         elif path.name == "AGENTS.md":
@@ -314,7 +399,14 @@ def print_report(context: AuditContext, json_output: bool = False) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Audit instruction files for AGENTS/skills")
-    parser.add_argument("--project-root", default=None, help="Optional project root to include project instructions")
+    parser.add_argument(
+        "--project-root",
+        default=None,
+        help=(
+            "Optional project root to include project instructions. Nested "
+            "repositories are audited only when passed as their own root."
+        ),
+    )
     parser.add_argument("--json", action="store_true", help="Print JSON report")
     parser.add_argument("--strict-budgets", action="store_true", help="Promote budget overruns to errors")
     return parser

@@ -14,6 +14,9 @@ Optional domain-specific source snapshots and patches live under
 install or auto-installed by its review overlay. Review each optional change
 against its canonical source before applying it.
 
+See the [Astra migration review](docs/reviews/astra-migration-2026-09-10.md) for
+skill disagreements, verification boundaries, and feature-branch disposition.
+
 ## Included
 
 - `config.toml`: the Astra-low root, nine registered profiles, concurrency and
@@ -30,7 +33,8 @@ against its canonical source before applying it.
 - `skills/adversarial-code-review/`: risk-triggered independent review plus an
   optional legacy replay/evaluation contract.
 - `hooks/plan_gap_goal_hook.py` and `hooks.json`: portable plan-gap and
-  instruction-learning hooks for `UserPromptSubmit` and `Stop`.
+  instruction-learning hooks for `UserPromptSubmit`, matching `PreToolUse` and
+  `PostToolUse` calls, and `Stop`.
 
 ## Model and effort matrix
 
@@ -213,14 +217,18 @@ semantic destination that changes after planning aborts before live writes.
 configuration checks. They do not install or certify the optional legacy
 Sol/max replay. They preserve unrelated hook groups, hook trust metadata,
 agents, skills, config sections, and instructions. The package's `hooks.json`
-registers only the plan-gap and instruction-learning handlers for
-`UserPromptSubmit` and `Stop`; it does not register adversarial lifecycle hooks
-or dynamic error-learning events.
+registers the plan-goal and instruction-learning handlers on
+`UserPromptSubmit`, the instruction-learning handler on matching
+`PreToolUse` and `PostToolUse` calls, and the instruction-learning handler on
+`Stop`. It does not register adversarial lifecycle hooks. These events provide
+dynamic instruction and error-learning signals; they do not impose universal
+review or replace root/advisor approval and risk-triggered independent review.
 
 After installation, restart Codex, open a new task, and use `/hooks` to confirm
-the plan-goal and instruction-learning handlers and any intentionally preserved
-unrelated hooks. Trust user-level hooks through the normal `/hooks` flow; the
-installer never writes trusted hashes or bypasses trust controls.
+the plan-goal and instruction-learning handlers on the intended event
+registrations, plus any intentionally preserved unrelated hooks. Trust
+user-level hooks through the normal `/hooks` flow; the installer never writes
+trusted hashes or bypasses trust controls.
 
 If installing manually:
 

@@ -19,7 +19,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "skills" / "adversarial-code-review" / "scripts" / "lifecycle_gate.py"
-PROFILE = ROOT / "agents" / "sol_reviewer.toml"
+PROFILE = ROOT / "tests" / "fixtures" / "legacy_sol_reviewer.toml"
 sys.path.insert(0, str(HOOK.parent))
 import lifecycle_gate  # noqa: E402
 

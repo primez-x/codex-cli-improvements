@@ -1278,6 +1278,69 @@ class InstallerTests(unittest.TestCase):
             self.assertIn(marker, merged)
         self.assertNotIn("lifecycle_gate.py", merged)
 
+    def test_hook_merge_repairs_stale_matchers_and_verify_rejects_wrong_managed_group(self) -> None:
+        source_hooks = json.loads((ROOT / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+        existing = {"hooks": {}}
+        for event in ("PreToolUse", "PostToolUse"):
+            existing["hooks"][event] = [{
+                "matcher": "^stale$",
+                "hooks": [
+                    source_hooks[event][0]["hooks"][0],
+                    {"type": "command", "command": f"keep-{event.casefold()}"},
+                ],
+            }]
+        merged = json.loads(installer_module.hooks_text(json.dumps(existing).encode(), ROOT))
+        for event in ("PreToolUse", "PostToolUse"):
+            groups = merged["hooks"][event]
+            self.assertEqual(groups[0]["matcher"], "^stale$")
+            self.assertEqual(groups[0]["hooks"], [{"type": "command", "command": f"keep-{event.casefold()}"}])
+            self.assertEqual(groups[-1], source_hooks[event][0])
+            self.assertEqual(
+                sum(
+                    installer_module._managed_hook_kind(handler) == "instruction-learning"
+                    for group in groups
+                    for handler in group["hooks"]
+                ),
+                1,
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            (home / "hooks.json").write_text(json.dumps(merged), encoding="utf-8")
+            self.assertEqual(self.install(home).returncode, 0)
+            tampered = json.loads((home / "hooks.json").read_text(encoding="utf-8"))
+            for event in ("PreToolUse", "PostToolUse"):
+                managed = next(
+                    group
+                    for group in tampered["hooks"][event]
+                    if any(installer_module._managed_hook_kind(h) for h in group["hooks"])
+                )
+                managed["matcher"] = "^wrong$"
+                (home / "hooks.json").write_text(json.dumps(tampered), encoding="utf-8")
+                verified = self.invoke("verify", "--source-root", str(ROOT), "--codex-home", str(home))
+                self.assertNotEqual(verified.returncode, 0)
+                self.assertIn("semantic:hooks.json", verified.stdout)
+                tampered = json.loads((home / "hooks.json").read_text(encoding="utf-8"))
+                managed["matcher"] = source_hooks[event][0]["matcher"]
+
+    def test_noncanonical_agents_install_separate_instruction_learning_block(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = self.make_home(Path(temporary))
+            (home / "AGENTS.md").write_text("# local\nkeep this\nlocal tail\n", encoding="utf-8")
+            installed = self.install(home)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            text = (home / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("# local\nkeep this\n"))
+            self.assertIn("local tail\n\n" + installer_module.BEGIN, text)
+            self.assertIn(installer_module.BEGIN, text)
+            self.assertIn(installer_module.LEARNING_BEGIN, text)
+            self.assertIn("root cause is established and the fix freshly verified", text)
+            self.assertIn("until the user confirms later testing", text)
+            self.assertEqual(text.count(installer_module.LEARNING_BEGIN), 1)
+            again = self.install(home)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            self.assertTrue(json.loads(again.stdout)["idempotent"])
+
     def test_payload_is_exact_production_allowlist_with_one_canonical_packet_helper(self) -> None:
         """Copying unapproved tests or a second packet helper must fail this test."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -1351,7 +1414,9 @@ class InstallerTests(unittest.TestCase):
         workflow = (ROOT / "skills" / "adversarial-code-review" / "references" / "evaluation-replay-workflow.md").read_text(encoding="utf-8")
         for phrase in (
             "freeze the case",
-            "Dispatch `astra_reviewer`",
+            "Dispatch `sol_reviewer`",
+            "current registered `astra_reviewer` runs Astra high",
+            "legacy, provenance-bound Sol/max evaluation contract",
             "export-replay",
             "Capture stdout unchanged",
             "Do not hand-create or edit",
@@ -1439,16 +1504,25 @@ class InstallerTests(unittest.TestCase):
             self.assertIn("instruction_learning_hook.py", serialized)
             self.assertIn("python -B -c", serialized)
             self.assertEqual(
-                installed["hooks"]["UserPromptSubmit"][0]["localMetadata"],
-                {"position": "before"},
+                next(
+                    group for group in installed["hooks"]["UserPromptSubmit"]
+                    if any(installer_module._managed_hook_kind(handler) for handler in group["hooks"])
+                ).get("matcher"),
+                source_hooks["UserPromptSubmit"][0].get("matcher"),
             )
             self.assertEqual(
-                installed["hooks"]["Stop"][-1]["localMetadata"],
-                {"position": "after"},
+                next(
+                    group for group in installed["hooks"]["Stop"]
+                    if any(installer_module._managed_hook_kind(handler) for handler in group["hooks"])
+                ).get("matcher"),
+                source_hooks["Stop"][0].get("matcher"),
             )
             self.assertEqual(
-                installed["hooks"]["PreToolUse"][0]["localMetadata"],
-                {"position": "before"},
+                next(
+                    group for group in installed["hooks"]["PreToolUse"]
+                    if any(installer_module._managed_hook_kind(handler) for handler in group["hooks"])
+                )["matcher"],
+                source_hooks["PreToolUse"][0]["matcher"],
             )
             dispatchers = [
                 handler
@@ -1458,7 +1532,25 @@ class InstallerTests(unittest.TestCase):
                 if installer_module._managed_hook_kind(handler)
                 in {"plan-gap", "instruction-learning"}
             ]
-            self.assertEqual(len(dispatchers), 3)
+            self.assertEqual(len(dispatchers), 5)
+            managed_counts = {
+                event: sum(
+                    installer_module._managed_hook_kind(handler)
+                    in {"plan-gap", "instruction-learning"}
+                    for group in installed["hooks"].get(event, [])
+                    for handler in group["hooks"]
+                )
+                for event in ("UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop")
+            }
+            self.assertEqual(
+                managed_counts,
+                {
+                    "UserPromptSubmit": 2,
+                    "PreToolUse": 1,
+                    "PostToolUse": 1,
+                    "Stop": 1,
+                },
+            )
             for handler in dispatchers:
                 self.assertIn(" -B -c ", handler["command"])
                 self.assertIn(" -B -c ", handler["commandWindows"])

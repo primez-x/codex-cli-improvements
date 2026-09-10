@@ -6,4 +6,6 @@
 *.toml text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
+# Unified patches encode an empty context line as one required space.
+integrations/*.patch text eol=lf whitespace=-blank-at-eol
 skills/adversarial-code-review/references/evaluation-inputs/*.txt text eol=lf

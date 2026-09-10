@@ -1,6 +1,6 @@
 # Installed skill reconciliation
 
-These are The user's decisions for applying installed vendor skills. Global AGENTS.md routes here when a listed family is selected. Read that family's section alongside the actual skill; other families need not be loaded. System/developer instructions and explicit current user scope remain controlling. This file resolves workflow guidance, not tool permissions or platform validation.
+These are the user's decisions for applying installed vendor skills. Global AGENTS.md routes here when a listed family is selected. Read that family's section alongside the actual skill; other families need not be loaded. System/developer instructions and explicit current user scope remain controlling. This file resolves workflow guidance, not tool permissions or platform validation.
 
 Reviewed against Superpowers 6.3.0, Creatio AI App Development Toolkit 1.10.0, and Superdesign 0.6.0 on 2026-09-10. Vendor cache files remain upstream-owned. After an update, compare the actual selected skill and its directly used references with these decisions; version numbers alone do not establish compatibility. Do not silently overwrite plugin caches or disable useful technical checks.
 
