@@ -46,6 +46,12 @@ config_file = "./agents/astra_advisor.toml"
 [features]
 multi_agent = true
 
+[features.multi_agent_v2]
+enabled = true
+min_wait_timeout_ms = 1500000
+default_wait_timeout_ms = 1500000
+max_wait_timeout_ms = 1500000
+
 [[skills.config]]
 path = "./skills/delivery-orchestration/SKILL.md"
 enabled = true
