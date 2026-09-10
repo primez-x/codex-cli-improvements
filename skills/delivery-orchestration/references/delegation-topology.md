@@ -68,7 +68,7 @@ does not justify underqualified assignments.
 The following are user-provided workload observations from 2026-09-10, starting
 estimates rather than verified universal metrics. Comparable quality outside
 these observations is unknown; the Sol-high row is comparison data, not a
-routine route, and no Astra-medium cost or quality is inferred.
+routine route.
 
 | Route | Observed intelligence score | Observed cost/task | Observed wall time/task |
 | --- | ---: | ---: | ---: |
@@ -76,8 +76,15 @@ routine route, and no Astra-medium cost or quality is inferred.
 | Luna max | 38 | $0.18 | 6.3 min |
 | Sol low | 34 | $0.26 | 1.2 min |
 | Astra low | 46 | $0.82 | 1.5 min |
+| Astra medium | 50 | $1.54 | 3.6 min |
 | Astra high | 51 | $1.72 | 4.0 min |
 | Sol high (comparison only) | 42 | $0.81 | 3.8 min |
+
+On this snapshot, Astra high adds $0.18 and 0.4 minutes over medium for one
+index point. Prefer medium for difficult delegated implementation and reserve
+high for consequential judgment or required review. These index differences
+do not prove task-level quality or justify skipping capability checks. Luna
+remains the primary implementation route; Astra low remains the root default.
 
 ## Context And Packet Rules
 

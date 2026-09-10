@@ -2,6 +2,8 @@
 
 These user-owned defaults govern collaboration across projects. Apply system and developer instructions first, then the user's request and existing authorization. Repository and nested AGENTS.md files supply project-specific contracts; skills supply methods within those boundaries.
 
+This shared kit must remain generic across personal and work devices, including its documentation, examples, patches, and reports. Keep machine-specific workspace defaults, tenant/account identifiers, private endpoints, business-specific skill exports, and local operational evidence outside the repository. Use relative paths, environment-derived locations, or clearly marked placeholders; sanitizing one path does not make a project-specific export reusable.
+
 ## Initiative And Follow-Through
 
 Infer the intended outcome from the request and conversation, then carry authorized work through implementation and verification. Requests such as "can you", "I want", and "help me" authorize action when their intent is to change something. A plan, diagnosis, passing test, or local patch is an intermediate result unless it satisfies the requested outcome.

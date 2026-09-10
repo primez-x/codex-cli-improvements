@@ -7,15 +7,15 @@ for nine registered profiles in total. The root owns routing, synthesis,
 integration, Git and external actions, and the final response. Leaves perform
 bounded assigned work and return evidence to the root.
 
-The portable core contains no credentials, private user-profile paths, machine
-runtime state, or project-specific settings and operating instructions.
-Optional domain-specific source snapshots and patches live under
-[`integrations/`](integrations/README.md); they are not part of the core
-install or auto-installed by its review overlay. Review each optional change
-against its canonical source before applying it.
+The entire repository is intentionally generic across personal and work devices.
+Keep machine-local workspace choices, tenant settings, business-specific skills,
+and local verification reports outside this repository. Use relative paths,
+environment-derived locations, or explicit placeholders in shared examples.
+Optional reusable examples live under [`integrations/`](integrations/README.md)
+and follow the same portability boundary as the installed core.
 
-See the [Astra migration review](docs/reviews/astra-migration-2026-09-10.md) for
-skill disagreements, verification boundaries, and feature-branch disposition.
+Keep local verification reports in the consuming environment. Shared defaults
+and local overrides follow the [Codex configuration layers](https://learn.chatgpt.com/docs/config-file/config-basic).
 
 ## Included
 
@@ -101,10 +101,13 @@ workload. The Sol-high row is comparison data only, not a routine route.
 | Sol low | 34 | $0.26 | 1.2 min |
 | Sol high (comparison only) | 42 | $0.81 | 3.8 min |
 | Astra low | 46 | $0.82 | 1.5 min |
+| Astra medium | 50 | $1.54 | 3.6 min |
 | Astra high | 51 | $1.72 | 4 min |
 
-No Astra-medium data was supplied. Do not infer its cost, quality, or latency
-from adjacent rows. Revisit the matrix with actual task success, first-pass
+On this snapshot, Astra high costs $0.18 more and takes 0.4 minutes longer
+than medium for one additional index point. Use medium for difficult delegated
+implementation; reserve high for consequential judgment and required review.
+Index differences do not guarantee task-level quality. Revisit the matrix with actual task success, first-pass
 quality, retry count, elapsed time, and measured cost when those observations
 are available. Do not duplicate work merely to manufacture a benchmark.
 

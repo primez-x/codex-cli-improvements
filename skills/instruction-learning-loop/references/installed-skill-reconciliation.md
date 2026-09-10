@@ -48,6 +48,6 @@ Read the selected entrypoint and only the references needed for the requested de
 
 ## Maintenance and evidence
 
-Machine- and project-specific corrections belong in their owning environment. Model routing belongs to `delivery-orchestration/references/delegation-topology.md` and registered agent profiles. Historical Sol/max adversarial replay remains an explicit legacy contract; it must not be used to certify current Astra review.
+Machine- and project-specific corrections belong in their owning local configuration or project repository. Shared exports, examples, and reports must remain generic across devices and must not assign a primary workspace or include tenant/account settings. Model routing belongs to `delivery-orchestration/references/delegation-topology.md` and registered agent profiles. Historical Sol/max adversarial replay remains an explicit legacy contract; it must not be used to certify current Astra review.
 
 When a listed conflict affects work, explain the concrete decision briefly. If a skill still forces a pause or unfinished result, link the exact SKILL.md, quote the relevant instruction, and distinguish the technical requirement from methodology. Do not claim that this policy changed an upstream file, exercised a remote workflow, or proved compatibility with a later plugin release.

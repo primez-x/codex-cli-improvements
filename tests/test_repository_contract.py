@@ -479,6 +479,20 @@ class RepositoryContractTests(unittest.TestCase):
                 with self.subTest(path=relative, check=pattern.pattern):
                     self.assertIsNone(pattern.search(text))
 
+    def test_reusable_assets_have_no_device_workspace_or_tenant_binding(self) -> None:
+        # Cover documentation and optional patches as well as installed assets.
+        # Synthetic code-test fixtures remain outside this publication contract.
+        extensions = {".md", ".toml", ".json", ".yaml", ".yml", ".patch"}
+        concrete_drive_path = re.compile(r"\b[a-z]:[\\/]+(?![\\/<{])", re.I)
+        tenant_url = re.compile(r"https?://[a-z0-9-]+\.(?:atlassian\.net|ghe\.com)\b", re.I)
+        for path, text in self._text_files():
+            if path.suffix.lower() not in extensions:
+                continue
+            with self.subTest(path=self._relative(path)):
+                self.assertIsNone(concrete_drive_path.search(text))
+                self.assertIsNone(tenant_url.search(text))
+        self.assertNotIn("projects", self.config)
+
 
 if __name__ == "__main__":
     unittest.main()
