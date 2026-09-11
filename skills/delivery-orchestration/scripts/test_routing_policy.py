@@ -46,10 +46,20 @@ class RoutingPolicyTests(unittest.TestCase):
                 self.assertTrue(rule in flat, f"{scope}: required rule absent: {rule}")
 
     def test_root_and_default_delegation(self):
-        self.assertEqual((self.config["model"], self.config["model_reasoning_effort"]), ("gpt-6-astra", "low"))
-        self.assertEqual((self.agents["default_subagent_model"], self.agents["default_subagent_reasoning_effort"]), ("gpt-5.6-luna", "max"))
+        self.assertEqual((self.config["model"], self.config["model_reasoning_effort"]), ("gpt-5.6-luna", "xhigh"))
+        self.assertEqual((self.agents["default_subagent_model"], self.agents["default_subagent_reasoning_effort"]), ("gpt-6-astra", "medium"))
         self.assertEqual(self.agents["max_depth"], 2)
         self.assertEqual(self.agents["max_concurrent_threads_per_session"], 6)
+        self.assertIs(self.agents["enabled"], True)
+        self.assertEqual(
+            self.config["features"]["multi_agent_v2"],
+            {
+                "enabled": True,
+                "min_wait_timeout_ms": 1500000,
+                "default_wait_timeout_ms": 1500000,
+                "max_wait_timeout_ms": 1500000,
+            },
+        )
 
     def test_registered_profiles_and_actual_bindings(self):
         registered = {k for k, v in self.agents.items() if isinstance(v, dict) and "config_file" in v}
@@ -60,6 +70,12 @@ class RoutingPolicyTests(unittest.TestCase):
                 profile = self.profiles[name]
                 self.assertEqual(profile["name"], name)
                 self.assertEqual((profile["model"], profile["model_reasoning_effort"]), binding)
+                config_description = self.agents[name]["description"].lower()
+                for stale in ("terminal leaf", "terminal worker", "terminal writer", "read-only leaf"):
+                    self.assertNotIn(stale, config_description)
+                description = profile["description"].lower()
+                for stale in ("terminal leaf", "terminal worker", "terminal writer", "read-only leaf"):
+                    self.assertNotIn(stale, description)
 
     def test_all_profiles_preserve_root_mcp_ownership(self):
         # A portable kit does not configure the user's root MCP connections.
@@ -75,7 +91,6 @@ class RoutingPolicyTests(unittest.TestCase):
                     self.assertEqual(server["args"], [])
 
     def test_depth_eligibility_and_terminal_roles(self):
-        subdividing = {"luna_worker", "astra_worker"}
         root_critics = {"astra_advisor"}
         for name, profile in self.profiles.items():
             with self.subTest(profile=name):
@@ -83,35 +98,25 @@ class RoutingPolicyTests(unittest.TestCase):
                 flat = " ".join(instruction.split())
                 expected = "read-only" if name.endswith(("scanner", "advisor")) else "workspace-write"
                 self.assertEqual(profile["sandbox_mode"], expected)
+                self.assertIs(profile["agents"]["enabled"], True)
 
-                if name in subdividing:
+                if name in root_critics:
                     self.require_rules(
                         flat,
-                        (
-                            "at depth 1",
-                            "cheaper capable",
-                            "within the subset",
-                            "exclusive, non-overlapping paths",
-                            "descendant outcomes and evidence",
-                            "direct parent",
-                            "at depth 2",
-                            "remain terminal",
-                            "do not spawn",
-                        ),
-                        name,
-                    )
-                elif name in root_critics:
-                    self.require_rules(
-                        flat,
-                        ("depth 1", "terminal", "do not spawn", "root"),
+                        ("assigned depth", "depth-1", "depth-2", "terminal", "do not fork", "do not spawn", "fresh self-contained packet", "cache window", "root"),
                         name,
                     )
                 else:
                     self.require_rules(
                         flat,
-                        ("depth 1 or 2", "terminal", "do not spawn"),
+                        ("assigned depth", "depth-1", "depth-2", "terminal", "do not fork", "do not spawn", "fresh self-contained packet", "cache window"),
                         name,
                     )
+
+                self.assertIn("30-minute cache window", flat)
+                self.assertNotIn("may subdivide", flat)
+                self.assertNotIn("subdelegate", flat)
+                self.assertNotIn("act as a terminal", flat)
 
     def test_writers_have_ownership_and_external_action_limits(self):
         for name, profile in self.profiles.items():
@@ -141,8 +146,13 @@ class RoutingPolicyTests(unittest.TestCase):
 
     def test_delegation_is_active_and_progress_aware(self):
         combined = self.skill + self.topology + self.global_rules
-        self.assertRegex(combined, r"workstream\s+workers?", "delegation topology: worker rule absent")
-        self.assertRegex(combined, r"depth(?:s|\s+)?[123]", "delegation topology: depth rule absent")
+        self.assertIn("terminal subagent", combined, "delegation topology: terminal rule absent")
+        self.assertIn("fresh self-contained packet", combined, "delegation topology: fresh context rule absent")
+        self.assertIn("do not fork", combined, "delegation topology: no-fork rule absent")
+        self.assertIn("30-minute cache window", combined, "delegation topology: continuation window absent")
+        self.assertRegex(combined, r"depth[- ]?2", "delegation topology: depth-2 rule absent")
+        self.assertIn("may spawn", combined, "delegation topology: child fan-out rule absent")
+        self.assertRegex(combined, r"depth(?:s|\s+)?1", "delegation topology: depth rule absent")
         self.assertRegex(combined, r"six[- ](?:thread|concurrent)", "delegation topology: concurrency rule absent")
         self.assertIn("root owns", combined, "delegation topology: root ownership rule absent")
 
@@ -154,7 +164,7 @@ class RoutingPolicyTests(unittest.TestCase):
         )
         self.require_rules(
             self.global_rules,
-            ("root review is sufficient", "primary delegated model"),
+            ("luna root review is sufficient", "astra medium", "primary capable code"),
             "capability floor",
         )
 
@@ -166,7 +176,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_final_approval_and_required_risk_review(self):
         self.require_rules(
             self.global_rules + self.topology,
-            ("reviews and approves every integrated outcome", "astra root", "astra high", "privacy",
+            ("reviews and approves every integrated outcome", "luna xhigh root", "astra high", "privacy",
              "data integrity", "required", "optional"),
             "senior sign-off",
         )

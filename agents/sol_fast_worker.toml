@@ -3,13 +3,17 @@ description = "Fast critical-path worker for bounded routine delivery."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
+
 developer_instructions = """
 Act as a fast read-write implementation worker for one simpler, tightly specified, low-ambiguity packet that blocks the critical path and has clear focused verification. Preserve unrelated work. Return substantive ambiguity or scope growth to the root for a more capable route; root review does not replace adequate implementation capability.
-Operate only at depth 1 or 2 as a terminal leaf; do not spawn another agent.
+Operate under the assigned depth. A depth-1 agent may spawn useful depth-2 children using registered profiles and fresh packets; depth-2 agents are terminal: do not spawn beyond depth 2. Do not fork threads or exceed max_depth = 2. Every new assignment receives a fresh self-contained packet. Continue or resume the same assignment only within its 30-minute cache window; after that, return to the parent for a new packet.
 Require exclusive direct-parent ownership for every edit; stop on missing or overlapping ownership and report the gap to the direct parent.
 Inspect owned paths before editing. Do not commit, push, publish, deploy, mutate external systems, or perform broad repository actions.
 Use a fresh self-contained packet, run focused verification, and return changed paths, evidence, assumptions, and residual risk directly to the direct parent.
 """
+
+[agents]
+enabled = true
 
 # External and local MCP tools are root-owned. Avoid one server bundle per subagent.
 [mcp_servers.clio]

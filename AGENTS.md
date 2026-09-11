@@ -27,7 +27,7 @@ User-owned defaults across projects. Follow system and developer instructions, t
 
 - Use the smallest meaningful checks for the changed behavior. Add useful regression coverage when practical; avoid tests that merely mirror low-impact prose or configuration.
 - Run required checks and `git diff --check`. Repeat or broaden verification only after a relevant change, failure, or unresolved concern.
-- Before delivery, Astra root reviews the integrated outcome against the request, interfaces, maintainability, and evidence. Fix required gaps; report remaining limitations accurately.
+- Before delivery, Luna XHigh root reviews the integrated outcome against the request, interfaces, maintainability, and evidence. Fix required gaps; report remaining limitations accurately.
 - Distinguish implemented changes, technical verification, and user-observed resolution. Do not claim an outcome that was not observed.
 
 ## Research And Risk
@@ -37,22 +37,24 @@ User-owned defaults across projects. Follow system and developer instructions, t
 
 ## Delegation
 
-- Astra low owns coordination and final results. Luna is the primary delegated model: medium for discovery, xhigh for bounded routine work, max for substantial work. Astra medium handles difficult implementation; Astra high `astra_advisor` supplies independent challenge.
+- Luna XHigh owns coordination and final results. Astra medium is the primary capable code and diagnosis worker; Astra high `astra_advisor` supplies independent challenge. Keep all other configured enhancement levels available for their defined roles.
 - Delegate useful independent work regularly when it improves total completion cost, elapsed time, context use, or quality. Continue useful parent work in parallel. Complete tiny serial tasks inline when a handoff costs more.
-- Depth 0 is the root; maximum absolute depth is 2. `luna_worker` and `astra_worker` at depth 1 may subdivide their assigned work. All agents at depth 2 are terminal. Scanners, fast workers, and Spark are terminal at depths 1–2; only root dispatches the terminal depth-1 advisor.
+- Depth 0 is the Luna XHigh root; maximum absolute depth is 2. Depth-1 agents may spawn depth-2 children; depth-2 agents are terminal. Subagents must not fork threads and every new assignment receives a fresh self-contained packet. Continuation or resume is allowed only for the same assignment within its 30-minute cache window; after that, the owning parent dispatches a new packet.
+- Every dispatch selects a registered profile and applies these same rules; generic built-in or default routes are outside this policy.
 - Keep six concurrently open spawned threads across the entire tree, excluding root, or any lower runtime limit. Normally use one to three useful delegates; depth and concurrency are ceilings, not targets.
-- Parents assign bounded scope, current depth, exclusive paths, constraints, and expected evidence. A child may delegate only a subset of its authority. Parent writers pause edits to delegated files until ownership returns. Report descendants and results to the parent; resolve overlaps before writing.
+- Root assigns bounded scope, current depth, exclusive paths, constraints, and expected evidence in each fresh packet. Parent writers pause edits to delegated files until ownership returns. Report results to root and resolve overlaps before writing.
 - Root owns repository-wide integration and generators, Git, destructive actions, and external mutations. Delegation never expands authority. Keep root-owned local MCP servers disabled in child profiles.
-- Reuse compatible agents. Track meaningful progress without repeatedly restarting productive work. Use fresh context for independent review.
-- Prefer Spark for suitable tiny exact checks, bounded instruction checks, and mechanical edits; make productive use of its separate allowance as described by the user. Use `fork_turns = "none"`, exact anchors, narrow reads, and concise returns. Do not send broad discovery, full histories, or large logs. If context pressure or scope grows, return the remaining gap for splitting or rerouting before compaction or a stall. Do not keep extending a nearly full Spark thread.
-- A broad task may use several bounded Spark packets when each is independently understandable. Partition once, avoid overlapping discovery, share only necessary context, and let Astra or a capable workstream owner reconcile cross-file relationships. Prefer Luna when useful partitioning would require repeating large context or hide dependencies.
-- Use `astra_low_worker` for bounded implementation needing Astra judgment before escalating to the medium workstream worker. Keep it terminal at depths 1–2.
+- When a depth-1 task needs independent discovery or checks, prefer bounded fan-out to Spark or cheaper Luna profiles before costly self-discovery when they are capable; depth-2 children follow the same ownership, fresh-packet, cache-window, and no-fork rules.
+- Reuse compatible profiles, but start each new assignment with a fresh self-contained packet. Track meaningful progress by continuing or resuming the same assignment only within its 30-minute cache window; after that, root dispatches a new packet. Use Astra medium for capable code and diagnosis work and Astra high for independent review when warranted.
+- Prefer Spark for suitable tiny exact checks, bounded instruction checks, and mechanical edits; make productive use of its separate allowance as described by the user. Use `fork_turns = "none"`, exact anchors, narrow reads, and concise returns for every new subagent packet. Do not send inherited histories, broad discovery, or large logs to Spark. If context pressure or scope grows, return the remaining gap to root for a new fresh packet; never fork, and do not continue or resume past the 30-minute cache window.
+- A broad task may use several bounded packets when each is independently understandable. Partition once, avoid overlapping discovery, share only necessary context, and let the Luna root reconcile cross-file relationships. Prefer Astra medium for capable code or diagnosis and Astra high for independent review; root owns synthesis.
+- Use `astra_low_worker` for bounded implementation needing Astra judgment before escalating to the medium Astra worker. Keep depth-2 assignments terminal.
 - Choose the least expensive capable route including handoffs, retries, review, and root rework. Sol low is an optional latency route for clear work blocking progress; Luna remains primary for broader work. Benchmark figures and account allowances are workload- and account-dependent observations.
-- See `delivery-orchestration` for substantial delivery and its topology for routing details. Keep `max_depth = 2` for runtimes that honor it; enforce the same ceiling in assignments. Depth 2 is demonstrated in the current runtime, not a claimed universal product maximum.
+- See `delivery-orchestration` for substantial delivery and its topology for routing details. Keep `max_depth = 2` for runtimes that honor it; enforce the same ceiling in assignments. The owning parent dispatches a new fresh packet when more work is needed.
 
 ## Independent Review And Learning
 
-- Root review is sufficient for ordinary delivery. Use one read-only Astra-high advisor when explicitly requested or consequential security, privacy, destructive action, data integrity, production impact, architecture, conflicting evidence, or repeated failures warrant independent challenge.
+- Luna root review is sufficient for ordinary delivery. Use one read-only Astra-high advisor when explicitly requested or consequential security, privacy, destructive action, data integrity, production impact, architecture, conflicting evidence, or repeated failures warrant independent challenge. Dispatch the advisor with a fresh packet; continue or resume the same review only within its 30-minute cache window, and never fork the review thread.
 - Give the advisor the relevant source/diff, requirements, verification, and uncertainties. Resolve actionable findings and rerun affected checks. Repeat review only for a distinct unresolved risk or material revision.
 - Instruction learning is discretionary: correct an established, recurring instruction defect in the narrowest authorized source. A fixed bug does not require an instruction edit. Use `instruction-learning-loop` when a durable correction is useful.
 - Change memory only when explicitly requested. Preserve historical evidence; do not rewrite it to match new policy.

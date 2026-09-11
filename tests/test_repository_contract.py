@@ -131,16 +131,26 @@ class RepositoryContractTests(unittest.TestCase):
         agents = self.config["agents"]
         self.assertEqual(
             (self.config["model"], self.config["model_reasoning_effort"]),
-            ("gpt-6-astra", "low"),
+            ("gpt-5.6-luna", "xhigh"),
         )
         self.assertEqual(agents["max_depth"], 2)
         self.assertEqual(agents["max_concurrent_threads_per_session"], 6)
+        self.assertIs(agents["enabled"], True)
         self.assertEqual(
             (
                 agents["default_subagent_model"],
                 agents["default_subagent_reasoning_effort"],
             ),
-            ("gpt-5.6-luna", "max"),
+            ("gpt-6-astra", "medium"),
+        )
+        self.assertEqual(
+            self.config["features"]["multi_agent_v2"],
+            {
+                "enabled": True,
+                "min_wait_timeout_ms": 1500000,
+                "default_wait_timeout_ms": 1500000,
+                "max_wait_timeout_ms": 1500000,
+            },
         )
 
         registered = self._registered_profiles(self.config)
@@ -181,8 +191,18 @@ class RepositoryContractTests(unittest.TestCase):
             with self.subTest(agent=name):
                 profile = self._load_profile(name)
                 instructions = profile["developer_instructions"].lower()
+                description = profile["description"].lower()
+                for stale in ("terminal leaf", "terminal worker", "terminal writer", "read-only leaf"):
+                    self.assertNotIn(stale, description)
                 self.assertRegex(instructions, r"depth[- ]1")
+                self.assertRegex(instructions, r"depth[- ]2")
                 self.assertRegex(instructions, r"do not[^.\n]*spawn")
+                self.assertIn("do not fork", instructions)
+                self.assertIn("fresh self-contained packet", instructions)
+                self.assertIn("cache window", instructions)
+                self.assertIs(profile["agents"]["enabled"], True)
+                self.assertNotIn("act as a terminal", instructions)
+                self.assertIn("30-minute cache window", instructions)
 
                 if profile["sandbox_mode"] == "workspace-write":
                     for phrase in ("do not commit", "push", "publish", "deploy"):
@@ -256,7 +276,7 @@ class RepositoryContractTests(unittest.TestCase):
         combined = " ".join(path.read_text(encoding="utf-8").lower() for path in root_facing)
         normalized = " ".join(combined.split())
         for phrase in (
-            "astra root",
+            "luna xhigh root",
             "independent review",
             "security",
             "authentication",

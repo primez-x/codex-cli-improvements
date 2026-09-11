@@ -1,8 +1,8 @@
 # Codex Orchestration Kit
 
-A portable Codex setup: GPT-6 Astra low coordinates, Luna performs most delegated
-work, and one Astra-high advisor supplies independent critique when warranted.
-The root owns final engineering approval, Git, and external actions.
+A portable Codex setup: GPT-5.6 Luna XHigh coordinates, Astra performs capable
+code and diagnosis work, and one Astra-high advisor supplies independent critique
+when warranted. The root owns final engineering approval, Git, and external actions.
 
 Keep this repository generic across personal and work devices. Machine-local
 workspaces, tenant configuration, personal/business data, and private verification
@@ -12,19 +12,19 @@ reports belong outside the repository.
 
 - `AGENTS.md`: concise working agreements and plan-completion persistence.
 - `config.toml` and `agents/`: explicit model routing, a shared six-thread
-  ceiling, and delegation up to absolute depth 2.
+  ceiling, and depth-2 terminal delegation.
 - `skills/delivery-orchestration/`: one planning/delivery workflow and the
   [routing matrix and benchmark snapshot](skills/delivery-orchestration/references/delegation-topology.md).
 - `skills/adversarial-code-review/`: one Astra-high critic for approach or
-  delivery review; ordinary work uses Astra root review.
+  delivery review; ordinary work uses Luna root review.
 - `skills/instruction-learning-loop/`: discretionary source-backed instruction
   maintenance and an explicitly invoked audit.
 - `hooks/plan_gap_goal_hook.py` and `hooks.json`: accepted-plan goal persistence.
 
 ## Working Pattern
 
-Astra defines the outcome and delegates useful independent work to Luna while
-continuing integration or decisions. Use focused checks for the changed
+Luna XHigh defines the outcome and delegates useful independent work to Astra
+while continuing integration or decisions. Use focused checks for the changed
 behavior, then review the integrated result. Avoid mandatory ledgers, repeated
 review stages, and instruction edits that do not address a durable defect.
 
@@ -40,20 +40,25 @@ Choose using total completion cost, including handoffs and rework.
 
 ## Depth And Concurrency
 
-Root is depth 0. Luna max and Astra medium workers may subdivide independent
-owned work at depth 1; all agents at depth 2 are terminal. Scanners,
-fast workers, and Spark are terminal at depths 1–2. Only root dispatches the
-terminal depth-1 advisor.
+Root is depth 0. Depth-1 agents may fan out to depth-2 registered profiles, and
+depth-2 agents are terminal. Every new assignment receives a fresh
+self-contained packet. Subagents must not fork threads. They may continue or
+resume the same assignment only within its 30-minute cache window; after that,
+the owning parent dispatches a new fresh packet, including for Astra code
+workers and Astra independent reviewers.
 
 All descendants share `max_concurrent_threads_per_session = 6`; the root is
 excluded. This is a ceiling, not a quota. Parent writers suspend edits to child
 paths until ownership returns. Children never gain broader authority.
 
-The working topology is root → workstream worker → terminal leaf.
-Keep `max_depth = 2` for runtimes that honor it and apply the same ceiling in
-instructions. This matches the demonstrated client behavior without claiming
-a universal product maximum. If a worker cannot spawn, it returns the packet
-to root for direct dispatch.
+The configured multi-agent v2 wait thresholds remain 1,500,000 ms, and the
+existing Luna, Sol, Astra, and Spark enhancement levels remain available for
+their defined roles, with depth-2 assignments terminal.
+
+The working topology is root → depth-1 subagent → depth-2 terminal subagent.
+Keep `max_depth = 2` for runtimes that honor it and apply the same limit in
+instructions. If more work is needed, return the gap to the owning parent for
+direct dispatch with a fresh packet.
 See [official subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
 ## Plan Goal Hook

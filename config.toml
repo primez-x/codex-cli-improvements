@@ -1,26 +1,27 @@
-model = "gpt-6-astra"
-model_reasoning_effort = "low"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "xhigh"
 
 [agents]
+enabled = true
 max_concurrent_threads_per_session = 6
 max_depth = 2
-default_subagent_model = "gpt-5.6-luna"
-default_subagent_reasoning_effort = "max"
+default_subagent_model = "gpt-6-astra"
+default_subagent_reasoning_effort = "medium"
 
 [agents.spark_scanner]
-description = "Instant terminal read-only leaf for tiny exact checks from bounded self-contained packets."
+description = "Instant read-only profile for tiny exact checks; terminal at depth 2."
 config_file = "./agents/spark_scanner.toml"
 
 [agents.spark_worker]
-description = "Instant terminal writer for small mechanical edits with focused verification."
+description = "Instant writer for small mechanical edits with focused verification; terminal at depth 2."
 config_file = "./agents/spark_worker.toml"
 
 [agents.luna_scanner]
-description = "Medium-effort read-only leaf for broad discovery and context-heavy evidence work."
+description = "Medium-effort read-only profile for broad discovery and context-heavy evidence; terminal at depth 2."
 config_file = "./agents/luna_scanner.toml"
 
 [agents.luna_worker]
-description = "Luna max workstream worker for substantial delivery with bounded delegation through depth 2."
+description = "Luna max worker for substantial delivery at depth 1 or terminal depth 2 under the Luna XHigh root."
 config_file = "./agents/luna_worker.toml"
 
 [agents.luna_fast_worker]
@@ -32,11 +33,11 @@ description = "Sol low worker for simpler, tightly specified, low-ambiguity crit
 config_file = "./agents/sol_fast_worker.toml"
 
 [agents.astra_worker]
-description = "Astra medium workstream worker for difficult implementation with bounded delegation through depth 2."
+description = "Astra medium worker for difficult implementation or diagnosis at depth 1 or terminal depth 2 under the Luna XHigh root."
 config_file = "./agents/astra_worker.toml"
 
 [agents.astra_low_worker]
-description = "Astra low terminal worker for bounded implementation needing more judgment than the smaller models."
+description = "Astra low profile for bounded implementation needing more judgment than smaller models; terminal at depth 2."
 config_file = "./agents/astra_low_worker.toml"
 
 [agents.astra_advisor]

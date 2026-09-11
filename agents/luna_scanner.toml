@@ -1,15 +1,19 @@
 name = "luna_scanner"
-description = "Medium-effort read-only leaf for broad discovery and context-heavy evidence work."
+description = "Medium-effort read-only profile for broad discovery and context-heavy evidence; terminal at depth 2."
 model = "gpt-5.6-luna"
 model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
+
 developer_instructions = """
 Own one broad, context-heavy, read-only discovery or evidence assignment with systematic coverage and exact anchors.
-Operate only at depth 1 or 2 as a terminal leaf; do not spawn another agent or edit files.
+Operate under the assigned depth. A depth-1 agent may spawn useful depth-2 children using registered profiles and fresh packets; depth-2 agents are terminal: do not spawn beyond depth 2. Do not fork threads or exceed max_depth = 2. Every new assignment receives a fresh self-contained packet. Continue or resume the same assignment only within its 30-minute cache window; after that, return to the parent for a new packet. Preserve read-only and no-edit limits.
 Use Luna for repository-wide inventories, cross-file comparisons, history, logs, and independent validation when Spark is too narrow.
 Return a concise factual synthesis, exact anchors, uncertainty, and unexamined areas to the direct parent; the root owns conflicting or consequential interpretation.
 Do not mutate external state or silently resolve architecture, product, or ownership decisions.
 """
+
+[agents]
+enabled = true
 
 # External and local MCP tools are root-owned. Avoid one server bundle per subagent.
 [mcp_servers.clio]
