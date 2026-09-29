@@ -11,13 +11,13 @@ CODEX_HOME = Path(os.environ.get("CODEX_ROUTING_HOME", Path.home() / ".codex")).
 GENERAL_ROUTING_MATRIX = {
     "spark_scanner": ("gpt-5.3-codex-spark", "xhigh"),
     "spark_worker": ("gpt-5.3-codex-spark", "xhigh"),
-    "luna_scanner": ("gpt-5.6-luna", "medium"),
-    "luna_fast_worker": ("gpt-5.6-luna", "xhigh"),
-    "luna_worker": ("gpt-5.6-luna", "max"),
-    "sol_fast_worker": ("gpt-5.6-sol", "low"),
-    "astra_worker": ("gpt-6-astra", "medium"),
-    "astra_low_worker": ("gpt-6-astra", "low"),
-    "astra_advisor": ("gpt-6-astra", "high"),
+    "luna_scanner": ("gpt-6-luna", "medium"),
+    "luna_fast_worker": ("gpt-6-luna", "xhigh"),
+    "luna_worker": ("gpt-6-luna", "max"),
+    "sol_fast_worker": ("gpt-6.1-sol", "low"),
+    "sol_worker": ("gpt-6.1-sol", "high"),
+    "sol_low_worker": ("gpt-6.1-sol", "low"),
+    "sol_advisor": ("gpt-6.1-sol", "xhigh"),
 }
 MATRIX = GENERAL_ROUTING_MATRIX
 ROOT_SERVERS = {"clio", "creatio", "chrome-devtools", "node_repl"}
@@ -46,20 +46,12 @@ class RoutingPolicyTests(unittest.TestCase):
                 self.assertTrue(rule in flat, f"{scope}: required rule absent: {rule}")
 
     def test_root_and_default_delegation(self):
-        self.assertEqual((self.config["model"], self.config["model_reasoning_effort"]), ("gpt-5.6-luna", "xhigh"))
-        self.assertEqual((self.agents["default_subagent_model"], self.agents["default_subagent_reasoning_effort"]), ("gpt-6-astra", "medium"))
+        self.assertEqual((self.config["model"], self.config["model_reasoning_effort"]), ("gpt-6.1-sol", "medium"))
+        self.assertEqual(self.config["plan_mode_reasoning_effort"], "medium")
+        self.assertEqual((self.agents["default_subagent_model"], self.agents["default_subagent_reasoning_effort"]), ("gpt-6-luna", "max"))
+        self.assertIs(self.agents["enabled"], True)
         self.assertEqual(self.agents["max_depth"], 2)
         self.assertEqual(self.agents["max_concurrent_threads_per_session"], 6)
-        self.assertIs(self.agents["enabled"], True)
-        self.assertEqual(
-            self.config["features"]["multi_agent_v2"],
-            {
-                "enabled": True,
-                "min_wait_timeout_ms": 1500000,
-                "default_wait_timeout_ms": 1500000,
-                "max_wait_timeout_ms": 1500000,
-            },
-        )
 
     def test_registered_profiles_and_actual_bindings(self):
         registered = {k for k, v in self.agents.items() if isinstance(v, dict) and "config_file" in v}
@@ -69,13 +61,19 @@ class RoutingPolicyTests(unittest.TestCase):
             with self.subTest(profile=name):
                 profile = self.profiles[name]
                 self.assertEqual(profile["name"], name)
+                self.assertIs(profile["agents"]["enabled"], name in {"luna_worker", "sol_worker"})
+                self.require_rules(profile["developer_instructions"].lower(),
+                    ("do not fork threads", "fresh self-contained packet", "30-minute cache window"), name)
                 self.assertEqual((profile["model"], profile["model_reasoning_effort"]), binding)
-                config_description = self.agents[name]["description"].lower()
-                for stale in ("terminal leaf", "terminal worker", "terminal writer", "read-only leaf"):
-                    self.assertNotIn(stale, config_description)
-                description = profile["description"].lower()
-                for stale in ("terminal leaf", "terminal worker", "terminal writer", "read-only leaf"):
-                    self.assertNotIn(stale, description)
+
+    def test_no_astra_routes_or_profiles_remain(self):
+        # Include nested config overrides and unregistered profile files.
+        self.assertNotIn("astra", repr(self.config).lower(), "config contains a retired Astra route")
+        for path in (CODEX_HOME / "agents").rglob("*.toml"):
+            with self.subTest(profile=path.name):
+                self.assertNotIn("astra", path.name.lower())
+                self.assertNotIn("astra", path.read_text(encoding="utf-8").lower(),
+                                 "profile contains a retired Astra model or role")
 
     def test_all_profiles_preserve_root_mcp_ownership(self):
         # A portable kit does not configure the user's root MCP connections.
@@ -91,32 +89,43 @@ class RoutingPolicyTests(unittest.TestCase):
                     self.assertEqual(server["args"], [])
 
     def test_depth_eligibility_and_terminal_roles(self):
-        root_critics = {"astra_advisor"}
+        subdividing = {"luna_worker", "sol_worker"}
+        root_critics = {"sol_advisor"}
         for name, profile in self.profiles.items():
             with self.subTest(profile=name):
                 instruction = profile["developer_instructions"].lower()
                 flat = " ".join(instruction.split())
                 expected = "read-only" if name.endswith(("scanner", "advisor")) else "workspace-write"
                 self.assertEqual(profile["sandbox_mode"], expected)
-                self.assertIs(profile["agents"]["enabled"], True)
 
-                if name in root_critics:
+                if name in subdividing:
                     self.require_rules(
                         flat,
-                        ("assigned depth", "depth-1", "depth-2", "terminal", "do not fork", "do not spawn", "fresh self-contained packet", "cache window", "root"),
+                        (
+                            "at depth 1",
+                            "cheaper capable",
+                            "within the subset",
+                            "exclusive, non-overlapping paths",
+                            "descendant outcomes and evidence",
+                            "direct parent",
+                            "at depth 2",
+                            "remain terminal",
+                            "do not spawn",
+                        ),
+                        name,
+                    )
+                elif name in root_critics:
+                    self.require_rules(
+                        flat,
+                        ("depth 1", "terminal", "do not spawn", "root"),
                         name,
                     )
                 else:
                     self.require_rules(
                         flat,
-                        ("assigned depth", "depth-1", "depth-2", "terminal", "do not fork", "do not spawn", "fresh self-contained packet", "cache window"),
+                        ("depth 1 or 2", "terminal", "do not spawn"),
                         name,
                     )
-
-                self.assertIn("30-minute cache window", flat)
-                self.assertNotIn("may subdivide", flat)
-                self.assertNotIn("subdelegate", flat)
-                self.assertNotIn("act as a terminal", flat)
 
     def test_writers_have_ownership_and_external_action_limits(self):
         for name, profile in self.profiles.items():
@@ -125,11 +134,11 @@ class RoutingPolicyTests(unittest.TestCase):
                     ("ownership", "do not commit", "push", "deploy", "external systems"), name)
 
     def test_advisor_can_criticize_approach_or_integrated_delivery(self):
-        advisor = self.profiles["astra_advisor"]["developer_instructions"].lower()
+        advisor = self.profiles["sol_advisor"]["developer_instructions"].lower()
         self.require_rules(
             advisor,
             ("approach", "integrated delivery", "verdict", "evidence", "risk", "root"),
-            "astra advisor",
+            "sol advisor",
         )
         self.assertFalse(
             "do not disposition findings or conclusions" in advisor,
@@ -137,34 +146,29 @@ class RoutingPolicyTests(unittest.TestCase):
         )
 
     def test_advisor_delivery_critique_covers_integrated_evidence(self):
-        advisor = self.profiles["astra_advisor"]["developer_instructions"].lower()
+        advisor = self.profiles["sol_advisor"]["developer_instructions"].lower()
         self.require_rules(
             advisor,
             ("integrated deliverable", "interfaces", "maintainability", "verification", "remaining risks"),
-            "astra advisor delivery critique",
+            "sol advisor delivery critique",
         )
 
     def test_delegation_is_active_and_progress_aware(self):
         combined = self.skill + self.topology + self.global_rules
-        self.assertIn("terminal subagent", combined, "delegation topology: terminal rule absent")
-        self.assertIn("fresh self-contained packet", combined, "delegation topology: fresh context rule absent")
-        self.assertIn("do not fork", combined, "delegation topology: no-fork rule absent")
-        self.assertIn("30-minute cache window", combined, "delegation topology: continuation window absent")
-        self.assertRegex(combined, r"depth[- ]?2", "delegation topology: depth-2 rule absent")
-        self.assertIn("may spawn", combined, "delegation topology: child fan-out rule absent")
-        self.assertRegex(combined, r"depth(?:s|\s+)?1", "delegation topology: depth rule absent")
+        self.assertRegex(combined, r"workstream\s+workers?", "delegation topology: worker rule absent")
+        self.assertRegex(combined, r"depth(?:s|\s+)?[123]", "delegation topology: depth rule absent")
         self.assertRegex(combined, r"six[- ](?:thread|concurrent)", "delegation topology: concurrency rule absent")
         self.assertIn("root owns", combined, "delegation topology: root ownership rule absent")
 
     def test_cost_routes_and_capability_boundaries(self):
         self.require_rules(
             self.skill + self.topology,
-            ("luna_worker", "astra_worker", "astra_low_worker", "sol_fast_worker", "capability"),
+            ("luna_worker", "sol_worker", "sol_low_worker", "sol_fast_worker", "capability"),
             "cost routing",
         )
         self.require_rules(
             self.global_rules,
-            ("luna root review is sufficient", "astra medium", "primary capable code"),
+            ("root review is sufficient", "primary delegated model"),
             "capability floor",
         )
 
@@ -176,7 +180,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_final_approval_and_required_risk_review(self):
         self.require_rules(
             self.global_rules + self.topology,
-            ("reviews and approves every integrated outcome", "luna xhigh root", "astra high", "privacy",
+            ("reviews and approves every integrated outcome", "sol root", "sol xhigh", "privacy",
              "data integrity", "required", "optional"),
             "senior sign-off",
         )

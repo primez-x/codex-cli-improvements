@@ -1,8 +1,8 @@
 # Codex Orchestration Kit
 
-A portable Codex setup: GPT-5.6 Luna XHigh coordinates, Astra performs capable
-code and diagnosis work, and one Astra-high advisor supplies independent critique
-when warranted. The root owns final engineering approval, Git, and external actions.
+A portable Codex setup: GPT-6.1 Sol medium coordinates, GPT-6 Luna performs most
+delegated work, and one Sol xhigh advisor supplies independent critique when warranted.
+The root owns final engineering approval, Git, and external actions.
 
 Keep this repository generic across personal and work devices. Machine-local
 workspaces, tenant configuration, personal/business data, and private verification
@@ -12,26 +12,26 @@ reports belong outside the repository.
 
 - `AGENTS.md`: concise working agreements and plan-completion persistence.
 - `config.toml` and `agents/`: explicit model routing, a shared six-thread
-  ceiling, and depth-2 terminal delegation.
+  ceiling, and delegation up to absolute depth 2.
 - `skills/delivery-orchestration/`: one planning/delivery workflow and the
-  [routing matrix and benchmark snapshot](skills/delivery-orchestration/references/delegation-topology.md).
-- `skills/adversarial-code-review/`: one Astra-high critic for approach or
-  delivery review; ordinary work uses Luna root review.
+  [routing matrix](skills/delivery-orchestration/references/delegation-topology.md).
+- `skills/adversarial-code-review/`: one Sol xhigh critic for approach or
+  delivery review; ordinary work uses Sol root review.
 - `skills/instruction-learning-loop/`: discretionary source-backed instruction
   maintenance and an explicitly invoked audit.
 - `hooks/plan_gap_goal_hook.py` and `hooks.json`: accepted-plan goal persistence.
 
 ## Working Pattern
 
-Luna XHigh defines the outcome and delegates useful independent work to Astra
-while continuing integration or decisions. Use focused checks for the changed
+Sol defines the outcome and delegates useful independent work to Luna while
+continuing integration or decisions. Use focused checks for the changed
 behavior, then review the integrated result. Avoid mandatory ledgers, repeated
 review stages, and instruction edits that do not address a durable defect.
 
 Luna medium handles discovery, xhigh bounded routine implementation, and max
 substantial work. Sol low remains an optional speed route for clear critical-path
-tasks. Astra low handles bounded work needing stronger judgment; Astra medium
-handles difficult implementation; Astra high handles
+tasks. Sol low handles bounded work needing stronger judgment; Sol high
+handles difficult implementation; Sol xhigh handles
 consequential independent review. Prefer Spark for tiny exact checks, bounded
 instruction checks, and mechanical edits, using the separate allowance reported
 by the user. Its small context requires fresh packets, narrow reads, and short
@@ -40,25 +40,23 @@ Choose using total completion cost, including handoffs and rework.
 
 ## Depth And Concurrency
 
-Root is depth 0. Depth-1 agents may fan out to depth-2 registered profiles, and
-depth-2 agents are terminal. Every new assignment receives a fresh
-self-contained packet. Subagents must not fork threads. They may continue or
-resume the same assignment only within its 30-minute cache window; after that,
-the owning parent dispatches a new fresh packet, including for Astra code
-workers and Astra independent reviewers.
+Root is depth 0. Luna max and Sol high workers may subdivide independent
+owned work at depth 1; all agents at depth 2 are terminal. Scanners,
+fast workers, and Spark are terminal at depths 1–2. Only root dispatches the
+terminal depth-1 advisor.
 
 All descendants share `max_concurrent_threads_per_session = 6`; the root is
 excluded. This is a ceiling, not a quota. Parent writers suspend edits to child
-paths until ownership returns. Children never gain broader authority.
+paths until ownership returns. Children never gain broader authority. Every new
+assignment uses a fresh self-contained packet; do not fork threads. Continue or
+resume only the same assignment within its 30-minute cache window, then send a
+new packet.
 
-The configured multi-agent v2 wait thresholds remain 1,500,000 ms, and the
-existing Luna, Sol, Astra, and Spark enhancement levels remain available for
-their defined roles, with depth-2 assignments terminal.
-
-The working topology is root → depth-1 subagent → depth-2 terminal subagent.
-Keep `max_depth = 2` for runtimes that honor it and apply the same limit in
-instructions. If more work is needed, return the gap to the owning parent for
-direct dispatch with a fresh packet.
+The working topology is root → workstream worker → terminal leaf.
+Keep `max_depth = 2` for runtimes that honor it and apply the same ceiling in
+instructions. This matches the demonstrated client behavior without claiming
+a universal product maximum. If a worker cannot spawn, it returns the packet
+to root for direct dispatch.
 See [official subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
 ## Plan Goal Hook
@@ -81,13 +79,22 @@ providers, MCP settings, authentication, and project overrides. Install the
 selected agent profiles and skills alongside it. Configuration layering is
 described in [the official guide](https://learn.chatgpt.com/docs/config-file/config-basic).
 
+When upgrading to this routing, replace the previous flagship worker, low worker,
+and advisor registrations and files with `sol_worker`, `sol_low_worker`, and
+`sol_advisor`. All Sol profiles use `gpt-6.1-sol`; all Luna profiles use
+`gpt-6-luna`. Root and plan mode both use medium effort. Start a fresh session
+to load the updated agent registry and defaults; running sessions retain their
+current model. To adopt this setup when resuming a saved session, explicitly
+select Sol 6.1 medium and verify the loaded profiles before new delegation. Spark profiles remain pinned to their
+existing model and are eligible only when that model is available in the runtime.
+
 The sample disables the redundant Superpowers methodology plugin. Keep
 specialized domain and artifact skills that supply needed APIs, formats, or
 validation. The [remaining vendor reconciliation guidance](skills/instruction-learning-loop/references/installed-skill-reconciliation.md)
 resolves scope and approval conflicts without bypassing technical safeguards.
 
-When upgrading an older kit, remove the retired `astra_reviewer` profile,
-`plan-review-ladder` skill, and instruction-learning hook registrations.
+When upgrading an older kit, remove retired agent profiles,
+the `plan-review-ladder` skill, and instruction-learning hook registrations.
 Legacy adversarial lifecycle/replay tooling is no longer part of the default
 kit. Preserve historical records and check installation-specific callers
 before removing old files.

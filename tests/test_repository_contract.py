@@ -19,13 +19,13 @@ RECONCILIATION_POLICY = (
 GENERAL_ROUTING_MATRIX = {
     "spark_scanner": ("gpt-5.3-codex-spark", "xhigh"),
     "spark_worker": ("gpt-5.3-codex-spark", "xhigh"),
-    "luna_scanner": ("gpt-5.6-luna", "medium"),
-    "luna_fast_worker": ("gpt-5.6-luna", "xhigh"),
-    "luna_worker": ("gpt-5.6-luna", "max"),
-    "sol_fast_worker": ("gpt-5.6-sol", "low"),
-    "astra_worker": ("gpt-6-astra", "medium"),
-    "astra_low_worker": ("gpt-6-astra", "low"),
-    "astra_advisor": ("gpt-6-astra", "high"),
+    "luna_scanner": ("gpt-6-luna", "medium"),
+    "luna_fast_worker": ("gpt-6-luna", "xhigh"),
+    "luna_worker": ("gpt-6-luna", "max"),
+    "sol_fast_worker": ("gpt-6.1-sol", "low"),
+    "sol_worker": ("gpt-6.1-sol", "high"),
+    "sol_low_worker": ("gpt-6.1-sol", "low"),
+    "sol_advisor": ("gpt-6.1-sol", "xhigh"),
 }
 RETIRED_PROFILE_MARKERS = (
     "terra",
@@ -35,6 +35,7 @@ RETIRED_PROFILE_MARKERS = (
     "terra_coordinator",
     "sol_coordinator",
     "luna_orchestrator",
+    "astra",
 )
 
 PRIVATE_KEY_PATTERN = re.compile(
@@ -127,30 +128,22 @@ class RepositoryContractTests(unittest.TestCase):
             except UnicodeDecodeError:
                 continue
 
-    def test_config_registers_the_current_astra_matrix(self) -> None:
+    def test_config_registers_the_current_sol_matrix(self) -> None:
         agents = self.config["agents"]
         self.assertEqual(
             (self.config["model"], self.config["model_reasoning_effort"]),
-            ("gpt-5.6-luna", "xhigh"),
+            ("gpt-6.1-sol", "medium"),
         )
-        self.assertEqual(agents["max_depth"], 2)
-        self.assertEqual(agents["max_concurrent_threads_per_session"], 6)
         self.assertIs(agents["enabled"], True)
+        self.assertEqual(agents["max_depth"], 2)
+        self.assertEqual(self.config["plan_mode_reasoning_effort"], "medium")
+        self.assertEqual(agents["max_concurrent_threads_per_session"], 6)
         self.assertEqual(
             (
                 agents["default_subagent_model"],
                 agents["default_subagent_reasoning_effort"],
             ),
-            ("gpt-6-astra", "medium"),
-        )
-        self.assertEqual(
-            self.config["features"]["multi_agent_v2"],
-            {
-                "enabled": True,
-                "min_wait_timeout_ms": 1500000,
-                "default_wait_timeout_ms": 1500000,
-                "max_wait_timeout_ms": 1500000,
-            },
+            ("gpt-6-luna", "max"),
         )
 
         registered = self._registered_profiles(self.config)
@@ -191,23 +184,48 @@ class RepositoryContractTests(unittest.TestCase):
             with self.subTest(agent=name):
                 profile = self._load_profile(name)
                 instructions = profile["developer_instructions"].lower()
-                description = profile["description"].lower()
-                for stale in ("terminal leaf", "terminal worker", "terminal writer", "read-only leaf"):
-                    self.assertNotIn(stale, description)
+                self.assertIs(profile["agents"]["enabled"], name in {"luna_worker", "sol_worker"})
+                for phrase in ("do not fork threads", "fresh self-contained packet", "30-minute cache window"):
+                    self.assertIn(phrase, instructions)
                 self.assertRegex(instructions, r"depth[- ]1")
-                self.assertRegex(instructions, r"depth[- ]2")
                 self.assertRegex(instructions, r"do not[^.\n]*spawn")
-                self.assertIn("do not fork", instructions)
-                self.assertIn("fresh self-contained packet", instructions)
-                self.assertIn("cache window", instructions)
-                self.assertIs(profile["agents"]["enabled"], True)
-                self.assertNotIn("act as a terminal", instructions)
-                self.assertIn("30-minute cache window", instructions)
+
+                expected_sandbox = (
+                    "read-only" if name.endswith(("scanner", "advisor")) else "workspace-write"
+                )
+                self.assertEqual(profile["sandbox_mode"], expected_sandbox)
+                normalized = " ".join(instructions.split())
+                if name in {"luna_worker", "sol_worker"}:
+                    for phrase in (
+                        "at depth 1",
+                        "within the subset",
+                        "exclusive, non-overlapping paths",
+                        "descendant outcomes and evidence",
+                        "direct parent",
+                        "at depth 2",
+                        "remain terminal",
+                    ):
+                        self.assertIn(phrase, normalized)
+                elif name == "sol_advisor":
+                    for phrase in ("depth 1", "terminal", "do not spawn", "root"):
+                        self.assertIn(phrase, normalized)
+                    self.assertNotIn("depth 1 or 2", normalized)
+                else:
+                    for phrase in ("depth 1 or 2", "terminal", "do not spawn"):
+                        self.assertIn(phrase, normalized)
 
                 if profile["sandbox_mode"] == "workspace-write":
                     for phrase in ("do not commit", "push", "publish", "deploy"):
                         self.assertIn(phrase, instructions)
                     self.assertIn("external", instructions)
+
+    def test_no_astra_routes_or_profiles_remain(self) -> None:
+        # Nested overrides and stale, unregistered profiles must also be checked.
+        self.assertNotIn("astra", repr(self.config).lower())
+        for path in (ROOT / "agents").rglob("*.toml"):
+            with self.subTest(path=self._relative(path)):
+                self.assertNotIn("astra", path.name.lower())
+                self.assertNotIn("astra", path.read_text(encoding="utf-8").lower())
 
     def test_runtime_assets_do_not_reference_retired_profile_families(self) -> None:
         paths = [
@@ -276,7 +294,9 @@ class RepositoryContractTests(unittest.TestCase):
         combined = " ".join(path.read_text(encoding="utf-8").lower() for path in root_facing)
         normalized = " ".join(combined.split())
         for phrase in (
-            "luna xhigh root",
+            "sol root",
+            "sol xhigh",
+            "root review is sufficient",
             "independent review",
             "security",
             "authentication",

@@ -5,7 +5,7 @@ description: Use for substantial implementation or remediation with multiple own
 
 # Delivery Orchestration
 
-Luna XHigh root owns the requested outcome, integration, and final engineering approval.
+Sol root owns the requested outcome, integration, and final engineering approval.
 For substantial work, keep one short plan identifying the outcome, owned paths,
 dependencies, and verification. Existing task authorization covers internal
 planning and review; do not add methodology approval gates.
@@ -14,19 +14,15 @@ planning and review; do not add methodology approval gates.
 
 - Inspect the baseline and preserve existing work. Reuse repository patterns.
 - Delegate independent work when it improves completion cost, elapsed time,
-  context, or evidence. Astra medium is the default capable code and diagnosis
-  worker; use Astra high for independent review when warranted. Keep Luna and
-  Spark profiles available for their defined enhancement levels.
+  context, or evidence. Luna is the default; choose capability before price.
+- Dispatch registered profiles with fresh self-contained packets; do not fork
+  threads. Continue or resume only the same assignment within its 30-minute
+  cache window; after that, send a new packet.
 - Give each writer exclusive paths, interfaces, constraints, current depth, and
   focused verification. One live writer owns each file.
-- Every new assignment receives a fresh self-contained packet. Subagents must
-  not fork threads. A depth-1 subagent may fan out to depth-2 registered
-  profiles when useful; depth-2 subagents are terminal and must not spawn
-  further. Continue or resume the same assignment only within its 30-minute
-  cache window; after that, the owning parent dispatches a new fresh packet.
-  All descendants share the same six-thread ceiling.
-- When a depth-1 task needs independent discovery or checks, prefer capable
-  bounded Spark or cheaper Luna fan-out before costly self-discovery.
+- Workstream workers may subdivide at depth 1 under the
+  [delegation topology](references/delegation-topology.md). Every depth-2 agent
+  is terminal. All descendants share the same six-thread ceiling.
 - Parents suspend edits to delegated paths, integrate returned evidence within
   their scope, and report descendants and results upward. Root owns
   repository-wide generators, Git, external actions, and final integration.
@@ -40,8 +36,8 @@ Run focused checks for changed behavior and required repository gates.
 Rerun only checks invalidated by changes, failures, or unresolved concerns.
 Inspect the integrated result against the request, interfaces, and evidence.
 
-The Luna XHigh root performs ordinary final review. Use one independent
-`astra_advisor` for an explicit request or consequential unresolved risk,
+The Sol root performs ordinary final review. Use one independent
+`sol_advisor` for an explicit request or consequential unresolved risk,
 following `adversarial-code-review`. Do not stack review stages by default.
 Apply valid findings and continue without renewed methodology approval.
 
