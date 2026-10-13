@@ -17,14 +17,12 @@ SKILL_LOOP_EVENTS = {
 }
 
 GENERAL_ROUTING_MATRIX = {
-    "spark_scanner": ("gpt-5.3-codex-spark", "xhigh"),
-    "spark_worker": ("gpt-5.3-codex-spark", "xhigh"),
     "luna_scanner": ("gpt-6-luna", "medium"),
     "luna_fast_worker": ("gpt-6-luna", "xhigh"),
     "luna_worker": ("gpt-6-luna", "max"),
-    "sol_fast_worker": ("gpt-6.1-sol", "low"),
+    "sol_fast_worker": ("gpt-5.6-sol", "low"),
     "sol_worker": ("gpt-6.1-sol", "high"),
-    "sol_low_worker": ("gpt-6.1-sol", "low"),
+    "sol_medium_worker": ("gpt-6.1-sol", "medium"),
     "sol_advisor": ("gpt-6.1-sol", "xhigh"),
 }
 RETIRED_PROFILE_MARKERS = (
@@ -151,7 +149,7 @@ class RepositoryContractTests(unittest.TestCase):
             registered,
             set(GENERAL_ROUTING_MATRIX),
         )
-        self.assertEqual(len(registered), 9)
+        self.assertEqual(len(registered), 7)
         self.assertTrue(self.config["features"]["multi_agent"])
 
         profile_files = {path.stem for path in (ROOT / "agents").glob("*.toml")}
@@ -178,15 +176,13 @@ class RepositoryContractTests(unittest.TestCase):
 
     def test_registered_profiles_preserve_bounded_depth_and_leaf_boundaries(self) -> None:
         registered = self._registered_profiles(self.config)
-        self.assertEqual(len(registered), 9)
+        self.assertEqual(len(registered), 7)
 
         for name in registered:
             with self.subTest(agent=name):
                 profile = self._load_profile(name)
                 instructions = profile["developer_instructions"].lower()
                 self.assertIs(profile["agents"]["enabled"], name in {"luna_worker", "sol_worker"})
-                for phrase in ("do not fork threads", "fresh self-contained packet", "30-minute cache window"):
-                    self.assertIn(phrase, instructions)
                 self.assertRegex(instructions, r"depth[- ]1")
                 self.assertRegex(instructions, r"do not[^.\n]*spawn")
 

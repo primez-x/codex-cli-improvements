@@ -9,14 +9,12 @@ import unittest
 
 CODEX_HOME = Path(os.environ.get("CODEX_ROUTING_HOME", Path.home() / ".codex")).resolve()
 GENERAL_ROUTING_MATRIX = {
-    "spark_scanner": ("gpt-5.3-codex-spark", "xhigh"),
-    "spark_worker": ("gpt-5.3-codex-spark", "xhigh"),
     "luna_scanner": ("gpt-6-luna", "medium"),
     "luna_fast_worker": ("gpt-6-luna", "xhigh"),
     "luna_worker": ("gpt-6-luna", "max"),
-    "sol_fast_worker": ("gpt-6.1-sol", "low"),
+    "sol_fast_worker": ("gpt-5.6-sol", "low"),
     "sol_worker": ("gpt-6.1-sol", "high"),
-    "sol_low_worker": ("gpt-6.1-sol", "low"),
+    "sol_medium_worker": ("gpt-6.1-sol", "medium"),
     "sol_advisor": ("gpt-6.1-sol", "xhigh"),
 }
 MATRIX = GENERAL_ROUTING_MATRIX
@@ -62,8 +60,6 @@ class RoutingPolicyTests(unittest.TestCase):
                 profile = self.profiles[name]
                 self.assertEqual(profile["name"], name)
                 self.assertIs(profile["agents"]["enabled"], name in {"luna_worker", "sol_worker"})
-                self.require_rules(profile["developer_instructions"].lower(),
-                    ("do not fork threads", "fresh self-contained packet", "30-minute cache window"), name)
                 self.assertEqual((profile["model"], profile["model_reasoning_effort"]), binding)
 
     def test_no_astra_routes_or_profiles_remain(self):
@@ -163,7 +159,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_cost_routes_and_capability_boundaries(self):
         self.require_rules(
             self.skill + self.topology,
-            ("luna_worker", "sol_worker", "sol_low_worker", "sol_fast_worker", "capability"),
+            ("luna_worker", "sol_worker", "sol_medium_worker", "sol_fast_worker", "capability"),
             "cost routing",
         )
         self.require_rules(
@@ -172,9 +168,9 @@ class RoutingPolicyTests(unittest.TestCase):
             "capability floor",
         )
 
-    def test_spark_packets_are_bounded(self):
-        self.require_rules(self.topology, ("self-contained", "bounded", "fork_turns"), "Spark")
-        self.assertTrue(bool(re.search(r'fork_turns\s*=\s*["\x27]none', self.topology)), "Spark requires a fresh packet")
+    def test_fresh_packets_are_bounded(self):
+        self.require_rules(self.topology, ("self-contained", "bounded", "fork_turns"), "bounded packets")
+        self.assertTrue(bool(re.search(r'fork_turns\s*=\s*["\x27]none', self.topology)), "Fresh context uses an explicit packet")
         self.assertFalse(bool(re.search(r"\b(?:128k|272k)\b", self.topology)), "context limits must not be frozen in routing prose")
 
     def test_final_approval_and_required_risk_review(self):

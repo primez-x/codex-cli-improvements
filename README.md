@@ -29,28 +29,26 @@ behavior, then review the integrated result. Avoid mandatory ledgers, repeated
 review stages, and instruction edits that do not address a durable defect.
 
 Luna medium handles discovery, xhigh bounded routine implementation, and max
-substantial work. Sol low remains an optional speed route for clear critical-path
-tasks. Sol low handles bounded work needing stronger judgment; Sol high
-handles difficult implementation; Sol xhigh handles
-consequential independent review. Prefer Spark for tiny exact checks, bounded
-instruction checks, and mechanical edits, using the separate allowance reported
-by the user. Its small context requires fresh packets, narrow reads, and short
-returns; split or reroute growing work before compaction or a stall.
+substantial work. Use `luna_scanner` for small read-only checks and
+`luna_fast_worker` for bounded mechanical edits. `sol_medium_worker` supplies
+GPT-6.1 Sol judgment at medium effort for bounded implementation; `sol_worker`
+handles difficult implementation at high effort; `sol_advisor` handles
+consequential independent review at xhigh. `sol_fast_worker` uses GPT-5.6 Sol low
+as an optional speed route for clear work blocking progress.
 Choose using total completion cost, including handoffs and rework.
 
 ## Depth And Concurrency
 
 Root is depth 0. Luna max and Sol high workers may subdivide independent
 owned work at depth 1; all agents at depth 2 are terminal. Scanners,
-fast workers, and Spark are terminal at depths 1–2. Only root dispatches the
-terminal depth-1 advisor.
+fast workers, and the medium Sol worker are terminal at depths 1–2. Only root
+dispatches the terminal depth-1 advisor.
 
 All descendants share `max_concurrent_threads_per_session = 6`; the root is
 excluded. This is a ceiling, not a quota. Parent writers suspend edits to child
-paths until ownership returns. Children never gain broader authority. Every new
-assignment uses a fresh self-contained packet; do not fork threads. Continue or
-resume only the same assignment within its 30-minute cache window, then send a
-new packet.
+paths until ownership returns. Children never gain broader authority. Keep
+assignments bounded with exact anchors, narrow reads, and concise evidence.
+Reuse compatible agents; use `fork_turns = "none"` when fresh context is useful.
 
 The working topology is root → workstream worker → terminal leaf.
 Keep `max_depth = 2` for runtimes that honor it and apply the same ceiling in
@@ -93,14 +91,15 @@ providers, MCP settings, authentication, and project overrides. Install the
 selected agent profiles and skills alongside it. Configuration layering is
 described in [the official guide](https://learn.chatgpt.com/docs/config-file/config-basic).
 
-When upgrading to this routing, replace the previous flagship worker, low worker,
-and advisor registrations and files with `sol_worker`, `sol_low_worker`, and
-`sol_advisor`. All Sol profiles use `gpt-6.1-sol`; all Luna profiles use
-`gpt-6-luna`. Root and plan mode both use medium effort. Start a fresh session
-to load the updated agent registry and defaults; running sessions retain their
+When upgrading to this routing, remove `spark_scanner`, `spark_worker`, and
+`sol_low_worker` registrations and their matching profile files. Add
+`sol_medium_worker` with `gpt-6.1-sol` at medium effort, and update
+`sol_fast_worker` to `gpt-5.6-sol` at low effort. The other Sol profiles use
+`gpt-6.1-sol`; all Luna profiles use `gpt-6-luna`. Preserve unrelated installed
+profiles and settings. Root and plan mode both use medium effort. Start a fresh
+session to load the updated agent registry and defaults; running sessions retain their
 current model. To adopt this setup when resuming a saved session, explicitly
-select Sol 6.1 medium and verify the loaded profiles before new delegation. Spark profiles remain pinned to their
-existing model and are eligible only when that model is available in the runtime.
+select Sol 6.1 medium and verify the loaded profiles before new delegation.
 
 The sample disables the redundant Superpowers methodology plugin. Keep
 specialized domain and artifact skills that supply needed APIs, formats, or

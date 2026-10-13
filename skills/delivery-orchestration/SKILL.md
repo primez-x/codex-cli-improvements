@@ -5,7 +5,7 @@ description: Use for substantial implementation or remediation with multiple own
 
 # Delivery Orchestration
 
-Sol root owns the requested outcome, integration, and final engineering approval.
+GPT-6.1 Sol root owns the requested outcome, integration, and final engineering approval.
 For substantial work, keep one short plan identifying the outcome, owned paths,
 dependencies, and verification. Existing task authorization covers internal
 planning and review; do not add methodology approval gates.
@@ -15,9 +15,6 @@ planning and review; do not add methodology approval gates.
 - Inspect the baseline and preserve existing work. Reuse repository patterns.
 - Delegate independent work when it improves completion cost, elapsed time,
   context, or evidence. Luna is the default; choose capability before price.
-- Dispatch registered profiles with fresh self-contained packets; do not fork
-  threads. Continue or resume only the same assignment within its 30-minute
-  cache window; after that, send a new packet.
 - Give each writer exclusive paths, interfaces, constraints, current depth, and
   focused verification. One live writer owns each file.
 - Workstream workers may subdivide at depth 1 under the
@@ -36,7 +33,7 @@ Run focused checks for changed behavior and required repository gates.
 Rerun only checks invalidated by changes, failures, or unresolved concerns.
 Inspect the integrated result against the request, interfaces, and evidence.
 
-The Sol root performs ordinary final review. Use one independent
+The GPT-6.1 Sol root performs ordinary final review. Use one independent
 `sol_advisor` for an explicit request or consequential unresolved risk,
 following `adversarial-code-review`. Do not stack review stages by default.
 Apply valid findings and continue without renewed methodology approval.

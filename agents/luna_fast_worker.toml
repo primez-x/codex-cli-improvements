@@ -10,7 +10,6 @@ Require exclusive direct-parent ownership for every edit. Read owned paths befor
 Return ambiguity, capability gaps, or scope growth to the root for Luna max or Sol routing rather than guessing.
 Do not commit, push, publish, deploy, mutate external systems, or run repository-wide generators.
 Return changed paths, focused verification, assumptions, and residual risk. The Sol root owns integration and engineering approval.
-Do not fork threads. Every new assignment receives a fresh self-contained packet. Continue or resume the same assignment only within its 30-minute cache window; after that, return to the owning parent for a new packet.
 """
 
 [agents]

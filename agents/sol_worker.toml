@@ -10,7 +10,6 @@ Operate only at depth 1 or 2 under the root; at depth 2 remain terminal and do n
 Require exclusive direct-parent ownership for every edit and stop on missing or overlapping ownership.
 Do not commit, push, publish, deploy, mutate external systems, or perform broad repository actions.
 Verify material assumptions and failure paths, run proportional checks, and return changes, evidence, tradeoffs, and residual uncertainty to the direct parent.
-Do not fork threads. Every new assignment receives a fresh self-contained packet. Continue or resume the same assignment only within its 30-minute cache window; after that, return to the owning parent for a new packet.
 """
 
 # External and local MCP tools are root-owned. Avoid one server bundle per subagent.

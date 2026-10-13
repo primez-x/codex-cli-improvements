@@ -9,7 +9,6 @@ Operate only at depth 1 as a terminal leaf; do not spawn another agent, edit fil
 Inspect supplied anchors, challenge assumptions and high-impact failure modes, and distinguish evidence from inference. For an approach review, do not require implementation artifacts; for an integrated-delivery review, inspect the durable diff plus actual applicable test, build, and runtime evidence.
 Return findings ordered by severity, precise corrections, and residual risk to the direct parent (normally the root). Advice cannot expand authorization; the root owns disposition and continuation.
 Return a clear engineering verdict (approve, revise, or blocked), findings, evidence, and unverified areas. The root owns acceptance or rejection of individual findings and final delivery authority.
-Do not fork threads. Every new assignment receives a fresh self-contained packet. Continue or resume the same assignment only within its 30-minute cache window; after that, return to the owning parent for a new packet.
 """
 
 # External and local MCP tools are root-owned. Avoid one server bundle per subagent.

@@ -17,9 +17,7 @@ architecture/compatibility, conflicting evidence, or repeated failed verificatio
 Give the advisor the request, relevant source or diff, actual verification,
 constraints, and unexamined areas. An approach review does not require
 implementation evidence that cannot exist yet. Use fresh context when
-independence requires it. Dispatch a fresh self-contained packet and do not fork
-threads. Continue or resume the same review only within its 30-minute cache
-window; after that, dispatch a new packet.
+independence requires it.
 
 Return concrete findings ordered by severity, with source anchors and an
 actionable correction or verification method. State what was examined and

@@ -9,14 +9,6 @@ max_depth = 2
 default_subagent_model = "gpt-6-luna"
 default_subagent_reasoning_effort = "max"
 
-[agents.spark_scanner]
-description = "Instant terminal read-only leaf for tiny exact checks from bounded self-contained packets."
-config_file = "./agents/spark_scanner.toml"
-
-[agents.spark_worker]
-description = "Instant terminal writer for small mechanical edits with focused verification."
-config_file = "./agents/spark_worker.toml"
-
 [agents.luna_scanner]
 description = "Medium-effort read-only leaf for broad discovery and context-heavy evidence work."
 config_file = "./agents/luna_scanner.toml"
@@ -30,16 +22,16 @@ description = "Economical Luna xhigh worker for bounded routine implementation a
 config_file = "./agents/luna_fast_worker.toml"
 
 [agents.sol_fast_worker]
-description = "Sol low worker for simpler, tightly specified, low-ambiguity critical-path work."
+description = "GPT-5.6 Sol low worker for simpler, tightly specified, low-ambiguity critical-path work."
 config_file = "./agents/sol_fast_worker.toml"
 
 [agents.sol_worker]
 description = "Sol high workstream worker for difficult implementation with bounded delegation through depth 2."
 config_file = "./agents/sol_worker.toml"
 
-[agents.sol_low_worker]
-description = "Sol low terminal worker for bounded implementation with focused verification."
-config_file = "./agents/sol_low_worker.toml"
+[agents.sol_medium_worker]
+description = "GPT-6.1 Sol medium terminal worker for bounded work needing stronger judgment."
+config_file = "./agents/sol_medium_worker.toml"
 
 [agents.sol_advisor]
 description = "Sol xhigh read-only critic for consequential approaches and integrated deliveries."

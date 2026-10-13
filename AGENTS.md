@@ -31,7 +31,7 @@ User-owned defaults across projects. Follow system and developer instructions, t
   - Never write unit tests after writing the code. Such tests restate the implementation, always pass, catch almost nothing, and break on every refactor.
   - Strongly prefer E2E tests as the sole testing mechanism; use E2E tests to prove complex features work. Every E2E run ends with a verifiable, repeatable artifact: a report, screenshot, log, or output file at a known path, plus the command that reproduces the artifact.
   - If a system must be tested in isolation, first write down every way the system could fail, then write tests for those failures, then write the code.
-- Before delivery, Sol root reviews the integrated outcome against the request, interfaces, maintainability, and evidence. Fix required gaps; report remaining limitations accurately.
+- Before delivery, GPT-6.1 Sol root reviews the integrated outcome against the request, interfaces, maintainability, and evidence. Fix required gaps; report remaining limitations accurately.
 - Distinguish implemented changes, technical verification, and user-observed resolution. Do not claim an outcome that was not observed.
 
 ## Research And Risk
@@ -43,22 +43,22 @@ User-owned defaults across projects. Follow system and developer instructions, t
 
 ## Delegation
 
-- GPT-6.1 Sol medium owns coordination and final results. GPT-6 Luna is the primary delegated model: medium for discovery, xhigh for bounded routine work, max for substantial work. Sol high handles difficult implementation; Sol xhigh `sol_advisor` supplies independent challenge.
+- Root uses GPT-6.1 Sol medium for coordination and final results. All Luna profiles use GPT-6 Luna, the primary delegated model: medium for discovery, xhigh for bounded routine work, max for substantial work. Sol profiles use GPT-6.1 Sol: `sol_medium_worker` at medium for bounded implementation, `sol_worker` at high for difficult implementation, and `sol_advisor` at xhigh for independent challenge. The optional `sol_fast_worker` latency route uses GPT-5.6 Sol low.
 - Delegate useful independent work regularly when it improves total completion cost, elapsed time, context use, or quality. Continue useful parent work in parallel. Complete tiny serial tasks inline when a handoff costs more.
-- Depth 0 is the root; maximum absolute depth is 2. `luna_worker` and `sol_worker` at depth 1 may subdivide their assigned work. All agents at depth 2 are terminal. Scanners, fast workers, and Spark are terminal at depths 1–2; only root dispatches the terminal depth-1 advisor.
+- Depth 0 is the root; maximum absolute depth is 2. `luna_worker` and `sol_worker` at depth 1 may subdivide their assigned work. All agents at depth 2 are terminal. Scanners and fast workers are terminal at depths 1–2; only root dispatches the terminal depth-1 advisor.
 - Keep six concurrently open spawned threads across the entire tree, excluding root, or any lower runtime limit. Normally use one to three useful delegates; depth and concurrency are ceilings, not targets.
 - Parents assign bounded scope, current depth, exclusive paths, constraints, and expected evidence. A child may delegate only a subset of its authority. Parent writers pause edits to delegated files until ownership returns. Report descendants and results to the parent; resolve overlaps before writing.
 - Root owns repository-wide integration and generators, Git, destructive actions, and external mutations. Delegation never expands authority. Keep root-owned local MCP servers disabled in child profiles.
 - Reuse compatible agents. Track meaningful progress without repeatedly restarting productive work. Use fresh context for independent review.
-- Prefer Spark for suitable tiny exact checks, bounded instruction checks, and mechanical edits; make productive use of its separate allowance as described by the user. Use `fork_turns = "none"`, exact anchors, narrow reads, and concise returns. Do not send broad discovery, full histories, or large logs. If context pressure or scope grows, return the remaining gap for splitting or rerouting before compaction or a stall. Do not keep extending a nearly full Spark thread.
-- A broad task may use several bounded Spark packets when each is independently understandable. Partition once, avoid overlapping discovery, share only necessary context, and let Sol or a capable workstream owner reconcile cross-file relationships. Prefer Luna when useful partitioning would require repeating large context or hide dependencies.
-- Use `sol_low_worker` for bounded implementation needing Sol judgment before escalating to the high workstream worker. Keep it terminal at depths 1–2.
+- Use `luna_scanner` for small read-only checks and `luna_fast_worker` for bounded mechanical edits. Keep packets self-contained with exact anchors, narrow reads, and concise returns; use `fork_turns = "none"` when fresh context is useful. Keep tiny serial tasks inline when a handoff costs more.
+- Partition independent work once, avoid overlapping discovery, and share only necessary context. Let root or a capable workstream owner reconcile cross-file relationships; use `luna_worker` when partitioning would hide dependencies.
+- Use `sol_medium_worker` for bounded implementation needing GPT-6.1 Sol judgment before escalating to the high-effort workstream worker. Keep it terminal at depths 1–2.
 - Choose the least expensive capable route including handoffs, retries, review, and root rework. Sol low is an optional latency route for clear work blocking progress; Luna remains primary for broader work. Benchmark figures and account allowances are workload- and account-dependent observations.
 - See `delivery-orchestration` for substantial delivery and its topology for routing details. Keep `max_depth = 2` for runtimes that honor it; enforce the same ceiling in assignments. Depth 2 is demonstrated in the current runtime, not a claimed universal product maximum.
 
 ## Independent Review And Learning
 
-- Root review is sufficient for ordinary delivery. Use one read-only Sol xhigh advisor when explicitly requested or consequential security, privacy, destructive action, data integrity, production impact, architecture, conflicting evidence, or repeated failures warrant independent challenge.
+- Root review is sufficient for ordinary delivery. Use one read-only GPT-6.1 Sol xhigh advisor when explicitly requested or consequential security, privacy, destructive action, data integrity, production impact, architecture, conflicting evidence, or repeated failures warrant independent challenge.
 - Give the advisor the relevant source/diff, requirements, verification, and uncertainties. Resolve actionable findings and rerun affected checks. Repeat review only for a distinct unresolved risk or material revision.
 - Instruction learning is discretionary: correct an established, recurring instruction defect in the narrowest authorized source. A fixed bug does not require an instruction edit. Skill Loop captures durable user corrections and resolved failures automatically (see the `skill-loop` skill).
 - Save new memories when the runtime's memory feature calls for one; do not rewrite or delete existing memories unless asked. Preserve historical evidence; do not rewrite it to match new policy.
