@@ -46,8 +46,8 @@ and remote-ref verification unless the user limits that terminal condition.
 Preserve existing branch policy, unrelated changes, and external-action
 boundaries. Report concrete blockers and unverified outcomes accurately.
 
-Instruction corrections are optional, source-backed maintenance; use
-`instruction-learning-loop` only when a durable instruction defect warrants it.
+Instruction corrections are optional, source-backed maintenance. Skill Loop
+captures durable corrections automatically; see the `skill-loop` skill.
 
 When routing configuration or profiles change, run the focused routing check:
 

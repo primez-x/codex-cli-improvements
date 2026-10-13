@@ -59,7 +59,7 @@ path = "./skills/delivery-orchestration/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "./skills/instruction-learning-loop/SKILL.md"
+path = "./skills/skill-loop/SKILL.md"
 enabled = true
 
 [[skills.config]]

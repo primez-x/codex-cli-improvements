@@ -11,6 +11,57 @@
             "statusMessage": "Checking plan goal trigger"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -B -c \"import os, runpy, sys; sys.argv = ['skill_loop.py', 'hook', 'user-prompt-submit', '--platform', 'codex']; runpy.run_path(os.path.expanduser('~/.skill-loop/skill_loop.py'), run_name='__main__')\"",
+            "commandWindows": "python -B -c \"import os, runpy, sys; sys.argv = ['skill_loop.py', 'hook', 'user-prompt-submit', '--platform', 'codex']; runpy.run_path(os.path.expanduser('~/.skill-loop/skill_loop.py'), run_name='__main__')\"",
+            "timeout": 10,
+            "statusMessage": "Checking for Skill Loop trigger"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -B -c \"import os, runpy, sys; sys.argv = ['skill_loop.py', 'hook', 'session-start', '--platform', 'codex']; runpy.run_path(os.path.expanduser('~/.skill-loop/skill_loop.py'), run_name='__main__')\"",
+            "commandWindows": "python -B -c \"import os, runpy, sys; sys.argv = ['skill_loop.py', 'hook', 'session-start', '--platform', 'codex']; runpy.run_path(os.path.expanduser('~/.skill-loop/skill_loop.py'), run_name='__main__')\"",
+            "timeout": 10,
+            "statusMessage": "Checking Skill Loop changes"
+          }
+        ],
+        "matcher": "startup|resume"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -B -c \"import os, runpy, sys; sys.argv = ['skill_loop.py', 'hook', 'pre-compact', '--platform', 'codex']; runpy.run_path(os.path.expanduser('~/.skill-loop/skill_loop.py'), run_name='__main__')\"",
+            "commandWindows": "python -B -c \"import os, runpy, sys; sys.argv = ['skill_loop.py', 'hook', 'pre-compact', '--platform', 'codex']; runpy.run_path(os.path.expanduser('~/.skill-loop/skill_loop.py'), run_name='__main__')\"",
+            "timeout": 10,
+            "statusMessage": "Queuing Skill Loop review"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -B -c \"import os, runpy, sys; sys.argv = ['skill_loop.py', 'hook', 'session-end', '--platform', 'codex']; runpy.run_path(os.path.expanduser('~/.skill-loop/skill_loop.py'), run_name='__main__')\"",
+            "commandWindows": "python -B -c \"import os, runpy, sys; sys.argv = ['skill_loop.py', 'hook', 'session-end', '--platform', 'codex']; runpy.run_path(os.path.expanduser('~/.skill-loop/skill_loop.py'), run_name='__main__')\"",
+            "timeout": 3,
+            "statusMessage": "Queuing Skill Loop review"
+          }
+        ]
       }
     ]
   }

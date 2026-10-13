@@ -28,25 +28,64 @@ PLAN_GAP_POSIX = f'python3 -B -c "{PLAN_GAP_CODE}"'
 PLAN_GAP_WINDOWS = f'python -B -c "{PLAN_GAP_CODE}"'
 
 
+def _skill_loop_code(verb: str) -> str:
+    return (
+        "import os, runpy, sys; "
+        f"sys.argv = ['skill_loop.py', 'hook', '{verb}', '--platform', 'codex']; "
+        "runpy.run_path(os.path.expanduser('~/.skill-loop/skill_loop.py'), run_name='__main__')"
+    )
+
+
+SKILL_LOOP_VERBS = {
+    "UserPromptSubmit": "user-prompt-submit",
+    "SessionStart": "session-start",
+    "PreCompact": "pre-compact",
+    "SessionEnd": "session-end",
+}
+
+
 class HooksConfigTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.config = json.loads(HOOKS_PATH.read_text(encoding="utf-8"))
 
-    def test_registers_plan_gap_event(self) -> None:
+    def test_registers_plan_gap_and_skill_loop_events(self) -> None:
         hooks = self.config["hooks"]
-        self.assertEqual(
-            set(hooks),
-            {"UserPromptSubmit"},
-        )
+        self.assertEqual(set(hooks), set(SKILL_LOOP_VERBS))
 
-        submit = hooks["UserPromptSubmit"]
-        self.assertEqual(len(submit), 1)
-        submit_commands = [entry["command"] for entry in submit[0]["hooks"]]
-        self.assertEqual(
-            submit_commands,
-            [PLAN_GAP_POSIX],
-        )
+        for event, verb in SKILL_LOOP_VERBS.items():
+            with self.subTest(event=event):
+                commands = [
+                    (entry["command"], entry["commandWindows"])
+                    for group in hooks[event]
+                    for entry in group["hooks"]
+                ]
+                code = _skill_loop_code(verb)
+                expected = [(f'python3 -B -c "{code}"', f'python -B -c "{code}"')]
+                if event == "UserPromptSubmit":
+                    expected.insert(0, (PLAN_GAP_POSIX, PLAN_GAP_WINDOWS))
+                self.assertEqual(commands, expected)
+
+    def test_skill_loop_dispatcher_runs_engine_from_home_with_hook_arguments(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            engine = home / ".skill-loop" / "skill_loop.py"
+            engine.parent.mkdir(parents=True)
+            engine.write_text("import sys\nprint(' '.join(sys.argv[1:]))\n", encoding="utf-8")
+            environment = os.environ.copy()
+            environment["USERPROFILE"] = str(home)
+            environment["HOME"] = str(home)
+            for verb in SKILL_LOOP_VERBS.values():
+                with self.subTest(verb=verb):
+                    result = subprocess.run(
+                        [sys.executable, "-B", "-c", _skill_loop_code(verb)],
+                        capture_output=True,
+                        env=environment,
+                        check=False,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), f"hook {verb} --platform codex")
 
     def test_commands_use_expected_windows_and_posix_home_relative_paths(self) -> None:
         commands = [

@@ -17,9 +17,9 @@ reports belong outside the repository.
   [routing matrix](skills/delivery-orchestration/references/delegation-topology.md).
 - `skills/adversarial-code-review/`: one Sol xhigh critic for approach or
   delivery review; ordinary work uses Sol root review.
-- `skills/instruction-learning-loop/`: discretionary source-backed instruction
-  maintenance and an explicitly invoked audit.
-- `hooks/plan_gap_goal_hook.py` and `hooks.json`: accepted-plan goal persistence.
+- `skills/skill-loop/`: inspect, explain, undo, or pause Skill Loop.
+- `hooks/plan_gap_goal_hook.py` and `hooks.json`: accepted-plan goal persistence
+  and the Skill Loop hook registrations.
 
 ## Working Pattern
 
@@ -72,6 +72,20 @@ Keep exactly one plan handler in the effective hook configuration. Preserve
 other installation-specific hooks; do not blindly overwrite a mixed hooks file.
 After hook changes, inspect `/hooks` and use a fresh session to verify activation.
 
+## Skill Loop
+
+Skill Loop learns from sessions without approval. `hooks.json` registers the
+`UserPromptSubmit`, `SessionStart`, `PreCompact`, and `SessionEnd` events. Each
+hook runs `~/.skill-loop/skill_loop.py`, which starts a hidden background review
+with `codex exec`. The review turns user corrections into skill or AGENTS.md
+edits and turns resolved repeated tool failures into skill edits. Code gates and
+a verifier pass check every edit, and a journal makes every edit revertable.
+
+The engine is shared with Claude Code and ships separately; this kit holds only
+the Codex hooks and the `skill-loop` skill. Without `~/.skill-loop/skill_loop.py`,
+remove the four Skill Loop hook groups. Codex asks you to trust changed hook
+commands in `/hooks`; trust them again after an update.
+
 ## Install Or Update
 
 Merge the relevant settings into your user configuration, preserving personal
@@ -90,11 +104,11 @@ existing model and are eligible only when that model is available in the runtime
 
 The sample disables the redundant Superpowers methodology plugin. Keep
 specialized domain and artifact skills that supply needed APIs, formats, or
-validation. The [remaining vendor reconciliation guidance](skills/instruction-learning-loop/references/installed-skill-reconciliation.md)
-resolves scope and approval conflicts without bypassing technical safeguards.
+validation.
 
 When upgrading an older kit, remove retired agent profiles,
-the `plan-review-ladder` skill, and instruction-learning hook registrations.
+the `plan-review-ladder` and `instruction-learning-loop` skills, and
+instruction-learning hook registrations. Skill Loop replaces both.
 Legacy adversarial lifecycle/replay tooling is no longer part of the default
 kit. Preserve historical records and check installation-specific callers
 before removing old files.
@@ -109,8 +123,7 @@ codes, and terminate only task-owned child shells.
 ## Verification
 
 Run the focused routing, plan-hook, and repository contract tests after changing
-their respective surfaces. Use the instruction audit when maintaining the
-instruction system. Tests should validate useful behavior and compatibility,
+their respective surfaces. Tests should validate useful behavior and compatibility,
 not enforce a document's wording or recreate removed workflow ceremonies.
 
 Reusable optional examples under [integrations](integrations/README.md) follow

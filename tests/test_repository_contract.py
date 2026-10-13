@@ -8,13 +8,13 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RECONCILIATION_POLICY = (
-    ROOT
-    / "skills"
-    / "instruction-learning-loop"
-    / "references"
-    / "installed-skill-reconciliation.md"
-)
+SKILL_LOOP_SKILL = ROOT / "skills" / "skill-loop" / "SKILL.md"
+SKILL_LOOP_EVENTS = {
+    "UserPromptSubmit": "user-prompt-submit",
+    "SessionStart": "session-start",
+    "PreCompact": "pre-compact",
+    "SessionEnd": "session-end",
+}
 
 GENERAL_ROUTING_MATRIX = {
     "spark_scanner": ("gpt-5.3-codex-spark", "xhigh"),
@@ -232,11 +232,10 @@ class RepositoryContractTests(unittest.TestCase):
             ROOT / "config.toml",
             ROOT / "AGENTS.md",
             ROOT / "README.md",
-            RECONCILIATION_POLICY,
+            SKILL_LOOP_SKILL,
         ]
         paths.extend((ROOT / "agents").glob("*.toml"))
         paths.extend((ROOT / "skills" / "delivery-orchestration").rglob("*.md"))
-        paths.extend((ROOT / "skills" / "instruction-learning-loop").rglob("*.md"))
         paths.extend((ROOT / "skills" / "adversarial-code-review").glob("SKILL.md"))
 
         for path in paths:
@@ -259,13 +258,9 @@ class RepositoryContractTests(unittest.TestCase):
     def test_hooks_are_portable_and_register_the_plan_goal_event(self) -> None:
         hooks_path = ROOT / "hooks.json"
         hooks = json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"]
-        self.assertIn("UserPromptSubmit", hooks)
-        self.assertEqual(
-            set(hooks),
-            {"UserPromptSubmit"},
-        )
+        self.assertEqual(set(hooks), set(SKILL_LOOP_EVENTS))
 
-        self.assertEqual(len(hooks["UserPromptSubmit"]), 1)
+        self.assertEqual(len(hooks["UserPromptSubmit"]), 2)
         self.assertEqual(len(hooks["UserPromptSubmit"][0]["hooks"]), 1)
         self.assertIn(
             "plan_gap_goal_hook.py",
@@ -309,39 +304,33 @@ class RepositoryContractTests(unittest.TestCase):
             self.assertIn(phrase, normalized)
         self.assertNotIn("for every material delivery", normalized)
 
-    def test_error_learning_contract_preserves_user_confirmation_authority(self) -> None:
+    def test_skill_loop_is_the_only_learning_mechanism(self) -> None:
         agents = " ".join((ROOT / "AGENTS.md").read_text(encoding="utf-8").lower().split())
-        skill = " ".join(
-            (ROOT / "skills" / "instruction-learning-loop" / "SKILL.md")
-            .read_text(encoding="utf-8")
-            .lower()
-            .split()
-        )
-
         for phrase in (
             "instruction learning is discretionary",
-            "established, recurring instruction defect",
             "narrowest authorized source",
             "fixed bug does not require an instruction edit",
-            "change memory only when explicitly requested",
+            "`skill-loop` skill",
+            "do not rewrite or delete existing memories unless asked",
         ):
             self.assertIn(phrase, agents)
 
-        for phrase in (
-            "do not create a persistent confirmation lifecycle",
-            "do not claim user-observed resolution without user-observed evidence",
-        ):
-            self.assertIn(phrase, skill)
+        skill = SKILL_LOOP_SKILL.read_text(encoding="utf-8")
+        self.assertTrue(skill.startswith("---\nname: skill-loop\n"))
+        self.assertNotRegex(skill.lower(), r"\b[a-z0-9-]+\.ghe\.com\b")
 
-        hooks = json.loads((ROOT / "hooks.json").read_text(encoding="utf-8"))
-        registered_hooks = json.dumps(hooks).lower()
-        self.assertNotIn("instruction_learning_hook.py", registered_hooks)
-        self.assertFalse(
-            (ROOT / "skills" / "instruction-learning-loop" / "scripts" / "instruction_learning_hook.py").exists()
-        )
-        self.assertTrue(
-            (ROOT / "skills" / "instruction-learning-loop" / "scripts" / "audit_instruction_system.py").is_file()
-        )
+        hooks = json.loads((ROOT / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+        for event, verb in SKILL_LOOP_EVENTS.items():
+            with self.subTest(event=event):
+                commands = [entry for group in hooks[event] for entry in group["hooks"]]
+                loop = [entry for entry in commands if "skill_loop.py" in entry["command"]]
+                self.assertEqual(len(loop), 1)
+                for command in (loop[0]["command"], loop[0]["commandWindows"]):
+                    self.assertIn(f"'hook', '{verb}', '--platform', 'codex'", command)
+                    self.assertIn("os.path.expanduser('~/.skill-loop/skill_loop.py')", command)
+
+        self.assertNotIn("instruction_learning_hook.py", json.dumps(hooks).lower())
+        self.assertFalse((ROOT / "skills" / "instruction-learning-loop").exists())
 
     def test_runtime_state_is_ignored_at_repository_boundaries(self) -> None:
         patterns = {
@@ -390,7 +379,7 @@ class RepositoryContractTests(unittest.TestCase):
             ROOT / "hooks.json",
             ROOT / "hooks" / "plan_gap_goal_hook.py",
             ROOT / "config.toml",
-            RECONCILIATION_POLICY,
+            SKILL_LOOP_SKILL,
             ROOT / "tests" / "test_hooks_config.py",
             ROOT / "tests" / "test_repository_contract.py",
         )
@@ -415,12 +404,6 @@ class RepositoryContractTests(unittest.TestCase):
                 self.assertFalse(relative_parts & actual_runtime_names)
 
     def test_reusable_text_allows_contextual_vendor_names_but_blocks_private_material(self) -> None:
-        self.assertTrue(RECONCILIATION_POLICY.is_file())
-        policy_text = RECONCILIATION_POLICY.read_text(encoding="utf-8").lower()
-        self.assertIn("vendor", policy_text)
-        self.assertIn("superpowers methodology", policy_text)
-        self.assertIn("## application toolkits", policy_text)
-
         for path, text in self._text_files():
             relative = self._relative(path)
             with self.subTest(path=relative, check="user profile"):
