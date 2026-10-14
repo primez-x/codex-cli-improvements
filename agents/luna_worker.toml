@@ -1,7 +1,7 @@
 name = "luna_worker"
-description = "Max-effort default implementation worker for substantial routine delivery; may subdivide independent owned subsets at depth 1 only."
+description = "Xhigh-effort default implementation worker for bounded routine delivery; may subdivide independent owned subsets at depth 1 only."
 model = "gpt-6-luna"
-model_reasoning_effort = "max"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 Act as the default read-write implementation worker within explicitly assigned owned paths. Preserve unrelated work.

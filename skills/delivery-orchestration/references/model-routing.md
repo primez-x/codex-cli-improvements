@@ -1,0 +1,141 @@
+# Combined Model Routing
+
+Use this policy for every root provider. Preserve the user's selected thread model.
+Opus medium is the normal root preference. Codex and Muse roots use the same worker selection rules.
+Never select Max effort. The highest allowed effort is xhigh; do not bypass the cap with higher modes or aliases.
+
+## Select Each Assignment
+
+1. Define the task, required judgment, tools, verification, and capability floor.
+2. Read the current provider catalog before a dispatch batch.
+3. Exclude disabled, missing, quota-blocked, or unsupported targets and all forbidden efforts.
+4. Read available usage reports and reset times. Prefer the capable provider with the most verified usable headroom.
+5. When headroom is comparable or unknown, give a slight preference to another provider, then another model.
+6. Within those choices, select the least costly capable model and effort from the task-specific evidence and supplied priors.
+7. Refresh usage after substantial work or a limit event. Refresh the catalog after provider, model, or option changes.
+
+Capability is mandatory. A subscription balance cannot justify a weaker assignment than the task needs.
+The alternate-provider preference is slight; task fit and materially greater headroom override that preference.
+Do not force rotation, create extra work, or add reviews solely to consume every subscription.
+Use disjoint useful slices across funded providers when capacity and task fit support parallel work.
+Preserve a usable reserve for the root and requested advice when the usage report supports that decision.
+
+## Usage Evidence
+
+- Use current runtime usage windows or a current user report. Record the source, observation time, and reset times in dispatch reasoning.
+- Compare the tightest relevant session, weekly, or model-specific window. Account for active children that share the same allowance.
+- Prefer normalized remaining percentages when the windows are comparable. Do not compare raw token counts across plans as available capacity.
+- If reports are absent, stale, or incompatible, mark headroom unknown. Unknown does not mean empty or unlimited.
+- Catalog availability and transcript spend do not establish remaining quota.
+- T3 has usage-window data internally, but the current MCP catalog exposes no usage-balance tool.
+- Read an accessible runtime usage display when available. Otherwise use the alternate-provider preference and cost priors without invented percentages.
+- After a confirmed limit, authentication, or availability failure, exclude the affected target and reroute a fresh bounded packet.
+- Preserve the capability floor after a reroute. Report a capability gap when no eligible target can meet the task.
+
+## Worker Map
+
+These are starting choices inside the selected provider, rather than a fixed provider priority.
+Effort names are task-level priors. Validate the actual task and preserve required evidence.
+
+| Task | Claude choice | Codex choice | Selection note |
+| --- | --- | --- | --- |
+| Tiny exact lookup | Haiku low | Luna medium | Approximate effort offset |
+| Bounded discovery or classification | Haiku medium | Luna high | Increase effort for broader evidence |
+| Decided mechanical edit | Haiku high | Luna xhigh | Explicit paths and a deterministic check |
+| Bounded routine implementation | Haiku xhigh | Sol low | Luna Max is forbidden; Sol low preserves the stronger tier |
+| Terminal coding or workflow automation | Sonnet high | Sol medium or high | Prefer task-specific coding and automation evidence |
+| Bounded work with stronger judgment | Sonnet high or Opus low | Sol medium | Select by actual ambiguity and verification needs |
+| Substantial implementation | Sonnet high or Opus medium | Sol high | Partition useful independent work |
+| Difficult diagnosis or architecture | Opus high, then xhigh | Sol high, then xhigh | Escalate directly when the task needs stronger judgment |
+
+Haiku is the primary cheap worker when Claude is selected.
+Sonnet remains a main coding and automation worker, rather than a rarely used fallback.
+Luna serves lower bounded tiers when Codex has available usage. Sol handles the stronger tiers without Max effort.
+For a Codex root, slightly prefer Haiku or Sonnet when headroom is comparable or unknown.
+For an Opus root, slightly prefer suitable Luna or Sol workers when headroom is comparable or unknown.
+For a Muse Wonder Full root, choose Claude or Codex by verified headroom, then task fit and cost.
+
+The user's effort-offset guide is Haiku low ≈ Luna medium, Haiku medium ≈ Luna high, and Haiku high ≈ Luna xhigh.
+Haiku xhigh ≈ Luna Max remains a historical comparison only. Use Sol low instead of any Max route.
+These approximate matches do not establish equal performance on every task.
+
+## Advisor And Independent Review
+
+Prefer Fable high for every root when Fable is available. This preference overrides worker cost and load-balance rules for advice.
+Use Astra high only when Claude has reached usage limits or Claude is unavailable, and Astra is actually dispatchable.
+An observed provider failure or a current user report can establish the fallback condition. Do not predict a limit from spend alone.
+If Fable alone is missing while Claude works, report the missing preferred Advisor; do not silently switch to Astra.
+Without a supported Claude dispatch path, Claude is unavailable to the current runtime; use Astra when dispatchable.
+
+In T3, dispatch Fable through the live Claude provider with `effort: high`.
+Outside T3, use the native `reviewer` profile at Fable high for explicit advice or review.
+A native Advisor server has separate effort behavior. Use that server only when the model binding and allowed effort are known.
+Codex's `astra_advisor` profile remains the Claude-unavailable fallback. A Codex profile cannot bind a Claude model.
+
+Root review is sufficient for ordinary delivery. Independent review uses a model different from the root and every writer.
+Fable advice does not satisfy that requirement when Fable also served as the root or a writer.
+In that case, choose another capable reviewer while preserving the restriction on Astra.
+Do not claim that a fresh reviewer has never influenced the writers when those writers consulted the same Advisor.
+
+## Subscription Priors
+
+Source: the user's `priors-score-vs-subscription-cost-per-task.csv`, exported from [Priors Builder](https://mypriors.com/builder), supplied 2026-10-14.
+The 148-row export has an unquoted comma in the cost header. Join the two cost-header cells before dictionary parsing.
+The cost values are dollar amounts; the chart uses a logarithmic axis.
+Builder describes the costs as subscription-priced estimates under plan assumptions and full allowance use.
+Claude rows assume Claude Max 20x. The Codex rows below assume ChatGPT Plus.
+These are workload priors, rather than measured remaining balances, verified billing rates, or task-quality guarantees.
+Reassess costs when the actual plan, workload mix, or allowance changes. Do not replace this export with a different default Builder index.
+
+| Model | Effort | Supplied score | Subscription cost/task |
+| --- | --- | ---: | ---: |
+| Haiku 5.5 | low | 27.77 | $0.0005 |
+| Haiku 5.5 | medium | 33.51 | $0.0010 |
+| Haiku 5.5 | high | 36.39 | $0.0017 |
+| Haiku 5.5 | xhigh | 39.87 | $0.0026 |
+| Sonnet 5.5 | low | 35.34 | $0.0052 |
+| Sonnet 5.5 | medium | 40.05 | $0.0073 |
+| Sonnet 5.5 | high | 45.63 | $0.0134 |
+| Sonnet 5.5 | xhigh | 49.42 | $0.0305 |
+| Opus 5.5 | low | 42.92 | $0.0083 |
+| Opus 5.5 | medium | 49.99 | $0.0202 |
+| Opus 5.5 | high | 52.00 | $0.0276 |
+| Opus 5.5 | xhigh | 53.65 | $0.0524 |
+| GPT-6 Luna | low | 18.87 | $0.0007 |
+| GPT-6 Luna | medium | 27.79 | $0.0026 |
+| GPT-6 Luna | high | 31.37 | $0.0043 |
+| GPT-6 Luna | xhigh | 32.88 | $0.0062 |
+| GPT-6.1 Sol | low | 41.42 | $0.0153 |
+| GPT-6.1 Sol | medium | 46.71 | $0.0249 |
+| GPT-6.1 Sol | high | 49.21 | $0.0372 |
+| GPT-6.1 Sol | xhigh | 50.10 | $0.0458 |
+| Fable 5.1 | high | 49.83 | $0.6099 |
+| GPT-6 Astra | high | 50.28 | $0.1476 |
+
+Fable remains preferred by user choice and model diversity, despite the higher supplied cost.
+Haiku xhigh costs 58% less than Luna xhigh and has a higher supplied score.
+The Max rows remain in the original export but are ineligible for every dispatch.
+
+## Task-Specific Evidence
+
+The user identified Sonnet 5.5 as strongest on Terminal-Bench v4-AA: three repeats and average pass@1.
+Builder distinguishes that benchmark from the upstream Terminal-Bench leaderboard and v2.1.
+The user also identified Sonnet's strength on AutomationBench-AA, which scores workflow automation with partial credit.
+Use those task-specific signals for Sonnet's coding and automation role. Do not infer the same ranking at every effort.
+The attached Intelligence Index API-cost chart is a separate cost measure, and the pictured Max efforts remain forbidden.
+Preserve protocol, harness, effort, and provenance when comparing benchmark results.
+
+## Catalog And Native Profiles
+
+Resolve exact provider IDs, model IDs, and supported efforts from the current catalog.
+Use `effort` for Claude targets and `reasoningEffort` for Codex targets. Never copy one provider's option key to another provider.
+The current catalog includes Claude, Codex, and Muse. Astra is absent, so the Astra fallback is currently unverified in T3.
+Muse and other providers remain eligible when dispatch is supported and task fitness, allowed effort, and capacity are established.
+Do not map `Muse Wonder (Max)` to Muse Wonder Full without evidence of the same model and effort.
+Do not request Max from Muse Spark or any other provider. Missing cost or usage data stays unknown.
+
+Use native same-provider profiles when those profiles support the chosen model and effort.
+Use T3 for cross-provider work or when native tools cannot select the chosen target.
+Native profiles are fixed presets. Do not claim that a native dispatch can change effort when the tool cannot.
+The native Haiku `mechanic` preset uses xhigh for bounded work; native Sonnet `worker` uses high for stronger judgment.
+Codex native defaults remain Luna xhigh when cross-provider dispatch is unavailable. Native Sol profiles supply the stronger tiers.

@@ -5,8 +5,12 @@ description: Use when the user requests independent critique or consequential un
 
 # Adversarial Review
 
-The root dispatches the read-only `astra_advisor` at GPT-6 Astra high.
-The reviewer model must differ from the root model and from every writer model.
+The root prefers Fable high for independent review when Claude is available.
+Dispatch the read-only `astra_advisor` at GPT-6 Astra high only when Claude is
+unavailable or usage-limited. The reviewer model must differ from the root model
+and from every writer model. Fable does not count as independent when Fable was
+the root or a writer; choose another capable reviewer instead. Advisor selection
+follows [model routing](../delivery-orchestration/references/model-routing.md).
 Review the integrated outcome or a specific unresolved decision. Ordinary
 delivery needs Sol root review; separate review is not required for every
 task, file, plan, or stage.

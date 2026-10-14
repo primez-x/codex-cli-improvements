@@ -1,6 +1,6 @@
 name = "sol_fast_worker"
 description = "Fast critical-path worker for bounded routine delivery."
-model = "gpt-5.6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 developer_instructions = """

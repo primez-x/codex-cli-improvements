@@ -14,7 +14,9 @@ planning and review; do not add methodology approval gates.
 
 - Inspect the baseline and preserve existing work. Reuse repository patterns.
 - Delegate independent work when it improves completion cost, elapsed time,
-  context, or evidence. Luna is the default; choose capability before price.
+  context, or evidence. Choose the least costly capable route from
+  [model routing](references/model-routing.md); capability is mandatory. Native
+  profiles are fallback presets, not global provider priority.
 - Give each writer exclusive paths, interfaces, constraints, current depth, and
   focused verification. One live writer owns each file.
 - Workstream workers may subdivide at depth 1 under the
@@ -33,9 +35,11 @@ Run focused checks for changed behavior and required repository gates.
 Rerun only checks invalidated by changes, failures, or unresolved concerns.
 Inspect the integrated result against the request, interfaces, and evidence.
 
-The GPT-6.1 Sol root performs ordinary final review. Use one independent
-`astra_advisor` at GPT-6 Astra high for an explicit request or consequential unresolved risk,
-following `adversarial-code-review`. Do not stack review stages by default.
+The GPT-6.1 Sol root performs ordinary final review. Use one independent advisor
+for an explicit request or consequential unresolved risk, following
+`adversarial-code-review`. Use Fable high when Claude is available; use
+`astra_advisor` only when Claude is unavailable or usage-limited. Do not stack
+review stages by default.
 Apply valid findings and continue without renewed methodology approval.
 
 For authorized repository changes, finish with the task-only commit, push,

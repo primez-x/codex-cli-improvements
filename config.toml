@@ -7,26 +7,26 @@ enabled = true
 max_concurrent_threads_per_session = 6
 max_depth = 2
 default_subagent_model = "gpt-6-luna"
-default_subagent_reasoning_effort = "max"
+default_subagent_reasoning_effort = "xhigh"
 
 [agents.luna_scanner]
 description = "Medium-effort read-only leaf for broad discovery and context-heavy evidence work."
 config_file = "./agents/luna_scanner.toml"
 
 [agents.luna_worker]
-description = "Luna max workstream worker for substantial delivery with bounded delegation through depth 2."
+description = "Luna xhigh workstream worker for routine delivery with bounded delegation through depth 2."
 config_file = "./agents/luna_worker.toml"
 
 [agents.luna_fast_worker]
-description = "Economical Luna xhigh worker for bounded routine implementation and verification."
+description = "Economical Luna xhigh worker for decided mechanical edits with explicit paths and a deterministic check."
 config_file = "./agents/luna_fast_worker.toml"
 
 [agents.sol_fast_worker]
-description = "GPT-5.6 Sol low worker for simpler, tightly specified, low-ambiguity critical-path work."
+description = "GPT-6.1 Sol low worker for bounded routine implementation on the critical path."
 config_file = "./agents/sol_fast_worker.toml"
 
 [agents.sol_worker]
-description = "Sol high workstream worker for difficult implementation with bounded delegation through depth 2."
+description = "Sol high workstream worker for substantial or difficult implementation with bounded delegation through depth 2."
 config_file = "./agents/sol_worker.toml"
 
 [agents.sol_medium_worker]
@@ -34,7 +34,7 @@ description = "GPT-6.1 Sol medium terminal worker for bounded work needing stron
 config_file = "./agents/sol_medium_worker.toml"
 
 [agents.astra_advisor]
-description = "Astra high read-only critic for consequential approaches and integrated deliveries."
+description = "Claude-unavailable fallback: Astra high read-only critic for consequential approaches and integrated deliveries; Fable high is preferred."
 config_file = "./agents/astra_advisor.toml"
 
 [features]

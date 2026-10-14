@@ -19,8 +19,8 @@ SKILL_LOOP_EVENTS = {
 GENERAL_ROUTING_MATRIX = {
     "luna_scanner": ("gpt-6-luna", "medium"),
     "luna_fast_worker": ("gpt-6-luna", "xhigh"),
-    "luna_worker": ("gpt-6-luna", "max"),
-    "sol_fast_worker": ("gpt-5.6-sol", "low"),
+    "luna_worker": ("gpt-6-luna", "xhigh"),
+    "sol_fast_worker": ("gpt-6.1-sol", "low"),
     "sol_worker": ("gpt-6.1-sol", "high"),
     "sol_medium_worker": ("gpt-6.1-sol", "medium"),
     "astra_advisor": ("gpt-6-astra", "high"),
@@ -141,7 +141,7 @@ class RepositoryContractTests(unittest.TestCase):
                 agents["default_subagent_model"],
                 agents["default_subagent_reasoning_effort"],
             ),
-            ("gpt-6-luna", "max"),
+            ("gpt-6-luna", "xhigh"),
         )
 
         registered = self._registered_profiles(self.config)

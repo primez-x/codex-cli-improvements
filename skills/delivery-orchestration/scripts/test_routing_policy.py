@@ -11,8 +11,8 @@ CODEX_HOME = Path(os.environ.get("CODEX_ROUTING_HOME", Path.home() / ".codex")).
 GENERAL_ROUTING_MATRIX = {
     "luna_scanner": ("gpt-6-luna", "medium"),
     "luna_fast_worker": ("gpt-6-luna", "xhigh"),
-    "luna_worker": ("gpt-6-luna", "max"),
-    "sol_fast_worker": ("gpt-5.6-sol", "low"),
+    "luna_worker": ("gpt-6-luna", "xhigh"),
+    "sol_fast_worker": ("gpt-6.1-sol", "low"),
     "sol_worker": ("gpt-6.1-sol", "high"),
     "sol_medium_worker": ("gpt-6.1-sol", "medium"),
     "astra_advisor": ("gpt-6-astra", "high"),
@@ -46,7 +46,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_root_and_default_delegation(self):
         self.assertEqual((self.config["model"], self.config["model_reasoning_effort"]), ("gpt-6.1-sol", "medium"))
         self.assertEqual(self.config["plan_mode_reasoning_effort"], "medium")
-        self.assertEqual((self.agents["default_subagent_model"], self.agents["default_subagent_reasoning_effort"]), ("gpt-6-luna", "max"))
+        self.assertEqual((self.agents["default_subagent_model"], self.agents["default_subagent_reasoning_effort"]), ("gpt-6-luna", "xhigh"))
         self.assertIs(self.agents["enabled"], True)
         self.assertEqual(self.agents["max_depth"], 2)
         self.assertEqual(self.agents["max_concurrent_threads_per_session"], 6)
@@ -172,7 +172,7 @@ class RoutingPolicyTests(unittest.TestCase):
         )
         self.require_rules(
             self.global_rules,
-            ("root review is sufficient", "primary delegated model"),
+            ("root review is sufficient", "lower bounded tiers"),
             "capability floor",
         )
 

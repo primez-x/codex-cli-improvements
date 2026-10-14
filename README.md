@@ -1,7 +1,8 @@
 # Codex Orchestration Kit
 
-A portable Codex setup: GPT-6.1 Sol medium coordinates, GPT-6 Luna performs most
-delegated work, and one Astra high advisor supplies independent critique when warranted.
+A portable Codex setup: GPT-6.1 Sol medium coordinates, Luna and Sol workers take
+delegated work by tier, and Fable high gives preferred independent critique. GPT-6
+Astra high is the fallback when Claude is unavailable or usage-limited.
 The root owns final engineering approval, Git, and external actions.
 
 Keep this repository generic across personal and work devices. Machine-local
@@ -13,34 +14,37 @@ reports belong outside the repository.
 - `AGENTS.md`: concise working agreements and plan-completion persistence.
 - `config.toml` and `agents/`: explicit model routing, a shared six-thread
   ceiling, and delegation up to absolute depth 2.
-- `skills/delivery-orchestration/`: one planning/delivery workflow and the
-  [routing matrix](skills/delivery-orchestration/references/delegation-topology.md).
-- `skills/adversarial-code-review/`: one Astra high critic for approach or
-  delivery review; ordinary work uses Sol root review.
+- `skills/delivery-orchestration/`: one planning/delivery workflow, the
+  [routing matrix](skills/delivery-orchestration/references/delegation-topology.md),
+  and the [combined model routing policy](skills/delivery-orchestration/references/model-routing.md).
+- `skills/adversarial-code-review/`: approach or delivery review by Fable high when
+  Claude is available, with Astra high as the fallback; ordinary work uses Sol root review.
 - `skills/skill-loop/`: inspect, explain, undo, or pause Skill Loop.
 - `hooks/plan_gap_goal_hook.py` and `hooks.json`: accepted-plan goal persistence
   and the Skill Loop hook registrations.
 
 ## Working Pattern
 
-Sol defines the outcome and delegates useful independent work to Luna while
+Sol defines the outcome and delegates useful independent work while
 continuing integration or decisions. Use focused checks for the changed
 behavior, then review the integrated result. Avoid mandatory ledgers, repeated
 review stages, and instruction edits that do not address a durable defect.
 
-Luna medium handles discovery, xhigh bounded routine implementation, and max
-substantial work. Use `luna_scanner` for small read-only checks and
-`luna_fast_worker` for bounded mechanical edits. `sol_medium_worker` supplies
-GPT-6.1 Sol judgment at medium effort for bounded implementation; `sol_worker`
-handles difficult implementation at high effort; `astra_advisor` uses GPT-6 Astra
-for consequential independent review at high effort. `sol_fast_worker` uses GPT-5.6 Sol low
-as an optional speed route for clear work blocking progress.
-Astra provides a different model type for independent challenge, analogous to Claude's Fable advisor.
+Luna medium handles read-only discovery through `luna_scanner`. Luna xhigh handles
+decided mechanical edits through `luna_fast_worker` and partitioned workstreams through
+`luna_worker`. `sol_fast_worker` uses GPT-6.1 Sol low for bounded routine implementation.
+`sol_medium_worker` uses GPT-6.1 Sol medium for bounded judgment. `sol_worker` uses
+GPT-6.1 Sol high for substantial or difficult implementation. No profile uses Max.
+`astra_advisor` uses GPT-6 Astra high only as the Claude-unavailable fallback.
+
+Native presets are fallbacks, not global provider priority. The
+[model routing policy](skills/delivery-orchestration/references/model-routing.md) selects
+across Claude and Codex by capability, verified usable headroom, and subscription cost.
 Choose using total completion cost, including handoffs and rework.
 
 ## Depth And Concurrency
 
-Root is depth 0. Luna max and Sol high workers may subdivide independent
+Root is depth 0. Luna xhigh and Sol high workers may subdivide independent
 owned work at depth 1; all agents at depth 2 are terminal. Scanners,
 fast workers, and the medium Sol worker are terminal at depths 1–2. Only root
 dispatches the terminal depth-1 advisor.
@@ -95,8 +99,9 @@ described in [the official guide](https://learn.chatgpt.com/docs/config-file/con
 When upgrading to this routing, remove `spark_scanner`, `spark_worker`, and
 `sol_low_worker` registrations and their matching profile files. Add
 `sol_medium_worker` with `gpt-6.1-sol` at medium effort, and update
-`sol_fast_worker` to `gpt-5.6-sol` at low effort. The other Sol profiles use
-`gpt-6.1-sol`; all Luna profiles use `gpt-6-luna`. Preserve unrelated installed
+`sol_fast_worker` to `gpt-6.1-sol` at low effort. All Sol profiles use
+`gpt-6.1-sol`; all Luna profiles use `gpt-6-luna`, with `luna_worker` and the default
+subagent effort at `xhigh`. Never use Max. Preserve unrelated installed
 profiles and settings. Root and plan mode both use medium effort. Start a fresh
 session to load the updated agent registry and defaults; running sessions retain their
 current model. To adopt this setup when resuming a saved session, explicitly

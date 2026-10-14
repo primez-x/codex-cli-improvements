@@ -11,9 +11,10 @@ for runtimes that honor the setting; instructions enforce the same limit.
 Do not infer a universal product maximum from one client. If child spawning
 is unavailable, return the bounded packet to root for direct dispatch.
 
-Sol profiles use GPT-6.1 Sol, except the GPT-5.6 Sol low latency route.
-All Luna profiles use GPT-6 Luna. These bindings express this kit's routing
-policy; dispatch only models available in the current runtime.
+Sol profiles use GPT-6.1 Sol. All Luna profiles use GPT-6 Luna. These bindings
+express this kit's routing policy; dispatch only models available in the current
+runtime. Select cross-provider targets with [model-routing.md](model-routing.md).
+Without cross-provider Claude dispatch, use `astra_advisor` when the model is available to the current runtime.
 
 ## Roles
 
@@ -21,20 +22,21 @@ policy; dispatch only models available in the current runtime.
 | --- | --- | --- | --- | --- |
 | `luna_scanner` | gpt-6-luna | medium | 1–2 | Terminal discovery and evidence |
 | `luna_fast_worker` | gpt-6-luna | xhigh | 1–2 | Terminal bounded implementation |
-| `luna_worker` | gpt-6-luna | max | 1–2 | May subdivide at depth 1 |
-| `sol_fast_worker` | gpt-5.6-sol | low | 1–2 | Terminal clear critical-path work |
+| `luna_worker` | gpt-6-luna | xhigh | 1–2 | May subdivide at depth 1 |
+| `sol_fast_worker` | gpt-6.1-sol | low | 1–2 | Terminal bounded routine implementation on the critical path |
 | `sol_worker` | gpt-6.1-sol | high | 1–2 | May subdivide at depth 1 |
 | `sol_medium_worker` | gpt-6.1-sol | medium | 1–2 | Terminal bounded implementation needing GPT-6.1 Sol judgment |
-| `astra_advisor` | gpt-6-astra | high | 1 | Root-dispatched terminal independent critic |
+| `astra_advisor` | gpt-6-astra | high | 1 | Claude-unavailable fallback; root-dispatched terminal critic |
 
-Luna is the default. Use xhigh for bounded routine work and max for substantial
-implementation. Sol low is a latency option for tightly specified work blocking
-progress. Use GPT-6.1 Sol high through `sol_worker` directly when difficult work needs its judgment.
-Use `luna_scanner` for small read-only checks and `luna_fast_worker` for bounded
-mechanical edits. Use a fresh self-contained packet with `fork_turns = "none"`
-when isolation is useful, exact anchors, narrow reads, and a short evidence return.
-Keep tiny serial work inline when handoff costs more. Use only profiles/models
-actually available in the current runtime.
+Route by tier. Luna serves the lower tiers: medium for read-only discovery, and xhigh
+for decided mechanical edits and partitioned workstreams. Sol serves routine and
+substantial work. Use low for bounded routine implementation on the critical path,
+medium for bounded judgment, and high for substantial or difficult implementation.
+No profile uses Max. Use `luna_scanner` for small read-only checks and
+`luna_fast_worker` for decided mechanical edits. Use a fresh self-contained packet
+with `fork_turns = "none"` when isolation is useful, exact anchors, narrow reads, and a
+short evidence return. Keep tiny serial work inline when handoff costs more. Use only
+profiles and models actually available in the current runtime.
 
 Partition independent work once and avoid duplicated discovery. Root or a capable
 workstream owner reconciles cross-file relationships. Use `luna_worker` when
@@ -72,7 +74,7 @@ serial work inline when handoff costs more. Root review does not justify
 assigning a task beyond a child's capability.
 
 The user selected GPT-6.1 Sol for root and difficult implementation based on observed cost and performance.
-The user selected GPT-6 Astra high for independent advice and review to use a different model type.
+The user prefers Fable high for independent advice and review. GPT-6 Astra high supplies a different model type when Claude is unavailable or usage-limited.
 Earlier model benchmark snapshots
 do not establish performance or pricing for these versions. Revisit routing
 using actual first-pass quality, elapsed time, retries, and cost when available.
@@ -80,7 +82,7 @@ using actual first-pass quality, elapsed time, retries, and cost when available.
 ## Approval
 
 GPT-6.1 Sol root reviews and approves every integrated outcome. Use one independent
-`astra_advisor` when requested or a concrete consequential risk warrants independent challenge,
-following `adversarial-code-review`. Do not add review solely for file count,
+advisor when requested or a concrete consequential risk warrants independent challenge,
+following `adversarial-code-review`. Fable high is preferred; `astra_advisor` at GPT-6 Astra high is the Claude-unavailable fallback. Do not add review solely for file count,
 stage count, or instruction-file edits. A required high-risk review remains
 a delivery gate; an optional review failure does not block verified low-risk work.
