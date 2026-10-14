@@ -159,8 +159,11 @@ Muse and other providers remain eligible when dispatch is supported and task fit
 Do not map `Muse Wonder (Max)` to Muse Wonder Full without evidence of the same model and effort.
 Do not request Max from Muse Spark or any other provider. Missing cost or usage data stays unknown.
 
-Use native same-provider profiles when those profiles support the chosen model and effort.
-Use T3 for cross-provider work or when native tools cannot select the chosen target.
+In T3, read `delegationPolicy.mode` from `orchestrator_capabilities` before selecting the child launch path.
+In `t3-managed` mode, use `delegate_task` for every child. Supply the task role and capability floor; T3 selects the target.
+In `native-preferred` mode, use supported native same-provider profiles. Use T3 for other targets.
+When the catalog has no delegation policy, use the combined map and the native-preferred path.
+Outside T3, use supported native profiles. Standalone provider apps do not use the T3 setting.
 Native profiles are fixed presets. Do not claim that a native dispatch can change effort when the tool cannot.
 The native Haiku `mechanic` preset uses xhigh for bounded work; native Sonnet `worker` uses high for stronger judgment.
 Codex native defaults remain Luna xhigh when cross-provider dispatch is unavailable. Native Sol profiles supply the stronger tiers.

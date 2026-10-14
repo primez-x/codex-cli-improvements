@@ -13,6 +13,9 @@ planning and review; do not add methodology approval gates.
 ## Execute
 
 - Inspect the baseline and preserve existing work. Reuse repository patterns.
+- In T3, call `orchestrator_capabilities` before a dispatch batch. Follow the returned delegation mode.
+  T3 managed requires `delegate_task` for every child. Supply the role and capability floor.
+  Read the returned target and recorded decision.
 - Run `scripts/provider_usage.py` from this skill folder before a dispatch batch.
   Check shared and model-scoped windows. Failed or stale reads remain unknown.
   Match the local CLI account to the selected provider instance.
