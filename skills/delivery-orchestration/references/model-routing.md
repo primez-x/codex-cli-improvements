@@ -30,7 +30,10 @@ Preserve a usable reserve for the root and requested advice when the usage repor
 - T3 has usage-window data internally, but the current MCP catalog exposes no usage-balance tool.
 - Run the skill's `scripts/provider_usage.py` before a dispatch batch. Read the report rather than treating exit status as verified headroom.
 - The reader uses Codex's app-server read API and Claude's usage endpoint. Credentials stay in process memory and never enter reports.
-- The reader also checks Muse's native `usage/read` observation. No observation or a stale observation remains unknown.
+- The reader also checks Muse's native `usage/read` snapshot. A new isolated host can have no observation despite available terminal quota data.
+- If Muse's native snapshot is absent or stale, run `/usage` in the Muse terminal. Read the subscription Current and Weekly windows.
+- Use the tightest remaining subscription percentage and check the displayed reset times and observation time. Session token counts do not establish headroom.
+- Do not submit `/usage` as a model prompt. Use the terminal slash command; if the terminal report is inaccessible, keep Muse headroom unknown.
 - Muse probes disable launcher updates and login. CLI probes close input before they stop the owned launcher.
 - An `unrecognized` model scope keeps the limit visible without exposing the raw label. Confirm that scope before claiming candidate headroom.
 - A model-only Codex main snapshot cannot establish shared provider headroom. Keep the provider headroom unknown.

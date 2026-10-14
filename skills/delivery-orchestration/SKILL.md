@@ -16,6 +16,8 @@ planning and review; do not add methodology approval gates.
 - Run `scripts/provider_usage.py` from this skill folder before a dispatch batch.
   Check shared and model-scoped windows. Failed or stale reads remain unknown.
   Match the local CLI account to the selected provider instance.
+- If Muse has no native observation, run `/usage` in the Muse terminal.
+  Use the subscription windows and observation time, rather than session token counts.
 - Delegate independent work when it improves completion cost, elapsed time,
   context, or evidence. Choose the least costly capable route from
   [model routing](references/model-routing.md); capability is mandatory. Native
