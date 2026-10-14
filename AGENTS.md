@@ -43,7 +43,7 @@ User-owned defaults across projects. Follow system and developer instructions, t
 
 ## Delegation
 
-- Root uses GPT-6.1 Sol medium for coordination and final results. All Luna profiles use GPT-6 Luna, the primary delegated model: medium for discovery, xhigh for bounded routine work, max for substantial work. Sol profiles use GPT-6.1 Sol: `sol_medium_worker` at medium for bounded implementation, `sol_worker` at high for difficult implementation, and `sol_advisor` at xhigh for independent challenge. The optional `sol_fast_worker` latency route uses GPT-5.6 Sol low.
+- Root uses GPT-6.1 Sol medium for coordination and final results. All Luna profiles use GPT-6 Luna, the primary delegated model: medium for discovery, xhigh for bounded routine work, max for substantial work. Sol profiles use GPT-6.1 Sol: `sol_medium_worker` at medium for bounded implementation and `sol_worker` at high for difficult implementation. Use GPT-6 Astra high through `astra_advisor` for independent challenge. The optional `sol_fast_worker` latency route uses GPT-5.6 Sol low.
 - Delegate useful independent work regularly when it improves total completion cost, elapsed time, context use, or quality. Continue useful parent work in parallel. Complete tiny serial tasks inline when a handoff costs more.
 - Depth 0 is the root; maximum absolute depth is 2. `luna_worker` and `sol_worker` at depth 1 may subdivide their assigned work. All agents at depth 2 are terminal. Scanners and fast workers are terminal at depths 1–2; only root dispatches the terminal depth-1 advisor.
 - Keep six concurrently open spawned threads across the entire tree, excluding root, or any lower runtime limit. Normally use one to three useful delegates; depth and concurrency are ceilings, not targets.
@@ -58,7 +58,7 @@ User-owned defaults across projects. Follow system and developer instructions, t
 
 ## Independent Review And Learning
 
-- Root review is sufficient for ordinary delivery. Use one read-only GPT-6.1 Sol xhigh advisor when explicitly requested or consequential security, privacy, destructive action, data integrity, production impact, architecture, conflicting evidence, or repeated failures warrant independent challenge.
+- Root review is sufficient for ordinary delivery. Use one read-only GPT-6 Astra high advisor when explicitly requested. Also use the advisor when security, privacy, destructive action, data integrity, production impact, architecture, conflicting evidence, or repeated failures warrant independent challenge. Astra provides a different model type for independent challenge, analogous to Claude's Fable advisor.
 - Give the advisor the relevant source/diff, requirements, verification, and uncertainties. Resolve actionable findings and rerun affected checks. Repeat review only for a distinct unresolved risk or material revision.
 - Instruction learning is discretionary: correct an established, recurring instruction defect in the narrowest authorized source. A fixed bug does not require an instruction edit. Skill Loop captures durable user corrections and resolved failures automatically (see the `skill-loop` skill).
 - Save new memories when the runtime's memory feature calls for one; do not rewrite or delete existing memories unless asked. Preserve historical evidence; do not rewrite it to match new policy.

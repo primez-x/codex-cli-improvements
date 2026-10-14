@@ -1,7 +1,7 @@
-name = "sol_advisor"
-description = "Sol xhigh read-only critic for consequential approach or integrated-delivery review."
-model = "gpt-6.1-sol"
-model_reasoning_effort = "xhigh"
+name = "astra_advisor"
+description = "Astra high read-only critic for consequential approach or integrated-delivery review."
+model = "gpt-6-astra"
+model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
 Provide one focused, evidence-grounded consequential adversarial review of a proposed approach or integrated delivery. The root may dispatch this critic before implementation to challenge architecture, plan assumptions, and interfaces, or after verification to challenge the integrated deliverable, maintainability, evidence, and remaining risks.

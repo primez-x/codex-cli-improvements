@@ -23,7 +23,7 @@ GENERAL_ROUTING_MATRIX = {
     "sol_fast_worker": ("gpt-5.6-sol", "low"),
     "sol_worker": ("gpt-6.1-sol", "high"),
     "sol_medium_worker": ("gpt-6.1-sol", "medium"),
-    "sol_advisor": ("gpt-6.1-sol", "xhigh"),
+    "astra_advisor": ("gpt-6-astra", "high"),
 }
 RETIRED_PROFILE_MARKERS = (
     "terra",
@@ -33,7 +33,7 @@ RETIRED_PROFILE_MARKERS = (
     "terra_coordinator",
     "sol_coordinator",
     "luna_orchestrator",
-    "astra",
+    "sol_advisor",
 )
 
 PRIVATE_KEY_PATTERN = re.compile(
@@ -202,7 +202,7 @@ class RepositoryContractTests(unittest.TestCase):
                         "remain terminal",
                     ):
                         self.assertIn(phrase, normalized)
-                elif name == "sol_advisor":
+                elif name == "astra_advisor":
                     for phrase in ("depth 1", "terminal", "do not spawn", "root"):
                         self.assertIn(phrase, normalized)
                     self.assertNotIn("depth 1 or 2", normalized)
@@ -215,13 +215,22 @@ class RepositoryContractTests(unittest.TestCase):
                         self.assertIn(phrase, instructions)
                     self.assertIn("external", instructions)
 
-    def test_no_astra_routes_or_profiles_remain(self) -> None:
+    def test_advisor_model_differs_from_root_and_writers(self) -> None:
+        advisor = self._load_profile("astra_advisor")["model"]
+        self.assertNotEqual(advisor, self.config["model"])
+        for name in self._registered_profiles(self.config):
+            profile = self._load_profile(name)
+            if profile["sandbox_mode"] == "workspace-write":
+                with self.subTest(agent=name):
+                    self.assertNotEqual(advisor, profile["model"])
+
+    def test_no_sol_advisor_routes_or_profiles_remain(self) -> None:
         # Nested overrides and stale, unregistered profiles must also be checked.
-        self.assertNotIn("astra", repr(self.config).lower())
+        self.assertNotIn("sol_advisor", repr(self.config).lower())
         for path in (ROOT / "agents").rglob("*.toml"):
             with self.subTest(path=self._relative(path)):
-                self.assertNotIn("astra", path.name.lower())
-                self.assertNotIn("astra", path.read_text(encoding="utf-8").lower())
+                self.assertNotIn("sol_advisor", path.name.lower())
+                self.assertNotIn("sol_advisor", path.read_text(encoding="utf-8").lower())
 
     def test_runtime_assets_do_not_reference_retired_profile_families(self) -> None:
         paths = [
@@ -286,7 +295,7 @@ class RepositoryContractTests(unittest.TestCase):
         normalized = " ".join(combined.split())
         for phrase in (
             "sol root",
-            "sol xhigh",
+            "astra high",
             "root review is sufficient",
             "independent review",
             "security",

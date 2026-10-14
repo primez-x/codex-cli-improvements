@@ -15,7 +15,7 @@ GENERAL_ROUTING_MATRIX = {
     "sol_fast_worker": ("gpt-5.6-sol", "low"),
     "sol_worker": ("gpt-6.1-sol", "high"),
     "sol_medium_worker": ("gpt-6.1-sol", "medium"),
-    "sol_advisor": ("gpt-6.1-sol", "xhigh"),
+    "astra_advisor": ("gpt-6-astra", "high"),
 }
 MATRIX = GENERAL_ROUTING_MATRIX
 ROOT_SERVERS = {"clio", "creatio", "chrome-devtools", "node_repl"}
@@ -62,14 +62,22 @@ class RoutingPolicyTests(unittest.TestCase):
                 self.assertIs(profile["agents"]["enabled"], name in {"luna_worker", "sol_worker"})
                 self.assertEqual((profile["model"], profile["model_reasoning_effort"]), binding)
 
-    def test_no_astra_routes_or_profiles_remain(self):
+    def test_advisor_model_differs_from_root_and_writers(self):
+        advisor = self.profiles["astra_advisor"]["model"]
+        self.assertNotEqual(advisor, self.config["model"])
+        for name, profile in self.profiles.items():
+            if profile["sandbox_mode"] == "workspace-write":
+                with self.subTest(profile=name):
+                    self.assertNotEqual(advisor, profile["model"])
+
+    def test_no_retired_sol_advisor_routes_or_profiles_remain(self):
         # Include nested config overrides and unregistered profile files.
-        self.assertNotIn("astra", repr(self.config).lower(), "config contains a retired Astra route")
+        self.assertNotIn("sol_advisor", repr(self.config).lower(), "config contains a retired Sol advisor route")
         for path in (CODEX_HOME / "agents").rglob("*.toml"):
             with self.subTest(profile=path.name):
-                self.assertNotIn("astra", path.name.lower())
-                self.assertNotIn("astra", path.read_text(encoding="utf-8").lower(),
-                                 "profile contains a retired Astra model or role")
+                self.assertNotIn("sol_advisor", path.name.lower())
+                self.assertNotIn("sol_advisor", path.read_text(encoding="utf-8").lower(),
+                                 "profile contains a retired Sol advisor role")
 
     def test_all_profiles_preserve_root_mcp_ownership(self):
         # A portable kit does not configure the user's root MCP connections.
@@ -86,7 +94,7 @@ class RoutingPolicyTests(unittest.TestCase):
 
     def test_depth_eligibility_and_terminal_roles(self):
         subdividing = {"luna_worker", "sol_worker"}
-        root_critics = {"sol_advisor"}
+        root_critics = {"astra_advisor"}
         for name, profile in self.profiles.items():
             with self.subTest(profile=name):
                 instruction = profile["developer_instructions"].lower()
@@ -130,11 +138,11 @@ class RoutingPolicyTests(unittest.TestCase):
                     ("ownership", "do not commit", "push", "deploy", "external systems"), name)
 
     def test_advisor_can_criticize_approach_or_integrated_delivery(self):
-        advisor = self.profiles["sol_advisor"]["developer_instructions"].lower()
+        advisor = self.profiles["astra_advisor"]["developer_instructions"].lower()
         self.require_rules(
             advisor,
             ("approach", "integrated delivery", "verdict", "evidence", "risk", "root"),
-            "sol advisor",
+            "astra advisor",
         )
         self.assertFalse(
             "do not disposition findings or conclusions" in advisor,
@@ -142,11 +150,11 @@ class RoutingPolicyTests(unittest.TestCase):
         )
 
     def test_advisor_delivery_critique_covers_integrated_evidence(self):
-        advisor = self.profiles["sol_advisor"]["developer_instructions"].lower()
+        advisor = self.profiles["astra_advisor"]["developer_instructions"].lower()
         self.require_rules(
             advisor,
             ("integrated deliverable", "interfaces", "maintainability", "verification", "remaining risks"),
-            "sol advisor delivery critique",
+            "astra advisor delivery critique",
         )
 
     def test_delegation_is_active_and_progress_aware(self):
@@ -176,7 +184,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_final_approval_and_required_risk_review(self):
         self.require_rules(
             self.global_rules + self.topology,
-            ("reviews and approves every integrated outcome", "sol root", "sol xhigh", "privacy",
+            ("reviews and approves every integrated outcome", "sol root", "astra high", "privacy",
              "data integrity", "required", "optional"),
             "senior sign-off",
         )

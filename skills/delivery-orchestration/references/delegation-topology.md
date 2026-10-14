@@ -25,7 +25,7 @@ policy; dispatch only models available in the current runtime.
 | `sol_fast_worker` | gpt-5.6-sol | low | 1–2 | Terminal clear critical-path work |
 | `sol_worker` | gpt-6.1-sol | high | 1–2 | May subdivide at depth 1 |
 | `sol_medium_worker` | gpt-6.1-sol | medium | 1–2 | Terminal bounded implementation needing GPT-6.1 Sol judgment |
-| `sol_advisor` | gpt-6.1-sol | xhigh | 1 | Root-dispatched terminal independent critic |
+| `astra_advisor` | gpt-6-astra | high | 1 | Root-dispatched terminal independent critic |
 
 Luna is the default. Use xhigh for bounded routine work and max for substantial
 implementation. Sol low is a latency option for tightly specified work blocking
@@ -71,15 +71,16 @@ Delegate regularly when it improves time, cost, context, or quality. Keep tiny
 serial work inline when handoff costs more. Root review does not justify
 assigning a task beyond a child's capability.
 
-The user selected GPT-6.1 Sol for root, difficult implementation, and review
-based on observed cost and performance. Earlier model benchmark snapshots
+The user selected GPT-6.1 Sol for root and difficult implementation based on observed cost and performance.
+The user selected GPT-6 Astra high for independent advice and review to use a different model type.
+Earlier model benchmark snapshots
 do not establish performance or pricing for these versions. Revisit routing
 using actual first-pass quality, elapsed time, retries, and cost when available.
 
 ## Approval
 
 GPT-6.1 Sol root reviews and approves every integrated outcome. Use one independent
-`sol_advisor` when requested or a concrete consequential risk warrants it,
+`astra_advisor` when requested or a concrete consequential risk warrants independent challenge,
 following `adversarial-code-review`. Do not add review solely for file count,
 stage count, or instruction-file edits. A required high-risk review remains
 a delivery gate; an optional review failure does not block verified low-risk work.

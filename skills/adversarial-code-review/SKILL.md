@@ -5,7 +5,8 @@ description: Use when the user requests independent critique or consequential un
 
 # Adversarial Review
 
-The root dispatches the read-only `sol_advisor` at GPT-6.1 Sol xhigh.
+The root dispatches the read-only `astra_advisor` at GPT-6 Astra high.
+The reviewer model must differ from the root model and from every writer model.
 Review the integrated outcome or a specific unresolved decision. Ordinary
 delivery needs Sol root review; separate review is not required for every
 task, file, plan, or stage.

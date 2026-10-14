@@ -33,9 +33,9 @@ config_file = "./agents/sol_worker.toml"
 description = "GPT-6.1 Sol medium terminal worker for bounded work needing stronger judgment."
 config_file = "./agents/sol_medium_worker.toml"
 
-[agents.sol_advisor]
-description = "Sol xhigh read-only critic for consequential approaches and integrated deliveries."
-config_file = "./agents/sol_advisor.toml"
+[agents.astra_advisor]
+description = "Astra high read-only critic for consequential approaches and integrated deliveries."
+config_file = "./agents/astra_advisor.toml"
 
 [features]
 multi_agent = true

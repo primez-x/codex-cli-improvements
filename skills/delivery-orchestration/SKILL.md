@@ -34,7 +34,7 @@ Rerun only checks invalidated by changes, failures, or unresolved concerns.
 Inspect the integrated result against the request, interfaces, and evidence.
 
 The GPT-6.1 Sol root performs ordinary final review. Use one independent
-`sol_advisor` for an explicit request or consequential unresolved risk,
+`astra_advisor` at GPT-6 Astra high for an explicit request or consequential unresolved risk,
 following `adversarial-code-review`. Do not stack review stages by default.
 Apply valid findings and continue without renewed methodology approval.
 

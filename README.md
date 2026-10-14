@@ -1,7 +1,7 @@
 # Codex Orchestration Kit
 
 A portable Codex setup: GPT-6.1 Sol medium coordinates, GPT-6 Luna performs most
-delegated work, and one Sol xhigh advisor supplies independent critique when warranted.
+delegated work, and one Astra high advisor supplies independent critique when warranted.
 The root owns final engineering approval, Git, and external actions.
 
 Keep this repository generic across personal and work devices. Machine-local
@@ -15,7 +15,7 @@ reports belong outside the repository.
   ceiling, and delegation up to absolute depth 2.
 - `skills/delivery-orchestration/`: one planning/delivery workflow and the
   [routing matrix](skills/delivery-orchestration/references/delegation-topology.md).
-- `skills/adversarial-code-review/`: one Sol xhigh critic for approach or
+- `skills/adversarial-code-review/`: one Astra high critic for approach or
   delivery review; ordinary work uses Sol root review.
 - `skills/skill-loop/`: inspect, explain, undo, or pause Skill Loop.
 - `hooks/plan_gap_goal_hook.py` and `hooks.json`: accepted-plan goal persistence
@@ -32,9 +32,10 @@ Luna medium handles discovery, xhigh bounded routine implementation, and max
 substantial work. Use `luna_scanner` for small read-only checks and
 `luna_fast_worker` for bounded mechanical edits. `sol_medium_worker` supplies
 GPT-6.1 Sol judgment at medium effort for bounded implementation; `sol_worker`
-handles difficult implementation at high effort; `sol_advisor` handles
-consequential independent review at xhigh. `sol_fast_worker` uses GPT-5.6 Sol low
+handles difficult implementation at high effort; `astra_advisor` uses GPT-6 Astra
+for consequential independent review at high effort. `sol_fast_worker` uses GPT-5.6 Sol low
 as an optional speed route for clear work blocking progress.
+Astra provides a different model type for independent challenge, analogous to Claude's Fable advisor.
 Choose using total completion cost, including handoffs and rework.
 
 ## Depth And Concurrency
