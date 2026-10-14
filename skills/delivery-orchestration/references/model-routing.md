@@ -28,9 +28,26 @@ Preserve a usable reserve for the root and requested advice when the usage repor
 - If reports are absent, stale, or incompatible, mark headroom unknown. Unknown does not mean empty or unlimited.
 - Catalog availability and transcript spend do not establish remaining quota.
 - T3 has usage-window data internally, but the current MCP catalog exposes no usage-balance tool.
-- Read an accessible runtime usage display when available. Otherwise use the alternate-provider preference and cost priors without invented percentages.
+- Run the skill's `scripts/provider_usage.py` before a dispatch batch. Read the report rather than treating exit status as verified headroom.
+- The reader uses Codex's app-server read API and Claude's usage endpoint. Credentials stay in process memory and never enter reports.
+- The reader also checks Muse's native `usage/read` observation. No observation or a stale observation remains unknown.
+- The report covers the local CLI accounts. Do not apply those balances to a different account or provider instance.
+- Match report `claude` to the corresponding `claudeAgent` catalog instance. Confirm that the login context matches before selecting a target.
+- Use shared windows for provider headroom. Check applicable model-scoped windows before choosing the model; other model limits do not block that choice.
+- A failed usage read does not prove that the model provider is unavailable. Keep failed or stale headroom unknown.
+- Read an accessible runtime usage display or current user report when the reader has no trustworthy observation.
 - After a confirmed limit, authentication, or availability failure, exclude the affected target and reroute a fresh bounded packet.
 - Preserve the capability floor after a reroute. Report a capability gap when no eligible target can meet the task.
+
+Read usage with the installed skill:
+
+```bash
+python3 -B ~/.codex/skills/delivery-orchestration/scripts/provider_usage.py
+```
+
+For Claude-only installations, use the matching path under `~/.claude/skills`.
+On Windows, use `python -B` with the installed script path.
+Keep the command output outside Git. The output contains current account consumption, rather than reusable policy.
 
 ## Worker Map
 

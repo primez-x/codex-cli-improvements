@@ -13,6 +13,9 @@ planning and review; do not add methodology approval gates.
 ## Execute
 
 - Inspect the baseline and preserve existing work. Reuse repository patterns.
+- Run `scripts/provider_usage.py` from this skill folder before a dispatch batch.
+  Check shared and model-scoped windows. Failed or stale reads remain unknown.
+  Match the local CLI account to the selected provider instance.
 - Delegate independent work when it improves completion cost, elapsed time,
   context, or evidence. Choose the least costly capable route from
   [model routing](references/model-routing.md); capability is mandatory. Native
