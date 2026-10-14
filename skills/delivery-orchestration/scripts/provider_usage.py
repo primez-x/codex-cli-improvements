@@ -1,5 +1,6 @@
 """Read included-quota observations. Emit only normalized, sanitized JSON."""
 import argparse
+from contextlib import suppress
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
@@ -9,6 +10,7 @@ import os
 from pathlib import Path
 import queue
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -76,8 +78,8 @@ def normalized_window(identifier, scope, used, duration, reset, now, model=None)
               'remaining_percent': max(0, 100 - used), 'duration_minutes': duration,
               'resets_at': utc(reset)}
     family = model_family(model)
-    if family:
-        result['model_family'] = family
+    if scope == 'model':
+        result['model_family'] = family or 'unrecognized'
     return result
 
 
@@ -183,23 +185,48 @@ def normalize_claude(data, now):
         scope = row.get('scope')
         model = scope.get('model') if isinstance(scope, dict) else None
         family = model_family(model.get('display_name')) if isinstance(model, dict) else None
-        if family:
-            scoped.append(('weekly_scoped', row, family))
-    seen = set()
+        scoped.append(('weekly_scoped', row, family))
     for name, raw, model in scoped:
         try:
             entry = normalized_window(name, 'model', raw['percent' if name == 'weekly_scoped' else 'utilization'], 10080,
                                       raw['resets_at'], now, model)
-            key = (entry.get('model_family'), entry['resets_at'])
-            if key not in seen:
-                windows.append(entry)
-                seen.add(key)
+            windows.append(entry)
         except (KeyError, TypeError, ValueError, OverflowError, OSError):
             continue
     return finish('claude', windows, complete)
 
 
-def rpc_read(command, method, jsonrpc=False, timeout=RPC_TIMEOUT):
+def close_process(process, reader=None):
+    """Close owned input, then stop and reap only the owned launcher."""
+    if process.stdin is not None:
+        with suppress(OSError):
+            process.stdin.close()
+    for action in (None, process.terminate, process.kill):
+        if process.poll() is not None:
+            break
+        if action:
+            with suppress(OSError):
+                action()
+        try:
+            process.wait(timeout=1)
+            break
+        except subprocess.TimeoutExpired:
+            continue
+    if reader:
+        reader.join(timeout=1)
+    if reader is None or not reader.is_alive():
+        with suppress(OSError):
+            process.stdout.close()
+
+
+def command_path(name):
+    path = shutil.which(name)
+    if path is None:
+        raise ProbeError
+    return path
+
+
+def rpc_read(command, method, jsonrpc=False, timeout=RPC_TIMEOUT, env=None):
     """Read two responses from an owned process with bounded portable pipes."""
     frames = queue.Queue(maxsize=32)
     stop = threading.Event()
@@ -256,7 +283,7 @@ def rpc_read(command, method, jsonrpc=False, timeout=RPC_TIMEOUT):
 
     try:
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, env=env,
                                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
         reader = threading.Thread(target=read_frames, daemon=True)
         reader.start()
@@ -276,14 +303,7 @@ def rpc_read(command, method, jsonrpc=False, timeout=RPC_TIMEOUT):
     finally:
         stop.set()
         if process is not None:
-            if process.poll() is None:
-                process.kill()
-            process.wait()
-            if reader:
-                reader.join(timeout=1)
-            process.stdin.close()
-            if reader is None or not reader.is_alive():
-                process.stdout.close()
+            close_process(process, reader)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -295,10 +315,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def claude_version():
     try:
         # Bound version output without persistent files.
-        process = subprocess.Popen(['claude', '--version'], stdout=subprocess.PIPE,
+        process = subprocess.Popen([command_path('claude'), '--version'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL,
                                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
-    except OSError:
+    except (OSError, ProbeError):
         return 'unknown'
     output = queue.Queue(maxsize=1)
     reader = threading.Thread(target=lambda: output.put(process.stdout.read(256)), daemon=True)
@@ -310,12 +330,25 @@ def claude_version():
     except queue.Empty:
         return 'unknown'
     finally:
-        if process.poll() is None:
-            process.kill()
-        process.wait()
-        reader.join(timeout=1)
-        if not reader.is_alive():
-            process.stdout.close()
+        close_process(process, reader)
+
+
+def read_http_body(response):
+    """Bound the body size and reject body reads after the elapsed deadline."""
+    deadline = time.monotonic() + RPC_TIMEOUT
+    body = bytearray()
+    while True:
+        if time.monotonic() >= deadline:
+            raise ProbeError
+        # read1 uses at most one underlying read, unlike read's fill loop.
+        chunk = response.read1(min(65536, MAX_BYTES + 1 - len(body)))
+        if time.monotonic() >= deadline:
+            raise ProbeError
+        body.extend(chunk)
+        if len(body) > MAX_BYTES:
+            raise ProbeError
+        if not chunk:
+            return bytes(body)
 
 
 def probe_claude(now=None):
@@ -333,30 +366,30 @@ def probe_claude(now=None):
                                                   'anthropic-beta': 'oauth-2025-04-20',
                                                   'User-Agent': f'claude-cli/{claude_version()} (external, cli)'})
         with urllib.request.build_opener(NoRedirect()).open(request, timeout=10) as response:
-            body = response.read(MAX_BYTES + 1)
-        if len(body) > MAX_BYTES:
-            return unknown('claude', 'response_invalid')
+            body = read_http_body(response)
         return normalize_claude(json.loads(body), time.time() if now is None else now)
     except urllib.error.HTTPError as error:
         reason = {401: 'authentication_required', 429: 'usage_read_throttled'}.get(error.code, 'http_error')
         return unknown('claude', reason)
     except FileNotFoundError:
         return unknown('claude', 'credentials_missing')
-    except (OSError, ValueError, KeyError, TypeError, RecursionError, http.client.HTTPException):
+    except (OSError, ValueError, KeyError, TypeError, RecursionError, http.client.HTTPException, ProbeError):
         return unknown('claude', 'usage_read_failed')
 
 
 def probe(provider):
-    if provider == 'claude':
-        return probe_claude()
     try:
+        if provider == 'claude':
+            return probe_claude()
         if provider == 'codex':
-            raw = rpc_read(['codex', 'app-server', '--listen', 'stdio://'], 'account/rateLimits/read')
+            raw = rpc_read([command_path('codex'), 'app-server', '--listen', 'stdio://'], 'account/rateLimits/read')
             return normalize_codex(raw, time.time())
-        raw = rpc_read(['muse', 'serve', '--no-session-log', '--disable-write', '--disable-shell'],
-                       'usage/read', True)
+        raw = rpc_read([command_path('muse'), 'serve', '--no-session-log', '--disable-write', '--disable-shell'],
+                       'usage/read', True,
+                       env=dict(os.environ, MUSE_NO_AUTO_UPDATE='1', MUSE_LOGIN='0'))
         return normalize_muse(raw, time.time())
-    except ProbeError:
+    except Exception:
+        # A provider boundary must never suppress another provider's report.
         return unknown(provider, 'usage_read_failed')
 
 

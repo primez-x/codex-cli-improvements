@@ -117,6 +117,19 @@ class NormalizationTests(unittest.TestCase):
                            for kind, used in [('session', 52), ('weekly_all', 69)]]}
         self.assertEqual(self.m.normalize_claude(data, NOW)['headroom_percent'], 31)
 
+    def test_unknown_model_scope_remains_visible(self):
+        data = {'limits': [{'kind': 'weekly_scoped', 'percent': 100,
+                           'resets_at': NOW + 3600,
+                           'scope': {'model': {'display_name': 'private-new-model'}}}]}
+        data['limits'].append({'kind': 'weekly_scoped', 'percent': 25,
+                               'resets_at': NOW + 3600,
+                               'scope': {'model': {'display_name': 'another-private-model'}}})
+        result = self.m.normalize_claude(data, NOW)
+        self.assertEqual(len(result['windows']), 2)
+        self.assertEqual(result['windows'][0]['model_family'], 'unrecognized')
+        self.assertEqual(result['windows'][0]['remaining_percent'], 0)
+        self.assertNotIn('private-new-model', json.dumps(result))
+
 
 class TransportTests(unittest.TestCase):
     def setUp(self):
@@ -161,6 +174,48 @@ assert request['id']==2
                 self.rpc_fixture('time.sleep(30)', timeout=.1)
         self.assertTrue(all(process.poll() is not None for process in owned))
         self.assertTrue(all(process.stdout.closed and process.stdin.closed for process in owned))
+
+    def test_early_closed_stdin_stays_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cli = Path(directory, 'codex')
+            cli.write_text('#!' + sys.executable + '\nimport sys,json,os,time\n'
+                           'json.loads(sys.stdin.readline())\nos.close(0)\n'
+                           'print(json.dumps({"id":1,"result":{}}),flush=True)\n'
+                           'time.sleep(.2)\n')
+            cli.chmod(0o700)
+            run = subprocess.run([sys.executable, '-B', str(SCRIPT), '--provider', 'codex'],
+                                 env=dict(os.environ, PATH=directory), capture_output=True,
+                                 text=True, timeout=5)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertEqual(json.loads(run.stdout)['providers']['codex']['status'], 'unknown')
+
+    def test_rpc_closes_stdin_before_force_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory, 'eof')
+            tail = "print('{\"id\":2,\"result\":{}}',flush=True)\n"
+            tail += "sys.stdin.read()\nfrom pathlib import Path\n"
+            tail += 'Path(' + repr(str(marker)) + ').write_text("closed")\n'
+            self.rpc_fixture(tail)
+            self.assertTrue(marker.exists(), 'owned server did not receive EOF')
+
+    def test_muse_environment_and_command_resolution(self):
+        with patch.object(self.m, 'rpc_read', return_value={}) as rpc, \
+             patch('shutil.which', return_value='/fixture/muse.cmd'):
+            self.m.probe('muse')
+            self.assertEqual(rpc.call_args.args[0][0], '/fixture/muse.cmd')
+            self.assertEqual(rpc.call_args.kwargs['env']['MUSE_NO_AUTO_UPDATE'], '1')
+            self.assertEqual(rpc.call_args.kwargs['env']['MUSE_LOGIN'], '0')
+        with patch.object(self.m, 'rpc_read', side_effect=OSError('private-error')), \
+             patch('shutil.which', return_value='/fixture/codex.cmd'):
+            result = self.m.probe('codex')
+            self.assertEqual(result['status'], 'unknown')
+            self.assertNotIn('private-error', json.dumps(result))
+
+    def test_http_body_deadline(self):
+        response = io.BytesIO(b'{}')
+        with patch.object(self.m.time, 'monotonic', side_effect=[0, 1, 20]):
+            with self.assertRaises(self.m.ProbeError):
+                self.m.read_http_body(response)
 
     def test_muse_cli_protocol_and_sanitized_errors(self):
         with tempfile.TemporaryDirectory() as directory:

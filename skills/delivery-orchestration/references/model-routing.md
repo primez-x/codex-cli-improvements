@@ -31,6 +31,10 @@ Preserve a usable reserve for the root and requested advice when the usage repor
 - Run the skill's `scripts/provider_usage.py` before a dispatch batch. Read the report rather than treating exit status as verified headroom.
 - The reader uses Codex's app-server read API and Claude's usage endpoint. Credentials stay in process memory and never enter reports.
 - The reader also checks Muse's native `usage/read` observation. No observation or a stale observation remains unknown.
+- Muse probes disable launcher updates and login. CLI probes close input before they stop the owned launcher.
+- An `unrecognized` model scope keeps the limit visible without exposing the raw label. Confirm that scope before claiming candidate headroom.
+- A model-only Codex main snapshot cannot establish shared provider headroom. Keep the provider headroom unknown.
+- The reader does not query macOS Keychain. A Keychain-only Claude login returns unknown; use the runtime usage display.
 - The report covers the local CLI accounts. Do not apply those balances to a different account or provider instance.
 - Match report `claude` to the corresponding `claudeAgent` catalog instance. Confirm that the login context matches before selecting a target.
 - Use shared windows for provider headroom. Check applicable model-scoped windows before choosing the model; other model limits do not block that choice.
@@ -47,6 +51,7 @@ python3 -B ~/.codex/skills/delivery-orchestration/scripts/provider_usage.py
 
 For Claude-only installations, use the matching path under `~/.claude/skills`.
 On Windows, use `python -B` with the installed script path.
+Windows command resolution has fixture coverage. Windows runtime behavior still needs a live check.
 Keep the command output outside Git. The output contains current account consumption, rather than reusable policy.
 
 ## Worker Map
