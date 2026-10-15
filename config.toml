@@ -34,7 +34,7 @@ description = "GPT-6.1 Sol medium terminal worker for bounded work needing stron
 config_file = "./agents/sol_medium_worker.toml"
 
 [agents.astra_advisor]
-description = "Claude-unavailable fallback: Astra high read-only critic for consequential approaches and integrated deliveries; Fable high is preferred."
+description = "Astra high critic fallback when the applicable Claude advisor is unavailable, exhausted, or excluded from independent review: Opus high for non-Opus roots, Fable high for Opus roots; explicit user requests prevail."
 config_file = "./agents/astra_advisor.toml"
 
 [features]

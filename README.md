@@ -1,8 +1,7 @@
 # Codex Orchestration Kit
 
 A portable Codex setup: GPT-6.1 Sol medium coordinates, Luna and Sol workers take
-delegated work by tier, and Fable high gives preferred independent critique. GPT-6
-Astra high is the fallback when Claude is unavailable or usage-limited.
+delegated work by tier. Use Claude Opus high for Sol/Codex and all other non-Opus roots. Reserve Fable high for Opus roots. Explicit user model requests take precedence within the capability, independence, effort, and Astra fallback rules. Use Astra high only when the applicable Claude advisor is unavailable, exhausted, or excluded from independent review, and Astra is dispatchable.
 The root owns final engineering approval, Git, and external actions.
 
 Keep this repository generic across personal and work devices. Machine-local
@@ -17,8 +16,8 @@ reports belong outside the repository.
 - `skills/delivery-orchestration/`: one planning/delivery workflow, the
   [routing matrix](skills/delivery-orchestration/references/delegation-topology.md),
   and the [combined model routing policy](skills/delivery-orchestration/references/model-routing.md).
-- `skills/adversarial-code-review/`: approach or delivery review by Fable high when
-  Claude is available, with Astra high as the fallback; ordinary work uses Sol root review.
+- `skills/adversarial-code-review/`: approach or delivery review by the applicable Claude advisor,
+  with Astra high as the fallback; ordinary work uses Sol root review.
 - `skills/skill-loop/`: inspect, explain, undo, or pause Skill Loop.
 - `hooks/plan_gap_goal_hook.py` and `hooks.json`: accepted-plan goal persistence
   and the Skill Loop hook registrations.
@@ -35,7 +34,7 @@ decided mechanical edits through `luna_fast_worker` and partitioned workstreams 
 `luna_worker`. `sol_fast_worker` uses GPT-6.1 Sol low for bounded routine implementation.
 `sol_medium_worker` uses GPT-6.1 Sol medium for bounded judgment. `sol_worker` uses
 GPT-6.1 Sol high for substantial or difficult implementation. No profile uses Max.
-`astra_advisor` uses GPT-6 Astra high only as the Claude-unavailable fallback.
+`astra_advisor` uses GPT-6 Astra high only as the fallback when the applicable Claude advisor is unavailable, exhausted, or excluded from independent review.
 
 Native presets are fallbacks, not global provider priority. The
 [model routing policy](skills/delivery-orchestration/references/model-routing.md) selects

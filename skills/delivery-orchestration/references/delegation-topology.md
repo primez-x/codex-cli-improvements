@@ -26,7 +26,7 @@ Without cross-provider Claude dispatch, use `astra_advisor` when the model is av
 | `sol_fast_worker` | gpt-6.1-sol | low | 1–2 | Terminal bounded routine implementation on the critical path |
 | `sol_worker` | gpt-6.1-sol | high | 1–2 | May subdivide at depth 1 |
 | `sol_medium_worker` | gpt-6.1-sol | medium | 1–2 | Terminal bounded implementation needing GPT-6.1 Sol judgment |
-| `astra_advisor` | gpt-6-astra | high | 1 | Claude-unavailable fallback; root-dispatched terminal critic |
+| `astra_advisor` | gpt-6-astra | high | 1 | fallback when the applicable Claude advisor is unavailable, exhausted, or excluded from independent review; root-dispatched terminal critic |
 
 Route by tier. Luna serves the lower tiers: medium for read-only discovery, and xhigh
 for decided mechanical edits and partitioned workstreams. Sol serves routine and
@@ -74,7 +74,7 @@ serial work inline when handoff costs more. Root review does not justify
 assigning a task beyond a child's capability.
 
 The user selected GPT-6.1 Sol for root and difficult implementation based on observed cost and performance.
-The user prefers Fable high for independent advice and review. GPT-6 Astra high supplies a different model type when Claude is unavailable or usage-limited.
+Use Claude Opus high for Sol/Codex and all other non-Opus roots. Reserve Fable high for Opus roots. Explicit user model requests take precedence within the capability, independence, effort, and Astra fallback rules. Use Astra high only when the applicable Claude advisor is unavailable, exhausted, or excluded from independent review, and Astra is dispatchable.
 Earlier model benchmark snapshots
 do not establish performance or pricing for these versions. Revisit routing
 using actual first-pass quality, elapsed time, retries, and cost when available.
@@ -83,6 +83,6 @@ using actual first-pass quality, elapsed time, retries, and cost when available.
 
 GPT-6.1 Sol root reviews and approves every integrated outcome. Use one independent
 advisor when requested or a concrete consequential risk warrants independent challenge,
-following `adversarial-code-review`. Fable high is preferred; `astra_advisor` at GPT-6 Astra high is the Claude-unavailable fallback. Do not add review solely for file count,
+following `adversarial-code-review`. Use Claude Opus high for Sol/Codex and all other non-Opus roots. Reserve Fable high for Opus roots. Explicit user model requests take precedence within the capability, independence, effort, and Astra fallback rules. Use Astra high only when the applicable Claude advisor is unavailable, exhausted, or excluded from independent review, and Astra is dispatchable. Do not add review solely for file count,
 stage count, or instruction-file edits. A required high-risk review remains
 a delivery gate; an optional review failure does not block verified low-risk work.

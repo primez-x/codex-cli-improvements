@@ -86,20 +86,21 @@ These approximate matches do not establish equal performance on every task.
 
 ## Advisor And Independent Review
 
-Prefer Fable high for every root when Fable is available. This preference overrides worker cost and load-balance rules for advice.
-Use Astra high only when Claude has reached usage limits or Claude is unavailable, and Astra is actually dispatchable.
+Use Claude Opus high for Sol/Codex and all other non-Opus roots. Reserve Fable high for Opus roots. Explicit user model requests take precedence within the capability, independence, effort, and Astra fallback rules. This advisor rule overrides worker cost and load-balance preferences.
+Use Astra high only when the applicable Claude advisor is unavailable, exhausted, or excluded from independent review, and Astra is dispatchable.
 An observed provider failure or a current user report can establish the fallback condition. Do not predict a limit from spend alone.
-If Fable alone is missing while Claude works, report the missing preferred Advisor; do not silently switch to Astra.
+Check availability for the applicable advisor model. If the catalog lacks that model while Claude works, report the missing advisor. Do not use Astra to hide a catalog or route configuration error.
 Without a supported Claude dispatch path, Claude is unavailable to the current runtime; use Astra when dispatchable.
 
-In T3, dispatch Fable through the live Claude provider with `effort: high`.
-Outside T3, use the native `reviewer` profile at Fable high for explicit advice or review.
+In T3, dispatch the applicable Claude advisor through the live provider with `effort: high`.
+Outside T3, use a native profile only when the profile binds the applicable advisor model at high effort.
 A native Advisor server has separate effort behavior. Use that server only when the model binding and allowed effort are known.
-Codex's `astra_advisor` profile remains the Claude-unavailable fallback. A Codex profile cannot bind a Claude model.
+Codex's `astra_advisor` profile remains the fallback when the applicable Claude advisor is unavailable, exhausted, or excluded from independent review. A Codex profile cannot bind a Claude model.
 
 Root review is sufficient for ordinary delivery. Independent review uses a model different from the root and every writer.
-Fable advice does not satisfy that requirement when Fable also served as the root or a writer.
-In that case, choose another capable reviewer while preserving the restriction on Astra.
+Advice from the applicable advisor fails independence when that model also served as the root or a writer.
+For review, treat an advisor excluded by the root or writer model as unavailable. Choose another capable reviewer, including Astra high when required. Reserve Fable for Opus roots unless the user explicitly requests Fable.
+Preserve the restriction on Astra and never select Max effort.
 Do not claim that a fresh reviewer has never influenced the writers when those writers consulted the same Advisor.
 
 ## Subscription Priors
@@ -137,7 +138,7 @@ Reassess costs when the actual plan, workload mix, or allowance changes. Do not 
 | Fable 5.1 | high | 49.83 | $0.6099 |
 | GPT-6 Astra | high | 50.28 | $0.1476 |
 
-Fable remains preferred by user choice and model diversity, despite the higher supplied cost.
+Fable remains preferred for Opus roots by user choice and model diversity, despite the higher supplied cost.
 Haiku xhigh costs 58% less than Luna xhigh and has a higher supplied score.
 The Max rows remain in the original export but are ineligible for every dispatch.
 

@@ -45,8 +45,7 @@ Inspect the integrated result against the request, interfaces, and evidence.
 
 The GPT-6.1 Sol root performs ordinary final review. Use one independent advisor
 for an explicit request or consequential unresolved risk, following
-`adversarial-code-review`. Use Fable high when Claude is available; use
-`astra_advisor` only when Claude is unavailable or usage-limited. Do not stack
+`adversarial-code-review`. Use Claude Opus high for Sol/Codex and all other non-Opus roots. Reserve Fable high for Opus roots. Explicit user model requests take precedence within the capability, independence, effort, and Astra fallback rules. Use Astra high only when the applicable Claude advisor is unavailable, exhausted, or excluded from independent review, and Astra is dispatchable. Do not stack
 review stages by default.
 Apply valid findings and continue without renewed methodology approval.
 
